@@ -597,6 +597,16 @@ Page({
     });
   },
 
+  // 预览二维码大图
+  previewQRCode() {
+    if (this.data.advancedTags.qrCodeUrl) {
+      wx.previewImage({
+        current: this.data.advancedTags.qrCodeUrl,
+        urls: [this.data.advancedTags.qrCodeUrl]
+      });
+    }
+  },
+
   // 上传个人照片
   uploadPhotos() {
     const currentPhotos = this.data.advancedTags.photos || [];

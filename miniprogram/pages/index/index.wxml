@@ -301,11 +301,10 @@
           </view>
 
           <!-- 第4步：个人信息设置 -->
-          <view wx:if="{{currentStep === 4 && currentStepConfig}}" class="step-content">
-            <view class="step-header">
+          <view wx:if="{{currentStep === 4 && currentStepConfig}}" class="step-content personal-info-step">
+            <view class="step-header compact">
               <view class="step-title">{{currentStepConfig.title}}</view>
               <view class="step-subtitle">{{currentStepConfig.subtitle}}</view>
-              <view class="step-description">{{currentStepConfig.description}}</view>
             </view>
             
             <view class="contact-form">
@@ -319,41 +318,52 @@
                        bindinput="onContactInput" />
               </view>
 
-              <!-- 二维码上传 -->
-              <view class="form-item">
-                <view class="form-label">微信二维码</view>
-                <view class="upload-section">
-                  <view wx:if="{{!advancedTags.qrCodeUrl}}" class="upload-btn" bindtap="uploadQRCode">
-                    <view class="upload-icon">📷</view>
-                    <view class="upload-text">上传微信二维码图片</view>
+              <!-- 两列布局：左侧输入框，右侧二维码 -->
+              <view class="two-column-layout">
+                <!-- 左侧列：联系方式和个性标签 -->
+                <view class="left-column">
+                  <!-- 联系方式 -->
+                  <view class="form-item compact">
+                    <view class="form-label">联系方式</view>
+                    <input class="form-input" 
+                           placeholder="微信号、电话等" 
+                           value="{{advancedTags.contactInfo}}" 
+                           data-field="contactInfo"
+                           bindinput="onContactInput" />
                   </view>
-                  <view wx:else class="uploaded-image">
-                    <image src="{{advancedTags.qrCodeUrl}}" mode="aspectFit"></image>
-                    <view class="reupload-btn" bindtap="uploadQRCode">重新上传</view>
+
+                  <!-- 个性标签（移动到这里） -->
+                  <view class="form-item compact">
+                    <view class="form-label">个性tag</view>
+                    <textarea class="form-textarea compact" 
+                              placeholder="如：不喝咖啡会死星人" 
+                              value="{{advancedTags.personalTagsText}}" 
+                              data-field="personalTagsText"
+                              bindinput="onContactInput"
+                              maxlength="200"></textarea>
+                  </view>
+                </view>
+
+                <!-- 右侧列：二维码 -->
+                <view class="right-column">
+                  <view class="qr-card">
+                    <view class="qr-label">微信二维码</view>
+                    <view wx:if="{{!advancedTags.qrCodeUrl}}" class="qr-upload-area" bindtap="uploadQRCode">
+                      <view class="qr-upload-icon">📷</view>
+                      <view class="qr-upload-text">点击上传</view>
+                      <view class="qr-upload-hint">二维码图片</view>
+                    </view>
+                    <view wx:else class="qr-preview">
+                      <image class="qr-image" src="{{advancedTags.qrCodeUrl}}" mode="aspectFit"></image>
+                      <view class="qr-actions">
+                        <text class="qr-action-btn" bindtap="uploadQRCode">更换</text>
+                        <text class="qr-action-btn" bindtap="previewQRCode">查看</text>
+                      </view>
+                    </view>
                   </view>
                 </view>
               </view>
 
-              <!-- 联系方式 -->
-              <view class="form-item">
-                <view class="form-label">联系方式</view>
-                <input class="form-input" 
-                       placeholder="微信号、电话号码等" 
-                       value="{{advancedTags.contactInfo}}" 
-                       data-field="contactInfo"
-                       bindinput="onContactInput" />
-              </view>
-
-              <!-- 个性标签 -->
-              <view class="form-item">
-                <view class="form-label">个性tag</view>
-                <textarea class="form-textarea" 
-                          placeholder="如：不喝咖啡会死星人" 
-                          value="{{advancedTags.personalTagsText}}" 
-                          data-field="personalTagsText"
-                          bindinput="onContactInput"
-                          maxlength="200"></textarea>
-              </view>
 
               <!-- 闪光阈值信息 -->
               <view class="form-item">
