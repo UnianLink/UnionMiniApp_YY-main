@@ -77,12 +77,15 @@
       </view>
       <view class="device-info">
         <text class="info-label">状态：</text>
-        <text class="info-value {{connected ? 'connected' : 'disconnected'}}">
-          {{connected ? '✅ 已连接' : '❌ 未连接'}}
+        <text class="info-value {{connecting ? 'connecting' : (connected ? 'connected' : 'disconnected')}}">
+          {{connecting ? '🔄 正在连接...' : (connected ? '✅ 已连接' : '❌ 未连接')}}
         </text>
       </view>
       <view wx:if="{{connected && !deviceReady}}" class="connecting-tip">
-        <text>🔄 正在初始化...</text>
+        <text>🔄 正在初始化设备...</text>
+      </view>
+      <view wx:if="{{connecting}}" class="connecting-tip">
+        <text>⏳ 正在建立蓝牙连接，请稍候...</text>
       </view>
     </view>
     

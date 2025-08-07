@@ -9,6 +9,8 @@ Page({
     deviceId: '', // 当前连接的设备ID
     services: [], // 设备的服务列表
     connected: false, // 连接状态
+    connecting: false, // 正在连接状态
+    connectionTimeout: null, // 连接超时定时器
     messages: [], // 消息收发记录
     notifications: [], // 设备通知记录
     input: '', // 输入框内容
@@ -172,8 +174,12 @@ Page({
   connectDevice(e) {
     const deviceId = e.currentTarget.dataset.deviceid;
     
-    // 显示连接动画
+    console.log('🔗 [连接] 用户点击连接设备:', deviceId);
+    
+    // 🎯 立即设置连接状态为正在连接
     this.setData({ 
+      connecting: true,
+      connected: false,
       connectionAnimation: false, // 停止旋转动画
       showConnectionGuide: false // 隐藏连接引导
     });
@@ -207,9 +213,16 @@ Page({
 
   // 重置到扫描状态
   resetToScan() {
+    // 🎯 清理连接相关的定时器
+    if (this.data.connectionTimeout) {
+      clearTimeout(this.data.connectionTimeout);
+    }
+    
     this.setData({ 
       showScanView: true,
       connected: false,
+      connecting: false,
+      connectionTimeout: null,
       deviceReady: false,
       deviceId: '',
       services: [],
@@ -228,19 +241,60 @@ Page({
   // ===== 设备连接功能 =====
   connect() {
     const { deviceId, deviceName } = this.data;
-    console.log('🔍 [调试] 开始连接设备:', deviceId, deviceName);
+    console.log('🔗 [连接] 开始连接设备:', deviceId, deviceName);
+    
+    // 🎯 设置连接超时定时器 (15秒)
+    if (this.data.connectionTimeout) {
+      clearTimeout(this.data.connectionTimeout);
+    }
+    
+    const timeoutId = setTimeout(() => {
+      console.log('⏰ [连接] 连接超时，返回扫描页面');
+      
+      // 清理连接状态
+      this.setData({
+        connecting: false,
+        connected: false
+      });
+      
+      // 显示超时提示
+      wx.showToast({
+        title: '连接超时',
+        icon: 'error',
+        duration: 2000
+      });
+      
+      // 延迟返回扫描页面
+      setTimeout(() => {
+        this.backToScan();
+      }, 1000);
+    }, 15000); // 15秒超时
+    
+    this.setData({
+      connectionTimeout: timeoutId
+    });
     
     wx.createBLEConnection({
       deviceId: deviceId,
       success: (res) => {
-        console.log('🔍 [调试] ✅ BLE连接成功:', res);
+        console.log('🔗 [连接] ✅ BLE连接成功:', res);
+        
+        // 🎯 清除超时定时器
+        if (this.data.connectionTimeout) {
+          clearTimeout(this.data.connectionTimeout);
+          this.setData({ connectionTimeout: null });
+        }
+        
+        // 🎯 更新连接状态
         this.setData({
+          connecting: false,
+          connected: true,
           isConnected: true,
           deviceName: deviceName
         });
         
         // 连接成功后立即获取服务和特征值
-        console.log('🔍 [调试] 开始获取服务...');
+        console.log('🔗 [连接] 开始获取服务...');
         this.getServices();
         
         // 添加连接成功通知
@@ -254,7 +308,20 @@ Page({
         });
       },
       fail: (err) => {
-        console.error('❌ 连接失败:', err);
+        console.error('🔗 [连接] ❌ 连接失败:', err);
+        
+        // 🎯 清除超时定时器
+        if (this.data.connectionTimeout) {
+          clearTimeout(this.data.connectionTimeout);
+          this.setData({ connectionTimeout: null });
+        }
+        
+        // 🎯 重置连接状态
+        this.setData({
+          connecting: false,
+          connected: false
+        });
+        
         this.addNotification(`❌ 连接失败: ${err.errMsg}`);
         
         // 显示连接失败提示
@@ -263,6 +330,11 @@ Page({
           icon: 'error',
           duration: 2000
         });
+        
+        // 🎯 连接失败后延迟返回扫描页面
+        setTimeout(() => {
+          this.backToScan();
+        }, 2000);
       }
     });
   },
@@ -999,25 +1071,24 @@ Page({
         unDevices: formattedDevices
       });
       
-      // 显示确认对话框
-      wx.showModal({
-        title: '碰一碰设备列表',
-        content: `发现${deviceCount}个碰一碰设备，是否确认接收？`,
-        confirmText: '确认',
-        cancelText: '取消',
-        success: (res) => {
-          if (res.confirm) {
-            // 发送确认消息给硬件
-            console.log('用户确认接收碰一碰列表，准备发送确认消息');
-            this.sendTouchListAck();
-          } else {
-            console.log('用户取消接收碰一碰列表');
-          }
-        }
+      // 🎯 自动接收碰一碰设备列表，无需用户手动确认
+      console.log('🚀 [自动接收] 自动确认接收碰一碰列表，无需用户干预');
+      
+      // 显示接收成功的提示信息
+      wx.showToast({
+        title: `已接收${deviceCount}个碰一碰设备`,
+        icon: 'success',
+        duration: 2000
       });
       
+      // 🎯 立即发送确认消息给硬件，无需等待用户确认
+      setTimeout(() => {
+        console.log('🚀 [自动接收] 自动发送确认消息给硬件');
+        this.sendTouchListAck();
+      }, 500); // 短暂延迟确保UI更新完成
+      
       // 添加通知
-      this.addNotification(`📋 收到碰一碰设备列表 (${deviceCount}个设备)`);
+      this.addNotification(`📋 自动接收碰一碰设备列表 (${deviceCount}个设备)`);
     } else {
       console.log('JSON数据格式不正确:', jsonData);
       this.addNotification('❌ 碰一碰设备列表格式错误');
