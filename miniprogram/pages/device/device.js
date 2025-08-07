@@ -313,24 +313,16 @@ Page({
       if (!userEncodedTags || userEncodedTags.length === 0) {
         console.log('⚠️ [调试] 未找到用户编码标签，使用默认Un名称（不会触发其他设备亮灯）');
         
-        // 使用默认Un名称：Un + 14位随机字符，确保16字符长度且以Un开头
-        const randomSuffix = Math.random().toString(36).substring(2, 16).toUpperCase();
-        unString = `Un${randomSuffix}`;
+        // 🎯 新的默认格式：Un + 14个星号，确保16字符长度且会被其他设备忽略
+        unString = 'Un**************'; // Un + 14个星号 = 16字符
         
-        // 确保长度为16字符
-        if (unString.length < 16) {
-          unString = unString.padEnd(16, '0');
-        } else if (unString.length > 16) {
-          unString = unString.substring(0, 16);
-        }
-        
-        console.log('🔍 [调试] 生成默认Un名称:', unString, '（将被其他设备忽略）');
+        console.log('🔍 [调试] 使用默认Un名称（星号格式）:', unString, '（将被其他设备直接忽略，不进入解码环节）');
         
         // 显示提示用户可以完善个人主页来启用完整功能
         wx.showToast({
-          title: '使用默认Un名称（其他设备不会亮灯）',
+          title: '使用默认模式（其他设备会忽略）',
           icon: 'none',
-          duration: 3000
+          duration: 2000
         });
         
       } else {

@@ -70,30 +70,19 @@
       <button class="back-button" bindtap="backToScan" size="mini">返回扫描</button>
     </view>
     
-    <!-- 设备信息区域 -->
+    <!-- 简化的连接状态 -->
     <view class="section">
       <view class="section-header">
-        <text class="section-title">设备状态</text>
-        <button class="clear-button" bindtap="showDebugInfo" size="mini">调试</button>
+        <text class="section-title">连接状态</text>
       </view>
       <view class="device-info">
-        <text class="info-label">设备ID：</text>
-        <text class="info-value">{{deviceId}}</text>
-      </view>
-      <view class="device-info">
-        <text class="info-label">连接状态：</text>
+        <text class="info-label">状态：</text>
         <text class="info-value {{connected ? 'connected' : 'disconnected'}}">
-          {{connected ? (deviceReady ? '已连接并就绪' : '已连接，准备中...') : '未连接'}}
+          {{connected ? '✅ 已连接' : '❌ 未连接'}}
         </text>
       </view>
       <view wx:if="{{connected && !deviceReady}}" class="connecting-tip">
-        <text>正在订阅设备通知特征，请稍等...</text>
-      </view>
-      <!-- 缓冲区状态显示 -->
-      <view wx:if="{{connected && dataBuffer}}" class="buffer-status">
-        <text class="info-label">缓冲区：</text>
-        <text class="info-value">{{dataBuffer.length}} 字符</text>
-        <text class="buffer-content">{{dataBuffer}}</text>
+        <text>🔄 正在初始化...</text>
       </view>
     </view>
     
@@ -124,29 +113,15 @@
       </view>
     </view>
     
-    <!-- 消息收发区域 -->
-    <view class="section">
+    <!-- 简化的通信日志 -->
+    <view class="section" wx:if="{{connected && messages.length > 0}}">
       <view class="section-header">
-        <text class="section-title">设备消息</text>
-        <button class="clear-button" bindtap="clearMessages" size="mini" wx:if="{{messages.length > 0}}">清除</button>
+        <text class="section-title">通信日志</text>
+        <button class="clear-button" bindtap="clearMessages" size="mini">清除</button>
       </view>
       <view class="msg-list">
-        <view wx:if="{{messages.length === 0}}" class="no-messages">
-          <text>暂无消息</text>
-        </view>
         <view wx:for="{{messages}}" wx:key="index" class="msg-item">
           <text>{{item}}</text>
-        </view>
-      </view>
-      <view class="input-area">
-        <input class="message-input" placeholder="输入消息" value="{{input}}" bindinput="onInput" />
-        <view class="button-group">
-          <button class="action-button" bindtap="sendMsg" disabled="{{!connected}}">发送</button>
-          <button class="action-button mini" bindtap="manualSendUnString" wx:if="{{connected}}">手动发送Un名称</button>
-          <button class="action-button mini" bindtap="testEncodingConsistency">测试编码一致性</button>
-          <button class="action-button mini" bindtap="subscribeAllNotifyCharacteristics" wx:if="{{connected}}">订阅所有</button>
-          <button class="action-button mini" bindtap="forceSubscribeAll" wx:if="{{connected}}">强制订阅</button>
-          <button class="action-button mini" bindtap="forceReconnect" wx:if="{{connected}}">重连</button>
         </view>
       </view>
     </view>
