@@ -715,6 +715,79 @@ page {
   font-style: italic;
 }
 
+/* 阈值设置 - 可调节版 */
+.threshold-setting {
+  margin-top: 24rpx;
+  margin-bottom: 32rpx;
+}
+
+.threshold-control {
+  background: linear-gradient(135deg, rgba(74, 158, 255, 0.08), rgba(139, 92, 246, 0.05));
+  border: 1rpx solid rgba(74, 158, 255, 0.2);
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-top: 12rpx;
+}
+
+.threshold-display {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12rpx;
+  margin-bottom: 24rpx;
+}
+
+.threshold-number {
+  font-size: 56rpx;
+  font-weight: bold;
+  background: linear-gradient(135deg, #4A9EFF, #8B5CF6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1;
+}
+
+.threshold-text {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* 滑块容器 */
+.threshold-slider-container {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+  padding: 0 12rpx;
+}
+
+.slider-min, .slider-max {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+  min-width: 30rpx;
+  text-align: center;
+}
+
+.threshold-slider {
+  flex: 1;
+  margin: 0;
+}
+
+/* 阈值描述 */
+.threshold-desc {
+  text-align: center;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 12rpx;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8rpx;
+}
+
+.threshold-desc text {
+  display: block;
+}
+
 /* 底部导航按钮 */
 .nav-buttons {
   position: fixed;

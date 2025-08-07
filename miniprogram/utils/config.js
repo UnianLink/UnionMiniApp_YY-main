@@ -1016,9 +1016,9 @@ const Config = {
 
     // 闪光阈值设置
     threshold: {
-      default: 3, // 默认3个标签相同
+      default: 4, // 默认4个标签相同
       min: 1,
-      max: 10,
+      max: 20,
       description: '设置多少个标签相同时开始闪光连接'
     }
   }

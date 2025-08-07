@@ -17,7 +17,7 @@ Page({
       interestTags: [],
       personalityTags: [],
       quirkyTags: [],
-      threshold: 3,
+      threshold: 4,
       displayName: '',
       contactInfo: '',
       personalTagsText: '',
@@ -550,7 +550,7 @@ Page({
     });
   },
 
-  // 闪光阈值调整
+  // 闪光阈值调整（滑动结束）
   onThresholdChange(e) {
     const value = parseInt(e.detail.value);
     const threshold = Config.advancedTagsConfig.threshold;
@@ -560,6 +560,21 @@ Page({
       'advancedTags.threshold': finalValue
     });
     this.saveAdvancedTags();
+    
+    // 显示提示
+    wx.showToast({
+      title: `阈值设为 ${finalValue}`,
+      icon: 'success',
+      duration: 1500
+    });
+  },
+  
+  // 闪光阈值调整（滑动中）
+  onThresholdChanging(e) {
+    const value = parseInt(e.detail.value);
+    this.setData({
+      'advancedTags.threshold': value
+    });
   },
 
   // 通用输入处理（第5页）
@@ -1018,7 +1033,7 @@ Page({
         interestTags: this.data.advancedTags.interestTags || [],
         personalityTags: this.data.advancedTags.personalityTags || [],
         quirkyTags: this.data.advancedTags.quirkyTags || [],
-        threshold: this.data.advancedTags.threshold || 3,
+        threshold: this.data.advancedTags.threshold || 4,
         displayName: this.data.advancedTags.displayName || this.data.userInfo.nickName || '',
         contactInfo: this.data.advancedTags.contactInfo || '',
         personalTagsText: this.data.advancedTags.personalTagsText || '',

@@ -365,15 +365,35 @@
               </view>
 
 
-              <!-- 闪光阈值信息 -->
-              <view class="form-item">
-                <view class="form-label">🔥 闪光阈值</view>
-                <view class="threshold-info">
-                  <view class="threshold-display-simple">
-                    <text class="threshold-number-simple">{{advancedTags.threshold}}</text>
-                    <text class="threshold-text-simple">个标签相同即闪光</text>
+              <!-- 闪光阈值设置 - 可调节 -->
+              <view class="form-item threshold-setting">
+                <view class="form-label">🔥 闪光阈值设置</view>
+                <view class="threshold-control">
+                  <view class="threshold-display">
+                    <text class="threshold-number">{{advancedTags.threshold}}</text>
+                    <text class="threshold-text">个标签相同即闪光</text>
                   </view>
-                  <view class="threshold-hint">系统默认设置，可在提交后调整</view>
+                  <view class="threshold-slider-container">
+                    <text class="slider-min">1</text>
+                    <slider class="threshold-slider" 
+                            value="{{advancedTags.threshold}}" 
+                            min="1" 
+                            max="20"
+                            show-value="false"
+                            activeColor="#4A9EFF"
+                            backgroundColor="rgba(255, 255, 255, 0.2)"
+                            block-color="#4A9EFF"
+                            block-size="24"
+                            bindchange="onThresholdChange"
+                            bindchanging="onThresholdChanging"/>
+                    <text class="slider-max">20</text>
+                  </view>
+                  <view class="threshold-desc">
+                    <text wx:if="{{advancedTags.threshold <= 3}}">宽松匹配 - 容易闪光</text>
+                    <text wx:elif="{{advancedTags.threshold <= 6}}">标准匹配 - 适中难度</text>
+                    <text wx:elif="{{advancedTags.threshold <= 10}}">严格匹配 - 较难闪光</text>
+                    <text wx:else>极限匹配 - 很难闪光</text>
+                  </view>
                 </view>
               </view>
             </view>

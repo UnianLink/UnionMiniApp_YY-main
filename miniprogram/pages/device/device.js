@@ -51,7 +51,30 @@ Page({
     } else {
       // 没有传入deviceId，显示扫描界面
       this.setData({ showScanView: true });
-      this.ensureAdapter(() => this.startScan());
+      this.ensureAdapter(() => this.startContinuousScan());
+    }
+  },
+  
+  // 页面显示时
+  onShow() {
+    // 如果在扫描界面且没有连接设备，继续扫描
+    if (this.data.showScanView && !this.data.connected && !this.data.scanning) {
+      this.startContinuousScan();
+    }
+  },
+  
+  // 页面隐藏时
+  onHide() {
+    // 停止扫描以节省电量
+    this.stopContinuousScan();
+  },
+  
+  // 页面卸载时
+  onUnload() {
+    // 清理所有定时器和监听器
+    this.stopContinuousScan();
+    if (this.data.connected) {
+      this.disconnect();
     }
   },
 
@@ -99,8 +122,76 @@ Page({
   },
 
   // ===== 蓝牙扫描功能 =====
+  // 开始持续扫描
+  startContinuousScan() {
+    console.log('🔄 [扫描] 开始持续扫描');
+    this.setData({ scanning: true });
+    
+    // 清除之前的定时器
+    this.clearScanTimers();
+    
+    // 开始蓝牙扫描
+    this.startScan();
+    
+    // 设置周期性重启扫描（每15秒重启一次，保持扫描新鲜度）
+    this._continuousScanTimer = setInterval(() => {
+      if (this.data.scanning && this.data.showScanView && !this.data.connected) {
+        console.log('🔄 [扫描] 周期性重启扫描');
+        this.restartScan();
+      }
+    }, 15000);
+  },
+  
+  // 停止持续扫描
+  stopContinuousScan() {
+    console.log('⛔ [扫描] 停止持续扫描');
+    this.setData({ scanning: false });
+    
+    // 停止蓝牙扫描
+    wx.stopBluetoothDevicesDiscovery({ complete: () => {} });
+    
+    // 清除定时器
+    this.clearScanTimers();
+  },
+  
+  // 清除扫描相关定时器
+  clearScanTimers() {
+    if (this._scanTimer) {
+      clearTimeout(this._scanTimer);
+      this._scanTimer = null;
+    }
+    if (this._continuousScanTimer) {
+      clearInterval(this._continuousScanTimer);
+      this._continuousScanTimer = null;
+    }
+    if (this._deviceUpdateTimer) {
+      clearInterval(this._deviceUpdateTimer);
+      this._deviceUpdateTimer = null;
+    }
+  },
+  
+  // 重启扫描（保持设备列表）
+  restartScan() {
+    wx.stopBluetoothDevicesDiscovery({ 
+      complete: () => {
+        setTimeout(() => {
+          this.startScan();
+        }, 500);
+      }
+    });
+  },
+  
+  // 切换扫描状态
+  toggleScan() {
+    if (this.data.scanning) {
+      this.stopContinuousScan();
+    } else {
+      this.startContinuousScan();
+    }
+  },
+  
   startScan() {
-    this.setData({ scanning: true, devices: [] });
+    this.setData({ scanning: true });
 
     // 停止可能已存在的扫描
     wx.stopBluetoothDevicesDiscovery({ complete: () => {} });
@@ -120,48 +211,52 @@ Page({
               return; // 没有符合条件的设备，不更新列表
             }
             
+            const now = Date.now();
+            
             // 更新列表（使用Map去重并保留最新RSSI）
             const map = new Map(this.data.devices.map(d => [d.deviceId, d]));
-            filteredDevices.forEach(d => map.set(d.deviceId, d));
+            filteredDevices.forEach(d => {
+              // 添加更新时间信息
+              const existingDevice = map.get(d.deviceId);
+              map.set(d.deviceId, {
+                ...d,
+                lastSeen: now,
+                updateTime: existingDevice ? '刚刚更新' : '刚刚发现'
+              });
+            });
             let devices = Array.from(map.values());
+            
+            // 清除超过30秒未更新的设备
+            devices = devices.filter(d => {
+              return !d.lastSeen || (now - d.lastSeen) < 30000;
+            });
             
             // 按RSSI从高到低排序
             devices.sort((a, b) => (b.RSSI || -999) - (a.RSSI || -999));
             
-            // 如果是在扫描状态，只显示RSSI最高的设备用于连接
-            if (this.data.showScanView) {
-              const bestDevice = devices[0];
-              if (bestDevice) {
-                this.setData({ 
-                  devices: [bestDevice],
-                  showConnectionGuide: true // 显示连接引导
-                });
-                
-                // 启动连接引导动画
-                setTimeout(() => {
-                  this.setData({ connectionAnimation: true });
-                }, 500);
-              }
-            } else {
-              // 如果已连接，持续更新设备列表，显示所有发现的设备
-              this.setData({ 
-                devices: devices,
-                showConnectionGuide: false // 连接后不显示连接引导
-              });
+            // 更新设备列表，显示所有发现的设备
+            this.setData({ 
+              devices: devices,
+              showConnectionGuide: devices.length > 0
+            });
+            
+            // 启动设备更新时间定时器
+            if (!this._deviceUpdateTimer) {
+              this._deviceUpdateTimer = setInterval(() => {
+                this.updateDeviceTimes();
+              }, 1000);
             }
+            
+            console.log(`🔍 [扫描] 当前发现 ${devices.length} 个Un设备:`, 
+              devices.map(d => ({ 
+                name: d.name, 
+                RSSI: d.RSSI,
+                updateTime: d.updateTime
+              })));
           };
           wx.onBluetoothDeviceFound(this._deviceFoundListener);
         }
-        // 启动超时定时器
-        if (this._scanTimer) clearTimeout(this._scanTimer);
-        this._scanTimer = setTimeout(() => {
-          wx.stopBluetoothDevicesDiscovery();
-          this.setData({ scanning: false });
-          // 若未发现任何设备，自动重试一次
-          if (this.data.devices.length === 0) {
-            setTimeout(() => this.startScan(), 500);
-          }
-        }, 10000);
+        // 不设置超时，保持持续扫描
       },
       fail: () => {
         this.setData({ scanning: false });

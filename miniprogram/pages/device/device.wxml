@@ -1,11 +1,24 @@
 <view class="container">
   <!-- ===== 扫描界面 ===== -->
   <view wx:if="{{showScanView}}" class="scan-container">
-    <!-- 扫描按钮，点击触发 startScan，显示加载状态 -->
-    <view class="scan-header">
-      <button class="scan-button" bindtap="startScan" loading="{{scanning}}">
-        {{scanning ? '扫描中...' : '扫描蓝牙设备'}}
+    <!-- 顶部标题区域 -->
+    <view class="scan-title-area">
+      <text class="scan-title">智能项链连接</text>
+      <text class="scan-subtitle">请确保您的设备已开启并靠近手机</text>
+    </view>
+    
+    <!-- 扫描按钮区域 -->
+    <view class="scan-button-area">
+      <button class="scan-button {{scanning ? 'scanning' : ''}}" bindtap="toggleScan">
+        <view class="button-content">
+          <view wx:if="{{scanning}}" class="scanning-indicator">
+            <view class="scan-wave"></view>
+            <view class="scan-wave delay"></view>
+          </view>
+          <text>{{scanning ? '停止扫描' : '开始扫描'}}</text>
+        </view>
       </button>
+      <text class="scan-hint">{{scanning ? '正在搜索附近的智能项链...' : '点击按钮开始搜索设备'}}</text>
     </view>
     
     <!-- 设备发现区域 -->
@@ -22,6 +35,11 @@
       
       <!-- 设备发现状态 -->
       <view wx:elif="{{devices.length > 0}}" class="device-found-state">
+        <!-- 设备列表标题 -->
+        <view class="devices-header">
+          <text class="devices-title">发现 {{devices.length}} 个设备</text>
+          <text wx:if="{{scanning}}" class="devices-scanning-status">🔄 持续扫描中</text>
+        </view>
         <!-- 旋转的连接引导动画 -->
         <view class="connection-guide {{connectionAnimation ? 'animate' : ''}}">
           <view class="guide-ring">
@@ -31,17 +49,37 @@
           </view>
         </view>
         
-        <!-- 设备信息卡片 -->
-        <view class="device-card" bindtap="connectDevice" data-deviceid="{{devices[0].deviceId}}">
+        <!-- 最强信号设备卡片（突出显示） -->
+        <view class="device-card primary" bindtap="connectDevice" data-deviceid="{{devices[0].deviceId}}">
+          <view class="best-signal-badge">最强信号</view>
           <view class="device-icon">
             <view class="necklace-icon">💎</view>
           </view>
           <view class="device-info">
             <text class="device-name-subtle">{{devices[0].name}}</text>
-            <text class="device-signal">信号强度: {{devices[0].RSSI !== undefined ? devices[0].RSSI : '-'}} dBm</text>
+            <text class="device-signal strong">信号强度: {{devices[0].RSSI !== undefined ? devices[0].RSSI : '-'}} dBm</text>
+            <text class="device-update-time">{{devices[0].updateTime || '刚刚更新'}}</text>
           </view>
           <view class="connect-button">
             <text class="connect-text">点击连接</text>
+            <view class="connect-arrow">→</view>
+          </view>
+        </view>
+        
+        <!-- 其他设备列表 -->
+        <view wx:if="{{devices.length > 1}}" class="other-devices">
+          <text class="other-devices-title">其他设备</text>
+          <view wx:for="{{devices}}" wx:key="deviceId" wx:if="{{index > 0}}" 
+                class="device-card secondary" 
+                bindtap="connectDevice" 
+                data-deviceid="{{item.deviceId}}">
+            <view class="device-icon small">
+              <view class="necklace-icon">💎</view>
+            </view>
+            <view class="device-info">
+              <text class="device-name-subtle">{{item.name}}</text>
+              <text class="device-signal">{{item.RSSI}} dBm</text>
+            </view>
             <view class="connect-arrow">→</view>
           </view>
         </view>
