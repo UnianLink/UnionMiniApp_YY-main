@@ -941,6 +941,15 @@ Page({
     console.log('[generateTagsEncoding] 生成编码:', encodedTags);
     console.log('[generateTagsEncoding] 编码长度:', encodedTags.length);
     
+    // 🎯 保存编码到本地存储，供硬件连接时使用
+    try {
+      wx.setStorageSync('lastGeneratedEncoding', encodedTags);
+      wx.setStorageSync('lastEncodingTime', Date.now());
+      console.log('🎯 [编码保存] 已保存编码到本地存储:', encodedTags);
+    } catch (error) {
+      console.error('❌ [编码保存] 保存失败:', error);
+    }
+    
     return {
       encoded: encodedTags,
       binaryArray: binaryArray,

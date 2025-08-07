@@ -96,8 +96,14 @@ async function handleAdvancedTags(event, openid) {
 
   // 验证编码数据
   const encodedTags = advancedTags.encodedTags;
-  if (encodedTags && encodedTags.length !== 20) {
-    console.warn('[handleAdvancedTags] 编码长度异常:', encodedTags.length);
+  console.log('[handleAdvancedTags] 接收到的编码:', encodedTags, '长度:', encodedTags ? encodedTags.length : 0);
+  
+  // 🚨 关键修复：前3页编码应该是14字符左右，不是20字符
+  // 20字符是包含所有5页标签的完整编码，但硬件只需要前3页的14字符编码
+  if (encodedTags && (encodedTags.length < 10 || encodedTags.length > 25)) {
+    console.warn('[handleAdvancedTags] 编码长度异常:', encodedTags.length, '期望10-25字符范围');
+  } else if (encodedTags) {
+    console.log('[handleAdvancedTags] ✅ 编码长度正常:', encodedTags.length, '字符');
   }
 
   // 构建保存数据

@@ -697,8 +697,11 @@
   word-wrap: break-word;
   word-break: break-all;
   white-space: pre-wrap; /* 保持换行和空格 */
-  max-width: 100%; /* 确保不超出容器 */
+  width: 100%; /* 强制设置宽度 */
+  max-width: calc(100% - 32rpx); /* 确保不超出容器，减去margin */
   overflow-wrap: break-word; /* 更好的换行处理 */
+  box-sizing: border-box; /* 包含padding和border在宽度内 */
+  overflow: hidden; /* 隐藏超出部分 */
 }
 
 .no-messages {
