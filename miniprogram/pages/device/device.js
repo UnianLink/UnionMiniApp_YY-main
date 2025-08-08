@@ -463,6 +463,71 @@ Page({
     this.checkAndSendUnString();
   },
 
+  // 发送阈值设置给硬件
+  async sendThresholdToDevice() {
+    try {
+      console.log('🎯 [阈值设置] 开始发送阈值设置给硬件');
+      
+      // 获取用户设置的阈值
+      const advancedTags = wx.getStorageSync('advancedTags') || {};
+      const threshold = advancedTags.threshold || 4;
+      
+      console.log('🎯 [阈值设置] 当前阈值:', threshold);
+      
+      // 构建发送给硬件的JSON命令
+      const command = {
+        type: 'set_threshold',
+        threshold: threshold,
+        timestamp: Date.now()
+      };
+      
+      const commandStr = JSON.stringify(command);
+      console.log('🎯 [阈值设置] 发送的JSON命令:', commandStr);
+      
+      // 记录发送的命令到消息列表
+      const sendMessage = `📤 设置闪光阈值: ${threshold}`;
+      this.setData({ 
+        messages: this.data.messages.concat(sendMessage)
+      });
+      
+      // 检查BLE写入特征是否就绪
+      const { rxServiceId, rxCharId } = this.data;
+      if (!rxServiceId || !rxCharId) {
+        console.error('❌ [阈值设置] BLE特征未就绪，无法发送阈值设置');
+        wx.showToast({
+          title: 'BLE特征未就绪',
+          icon: 'error',
+          duration: 2000
+        });
+        return;
+      }
+      
+      console.log('🎯 [阈值设置] BLE特征已就绪，开始发送...');
+      
+      // 发送给硬件
+      await this.writeToBle(commandStr);
+      
+      console.log('✅ [阈值设置] 阈值设置发送完成');
+      
+      // 显示成功提示
+      wx.showToast({
+        title: `阈值已设置为${threshold}`,
+        icon: 'success',
+        duration: 2000
+      });
+      
+    } catch (error) {
+      console.error('❌ [阈值设置] 发送阈值设置失败:', error);
+      
+      // 显示错误提示
+      wx.showToast({
+        title: '阈值设置失败',
+        icon: 'error',
+        duration: 2000
+      });
+    }
+  },
+
   // 检查并发送16字节Un字符串给硬件
   async checkAndSendUnString() {
     try {
@@ -1277,11 +1342,16 @@ Page({
           console.log('🔍 [调试] 开始订阅通知特征值...');
           this.subscribeAllNotifyCharacteristics();
           
-          // 优化：合并发送设备就绪信号和Un字符串，减少通信次数
-          console.log('🔍 [调试] 1.5秒后发送Un字符串，跳过设备就绪信号...');
-          setTimeout(() => {
-            console.log('🔍 [调试] 延迟时间到，直接发送Un字符串...');
-            this.checkAndSendUnString();
+          // 优化：先发送阈值设置，再发送Un字符串
+          console.log('🔍 [调试] 1.5秒后开始发送配置...');
+          setTimeout(async () => {
+            console.log('🔍 [调试] 延迟时间到，开始发送配置...');
+            // 先发送阈值设置
+            await this.sendThresholdToDevice();
+            // 等待500ms后发送Un字符串
+            setTimeout(() => {
+              this.checkAndSendUnString();
+            }, 500);
           }, 1500);
           
         } else {
