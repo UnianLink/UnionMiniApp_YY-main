@@ -3,7 +3,8 @@
     "pages/index/index",
     "pages/connect/connect",
     "pages/briefing/briefing",
-    "pages/device/device"
+    "pages/device/device",
+    "pages/admin/admin"
   ],
 
   

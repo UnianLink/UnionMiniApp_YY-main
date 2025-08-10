@@ -1,0 +1,9 @@
+{
+  "name": "syncTouchList",
+  "version": "1.0.0",
+  "description": "同步碰一碰设备列表并匹配用户",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

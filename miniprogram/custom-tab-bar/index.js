@@ -1,10 +1,10 @@
 Component({
   data: {
-    selected: 0, // 重置为默认选中首页
+    selected: 2, // 默认选中主页
     list: [
       {
         pagePath: "pages/connect/connect",
-        text: "连接"
+        text: "朋友"
       },
       {
         pagePath: "pages/device/device",

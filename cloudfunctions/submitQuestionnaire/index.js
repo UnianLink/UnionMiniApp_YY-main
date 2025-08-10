@@ -117,6 +117,8 @@ async function handleAdvancedTags(event, openid) {
     },
     // 编码数据存储在专门的字段中，便于硬件访问
     encodedTags: encodedTags || '',
+    // 🚨 新增：存储完整的16字符蓝牙名称，用于碰一碰匹配
+    bluetoothName: encodedTags ? `Un${encodedTags}` : '',
     binaryArray: advancedTags.binaryArray || [],
     allTagsList: advancedTags.allTagsList || [],
     selectedTags: advancedTags.selectedTags || [],
@@ -173,6 +175,7 @@ async function handleAdvancedTags(event, openid) {
           userInfo: saveData.userInfo,
           advancedTags: saveData.advancedTags,
           encodedTags: saveData.encodedTags,
+          bluetoothName: saveData.bluetoothName, // 更新蓝牙名称
           binaryArray: saveData.binaryArray,
           allTagsList: saveData.allTagsList,
           selectedTags: saveData.selectedTags,

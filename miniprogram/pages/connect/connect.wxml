@@ -2,7 +2,8 @@
 <view class="container">
   <!-- 页面顶部导航栏标题 -->
   <view class="nav-bar">
-    <view class="nav-title">好友列表</view>
+    <view class="nav-title">朋友</view>
+    <view class="nav-subtitle" wx:if="{{matchedFriends.length > 0}}">碰一碰好友 {{matchedFriends.length}} 人</view>
   </view>
 
   <!-- 用户背景图片 -->
@@ -62,10 +63,24 @@
               <image class="album-cover" wx:if="{{item.avatarUrl}}" src="{{item.avatarUrl}}" mode="aspectFill"></image>
             </view>
             <view class="track-info">
-              <view class="track-title">{{item.name || '未知用户'}}</view>
+              <view class="track-title-container">
+                <view class="track-title">{{item.name || '未知用户'}}</view>
+                <!-- 碰一碰标识 -->
+                <view class="touch-badge" wx:if="{{item.isMatched}}">
+                  <text class="touch-icon">🤝</text>
+                  <text class="touch-text">碰一碰</text>
+                </view>
+              </view>
               <view class="track-artist">{{item.subtitle || item.theme || '用户名片'}}</view>
-              <!-- 用户标签作为特色 -->
-              <view class="track-tags" wx:if="{{item.details && item.details.features && item.details.features.length > 0}}">
+              <!-- 匹配的标签 -->
+              <view class="track-tags matched-tags" wx:if="{{item.isMatched && item.matchedTags && item.matchedTags.length > 0}}">
+                <view class="tag matched" wx:for="{{item.matchedTags}}" wx:for-item="feature" wx:key="*this" wx:if="{{index < 3}}">
+                  {{feature}}
+                </view>
+                <view class="tag-more" wx:if="{{item.matchedTags.length > 3}}">+{{item.matchedTags.length - 3}}</view>
+              </view>
+              <!-- 普通用户标签 -->
+              <view class="track-tags" wx:elif="{{item.details && item.details.features && item.details.features.length > 0}}">
                 <view class="tag" wx:for="{{item.details.features}}" wx:for-item="feature" wx:key="*this" wx:if="{{index < 2}}">
                   {{feature}}
                 </view>
@@ -73,7 +88,9 @@
               </view>
               <!-- 显示标签数量和阈值 -->
               <view class="user-stats">
-                <text class="stats-text">{{item.totalTags}}个标签 · 阈值{{item.threshold}}</text>
+                <text class="stats-text" wx:if="{{item.isMatched}}">匹配度: {{item.matchScore}}个共同标签</text>
+                <text class="stats-text" wx:elif="{{item.totalTags}}">{{item.totalTags}}个标签 · 阈值{{item.threshold}}</text>
+                <text class="stats-text" wx:else>等待注册</text>
               </view>
             </view>
           </view>
@@ -92,7 +109,13 @@
           <view class="user-detail-info">
             <view class="user-detail-name">{{selectedUserDetail.name}}</view>
             <view class="user-detail-subtitle">UnionLink 数字身份</view>
-            <view class="user-detail-stats">{{selectedUserDetail.totalTags}}个标签 · 阈值{{selectedUserDetail.threshold}}</view>
+            <view class="user-detail-stats" wx:if="{{selectedUserDetail.matchScore}}">匹配度: {{selectedUserDetail.matchScore}}个共同标签</view>
+            <view class="user-detail-stats" wx:else>{{selectedUserDetail.totalTags}}个标签 · 阈值{{selectedUserDetail.threshold}}</view>
+            <!-- 碰一碰时间 -->
+            <view class="touch-time" wx:if="{{selectedUserDetail.firstTouchTime}}">
+              <text class="touch-time-label">首次碰一碰: </text>
+              <text class="touch-time-value">{{selectedUserDetail.firstTouchTime}}</text>
+            </view>
           </view>
         </view>
         <!-- 标签信息 -->

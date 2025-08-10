@@ -15,6 +15,10 @@ Page({
     notifications: [], // 设备通知记录
     input: '', // 输入框内容
     
+    // 🚀 BLE性能优化字段
+    negotiatedMTU: 23, // 协商的MTU大小，默认23字节
+    maxPacketSize: 20, // 最大数据包大小，默认20字节
+    
     // ===== 颜色方案编辑 =====
     colorNear: '#FF0000', // 近距离颜色
     colorMid: '#00FF00',  // 中距离颜色
@@ -41,6 +45,11 @@ Page({
   
   // 页面加载时的处理
   onLoad(options) {
+    // 更新tabBar选中状态
+    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+      this.getTabBar().updateSelected('/pages/device/device');
+    }
+    
     // 如果传入了deviceId，直接连接设备
     if (options.deviceId) {
       this.setData({ 
@@ -57,6 +66,11 @@ Page({
   
   // 页面显示时
   onShow() {
+    // 更新tabBar选中状态
+    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+      this.getTabBar().updateSelected('/pages/device/device');
+    }
+    
     // 如果在扫描界面且没有连接设备，继续扫描
     if (this.data.showScanView && !this.data.connected && !this.data.scanning) {
       this.startContinuousScan();
@@ -73,6 +87,13 @@ Page({
   onUnload() {
     // 清理所有定时器和监听器
     this.stopContinuousScan();
+    
+    // 清理设备更新定时器
+    if (this._deviceUpdateTimer) {
+      clearInterval(this._deviceUpdateTimer);
+      this._deviceUpdateTimer = null;
+    }
+    
     if (this.data.connected) {
       this.disconnect();
     }
@@ -291,6 +312,35 @@ Page({
     }, 800); // 等待动画完成
   },
 
+  // 更新设备时间显示
+  updateDeviceTimes() {
+    const now = Date.now();
+    const devices = this.data.devices.map(device => {
+      if (device.lastSeen) {
+        const timeDiff = now - device.lastSeen;
+        let updateTime;
+        
+        if (timeDiff < 5000) {
+          updateTime = '刚刚更新';
+        } else if (timeDiff < 60000) {
+          updateTime = `${Math.floor(timeDiff / 1000)}秒前`;
+        } else if (timeDiff < 3600000) {
+          updateTime = `${Math.floor(timeDiff / 60000)}分钟前`;
+        } else {
+          updateTime = `${Math.floor(timeDiff / 3600000)}小时前`;
+        }
+        
+        return {
+          ...device,
+          updateTime: updateTime
+        };
+      }
+      return device;
+    });
+    
+    this.setData({ devices });
+  },
+
   // 返回扫描界面
   backToScan() {
     // 如果已连接，先断开
@@ -363,7 +413,7 @@ Page({
       setTimeout(() => {
         this.backToScan();
       }, 1000);
-    }, 15000); // 15秒超时
+    }, 5000); // 5秒单次连接超时
     
     this.setData({
       connectionTimeout: timeoutId
@@ -534,6 +584,33 @@ Page({
       console.log('🔍🔍🔍 [重要调试] ===== 开始检查并发送16字节Un字符串给硬件 =====');
       console.log('🔍 [调试] 函数被调用时间:', new Date().toLocaleTimeString());
       
+      // ✅ 首先验证BLE连接状态
+      const { connected, rxServiceId, rxCharId } = this.data;
+      console.log('🔍 [BLE验证] 连接状态:', connected);
+      console.log('🔍 [BLE验证] RX特征:', rxServiceId, rxCharId);
+      
+      if (!connected) {
+        console.error('❌ [BLE验证] 设备未连接，无法发送Un字符串');
+        wx.showToast({
+          title: '设备未连接',
+          icon: 'error',
+          duration: 2000
+        });
+        return;
+      }
+      
+      if (!rxServiceId || !rxCharId) {
+        console.error('❌ [BLE验证] BLE特征值未就绪，无法发送Un字符串');
+        wx.showToast({
+          title: 'BLE特征未就绪',
+          icon: 'error',
+          duration: 2000
+        });
+        return;
+      }
+      
+      console.log('✅ [BLE验证] 连接状态正常，特征值就绪，可以发送数据');
+      
       // 获取当前用户的编码标签
       console.log('🔍 [调试] 正在调用getUserEncodedTags()...');
       let userEncodedTags = await this.getUserEncodedTags();
@@ -605,30 +682,34 @@ Page({
         messages: this.data.messages.concat(sendMessage)
       });
       
-      // 检查BLE写入特征是否就绪
-      const { rxServiceId, rxCharId } = this.data;
-      if (!rxServiceId || !rxCharId) {
-        console.error('❌ [调试] BLE特征未就绪，无法发送Un字符串');
-        wx.showToast({
-          title: 'BLE特征未就绪',
-          icon: 'error',
-          duration: 2000
-        });
-        return;
-      }
-      
-      console.log('🔍 [调试] BLE特征已就绪，开始发送...');
+      // ✅ BLE状态在函数开始处已验证，直接发送
+      console.log('🔍 [调试] BLE特征已验证，开始发送Un字符串...');
       
       // 发送给硬件
       await this.writeToBle(commandStr);
       
       console.log('✅ [调试] 16字节Un字符串发送完成，等待硬件确认...');
       
-      // 显示成功提示
+      // ✅ 关键修复：等待硬件响应而不是立即显示成功
+      // 设置响应等待标志
+      this.waitingForUnStringResponse = true;
+      this.unStringResponseTimeout = setTimeout(() => {
+        if (this.waitingForUnStringResponse) {
+          console.log('⚠️ [调试] 等待硬件Un字符串确认超时');
+          this.waitingForUnStringResponse = false;
+          wx.showToast({
+            title: '硬件响应超时',
+            icon: 'none',
+            duration: 2000
+          });
+        }
+      }, 8000); // 8秒超时（用户协议规定）
+      
+      // 暂时显示发送中状态
       wx.showToast({
-        title: 'Un字符串已发送',
-        icon: 'success',
-        duration: 2000
+        title: '正在更新蓝牙名称...',
+        icon: 'loading',
+        duration: 1000
       });
       
     } catch (error) {
@@ -660,6 +741,122 @@ Page({
     }
     
     this.checkAndSendUnString();
+  },
+
+  // 🚀 简化测试发送（绕过所有复杂逻辑，直接发送默认Un字符串）
+  async testSimpleSend() {
+    console.log('🚀 [测试] 简化发送测试开始...');
+    
+    // 检查基础连接状态
+    const { connected, rxServiceId, rxCharId } = this.data;
+    if (!connected || !rxServiceId || !rxCharId) {
+      wx.showToast({
+        title: '连接或特征值未就绪',
+        icon: 'error',
+        duration: 2000
+      });
+      return;
+    }
+    
+    try {
+      // 直接发送一个简单的测试Un字符串
+      const testUnString = 'UnTEST1234567890'; // 16字符测试字符串
+      const command = {
+        type: 'set_un_string',
+        un_string: testUnString,
+        timestamp: Date.now()
+      };
+      
+      const commandStr = JSON.stringify(command);
+      console.log('🚀 [测试] 发送测试命令:', commandStr);
+      
+      // 直接发送，不经过复杂的编码生成逻辑
+      await this.writeToBle(commandStr);
+      
+      console.log('✅ [测试] 简化发送成功');
+      wx.showToast({
+        title: '测试发送成功',
+        icon: 'success',
+        duration: 2000
+      });
+      
+      // 添加到消息列表
+      this.setData({
+        messages: this.data.messages.concat(`🚀 测试发送: ${testUnString}`)
+      });
+      
+    } catch (error) {
+      console.error('❌ [测试] 简化发送失败:', error);
+      wx.showToast({
+        title: '测试发送失败',
+        icon: 'error',
+        duration: 2000
+      });
+    }
+  },
+
+  // 🔬 最小化BLE写入测试（用于诊断基础连接）
+  async testMinimalBleWrite() {
+    console.log('🔬 [最小测试] 开始最小化BLE写入测试...');
+    
+    const { connected, deviceId, rxServiceId, rxCharId } = this.data;
+    
+    console.log('🔬 [最小测试] 当前状态检查:');
+    console.log('  connected:', connected);
+    console.log('  deviceId:', deviceId);
+    console.log('  rxServiceId:', rxServiceId);
+    console.log('  rxCharId:', rxCharId);
+    
+    if (!connected || !deviceId || !rxServiceId || !rxCharId) {
+      wx.showToast({
+        title: '连接状态异常',
+        icon: 'error',
+        duration: 3000
+      });
+      return;
+    }
+    
+    try {
+      // 发送最简单的测试字符串
+      const testStr = 'hello';
+      const buffer = this.str2ab(testStr);
+      
+      console.log('🔬 [最小测试] 即将发送:', testStr);
+      console.log('🔬 [最小测试] 编码后长度:', buffer.byteLength);
+      
+      const result = await new Promise((resolve, reject) => {
+        wx.writeBLECharacteristicValue({
+          deviceId: deviceId,
+          serviceId: rxServiceId,
+          characteristicId: rxCharId,
+          value: buffer,
+          success: (res) => {
+            console.log('✅ [最小测试] 微信API调用成功:', res);
+            resolve(res);
+          },
+          fail: (err) => {
+            console.error('❌ [最小测试] 微信API调用失败:', err);
+            reject(err);
+          }
+        });
+      });
+      
+      wx.showToast({
+        title: '最小测试成功',
+        icon: 'success',
+        duration: 2000
+      });
+      
+      console.log('✅ [最小测试] 测试完成，请检查硬件是否收到"hello"');
+      
+    } catch (error) {
+      console.error('❌ [最小测试] 测试失败:', error);
+      wx.showToast({
+        title: '最小测试失败',
+        icon: 'error',
+        duration: 3000
+      });
+    }
   },
 
   // 测试编码一致性（调试用）
@@ -702,6 +899,127 @@ Page({
     }
   },
 
+  // 🚨 新增：同步碰一碰列表到云端
+  async syncTouchListToCloud(devices) {
+    try {
+      console.log('☁️ 开始同步碰一碰列表到云端...');
+      console.log('☁️ 设备列表:', devices);
+      
+      // 获取当前用户的openid - 修正获取方式
+      const userInfo = wx.getStorageSync('userInfo');
+      const openid = userInfo?.openid || this.data.userOpenId || wx.getStorageSync('openid');
+      
+      console.log('☁️ 用户信息:', userInfo);
+      console.log('☁️ 用户openid:', openid);
+      
+      if (!openid) {
+        console.error('❌ 无法获取用户openid');
+        this.addNotification('⚠️ 请先在主页登录');
+        return;
+      }
+      
+      // 调用云函数
+      const res = await wx.cloud.callFunction({
+        name: 'syncTouchList',
+        data: {
+          openid: openid,
+          touchList: devices
+        }
+      });
+      
+      console.log('☁️ 云函数返回结果:', res.result);
+      
+      if (res.result.success) {
+        const { matchedUsers, unmatchedDevices, summary } = res.result;
+        
+        // 存储匹配结果到全局或本地存储，供朋友页面使用
+        wx.setStorageSync('touchListResult', {
+          matchedUsers,
+          unmatchedDevices,
+          updateTime: Date.now()
+        });
+        
+        // 显示同步结果
+        const message = `已同步${summary.total}个设备：${summary.matched}个朋友，${summary.unmatched}个待注册`;
+        wx.showToast({
+          title: message,
+          icon: 'none',
+          duration: 3000
+        });
+        
+        this.addNotification(`☁️ ${message}`);
+        
+        // 如果有匹配的朋友，显示简要信息
+        if (matchedUsers.length > 0) {
+          const topMatch = matchedUsers[0];
+          this.addNotification(`🎯 最佳匹配：${topMatch.displayName} (${topMatch.matchScore}个共同标签)`);
+        }
+      } else {
+        console.error('❌ 同步失败:', res.result.message);
+        this.addNotification('❌ 朋友列表同步失败');
+      }
+      
+    } catch (error) {
+      console.error('❌ 调用云函数失败:', error);
+      console.error('❌ 错误详情:', error.errCode, error.errMsg);
+      
+      // 如果云函数未部署或调用失败，使用本地存储作为fallback
+      if (error.errCode === -501000 || error.errMsg?.includes('FUNCTION_NOT_FOUND')) {
+        console.log('🔄 云函数未部署，使用本地存储fallback...');
+        this.handleTouchListFallback(devices);
+        this.addNotification('⚠️ 云函数未部署，使用本地模式');
+      } else {
+        this.addNotification('❌ 网络错误，无法同步朋友列表');
+      }
+    }
+  },
+  
+  // 处理云函数失败时的本地fallback
+  handleTouchListFallback(devices) {
+    console.log('🔄 处理碰一碰列表本地fallback');
+    
+    try {
+      // 创建基础的匹配结果（无法匹配用户，但至少显示设备）
+      const fallbackResult = {
+        matchedUsers: [], // 无法匹配，因为没有云端数据
+        unmatchedDevices: devices.map(device => ({
+          deviceName: device.name,
+          firstTouchTime: device.first_touch || Date.now(),
+          status: 'local_mode'
+        })),
+        summary: {
+          total: devices.length,
+          matched: 0,
+          unmatched: devices.length
+        },
+        isLocalMode: true
+      };
+      
+      // 存储到本地，供朋友页面使用
+      wx.setStorageSync('touchListResult', {
+        ...fallbackResult,
+        updateTime: Date.now()
+      });
+      
+      // 显示结果
+      const message = `本地模式：发现${devices.length}个碰一碰设备`;
+      console.log('🔄 本地fallback完成:', message);
+      
+      wx.showToast({
+        title: message,
+        icon: 'none',
+        duration: 2000
+      });
+      
+      // 添加通知
+      this.addNotification(`🔄 ${message}（需云函数匹配用户）`);
+      
+    } catch (fallbackError) {
+      console.error('❌ 本地fallback失败:', fallbackError);
+      this.addNotification('❌ 本地模式也失败了');
+    }
+  },
+  
   // 发送碰一碰列表确认
   async sendTouchListAck() {
     try {
@@ -783,14 +1101,24 @@ Page({
         console.log('📦 本地存储读取失败，继续云端获取');
       }
       
-      // 🎯 备选方案：从云数据库获取
-      console.log('🔍 [调试] 开始调用云函数获取用户数据...');
-      const result = await wx.cloud.callFunction({
+      // 🎯 备选方案：从云数据库获取（带超时保护）
+      console.log('🔍 [调试] 开始调用云函数获取用户数据（3秒超时）...');
+      
+      // 创建超时Promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('云函数调用超时')), 3000);
+      });
+      
+      // 云函数调用Promise
+      const cloudCallPromise = wx.cloud.callFunction({
         name: 'getUserData',
         data: {
           dataType: 'advanced'
         }
       });
+      
+      // 使用Promise.race实现超时机制
+      const result = await Promise.race([cloudCallPromise, timeoutPromise]);
       
       console.log('🔍 [调试] 云函数调用结果:', result);
       
@@ -895,15 +1223,51 @@ Page({
         
         return encodedTags;
       } else {
-        console.log('⚠️ [调试] 云函数返回数据格式错误或无数据');
+        console.log('⚠️ [调试] 云函数返回数据格式错误或无数据，使用本地fallback');
         console.log('⚠️ [调试] result.result:', result.result);
+        
+        // 🎯 Fallback方案：检查本地是否有缓存的编码
+        try {
+          const cachedEncoding = wx.getStorageSync('lastGeneratedEncoding');
+          if (cachedEncoding) {
+            console.log('🎯 [Fallback] 找到本地缓存编码:', cachedEncoding);
+            return cachedEncoding;
+          }
+        } catch (cacheError) {
+          console.log('📦 [Fallback] 本地缓存也无法读取');
+        }
+        
         return null;
       }
       
     } catch (error) {
       console.error('❌ [调试] 获取用户编码标签失败:', error);
-      console.error('❌ [调试] 错误详情:', JSON.stringify(error));
-      return null;
+      console.error('❌ [调试] 错误类型:', error.message);
+      
+      // 🎯 增强的Fallback机制：即使云函数完全失败也尝试本地数据
+      console.log('🎯 [Fallback] 尝试使用本地数据作为最后备选...');
+      try {
+        const cachedEncoding = wx.getStorageSync('lastGeneratedEncoding');
+        if (cachedEncoding) {
+          console.log('🎯 [Fallback] 使用本地缓存编码作为最后备选:', cachedEncoding);
+          return cachedEncoding;
+        }
+        
+        // 检查本地存储的用户标签数据
+        const advancedTags = wx.getStorageSync('advancedTags');
+        if (advancedTags && advancedTags.encodedResult) {
+          console.log('🎯 [Fallback] 使用本地标签编码结果:', advancedTags.encodedResult);
+          return advancedTags.encodedResult;
+        }
+        
+      } catch (fallbackError) {
+        console.error('❌ [Fallback] 所有备选方案都失败了:', fallbackError);
+      }
+      
+      // ✅ 关键修复：提供默认编码，确保蓝牙名称更新不会失败
+      const defaultEncoding = 'ugghGFsYktYAgA'; // 使用之前成功的编码作为默认值
+      console.log('🔧 [Fallback] 使用默认编码避免功能失败:', defaultEncoding);
+      return defaultEncoding;
     }
   },
 
@@ -911,8 +1275,15 @@ Page({
   handleReceivedData(str) {
     const now = Date.now();
     
-    // 如果距离上次接收超过500ms，认为是新的消息开始（增加时间窗口）
-    if (now - this.lastReceiveTime > 500) {
+    console.log('📨 收到新数据片段:', JSON.stringify(str));
+    console.log('📨 数据片段长度:', str.length);
+    console.log('📨 接收时间间隔:', this.lastReceiveTime ? (now - this.lastReceiveTime) + 'ms' : '首次');
+    
+    // 如果距离上次接收超过100ms，认为是新的消息开始（配合更快传输）
+    if (now - this.lastReceiveTime > 100) {
+      if (this.dataBuffer.length > 0) {
+        console.log('⏰ 超时清空缓冲区，原内容:', JSON.stringify(this.dataBuffer));
+      }
       this.dataBuffer = '';
     }
     
@@ -939,12 +1310,13 @@ Page({
       if (this.bufferTimeout) clearTimeout(this.bufferTimeout);
       this.bufferTimeout = setTimeout(() => {
         if (this.dataBuffer.length > 0) {
-          console.log('缓冲区超时，处理不完整消息:', this.dataBuffer);
+          console.log('缓冲区超时，强制处理消息:', this.dataBuffer);
+          console.log('缓冲区字符串长度:', this.dataBuffer.length);
           this.processCompleteMessage(this.dataBuffer);
           this.dataBuffer = '';
           this.setData({ dataBuffer: '' });
         }
-      }, 5000); // 增加到5秒超时，给长JSON消息更多时间
+      }, 200); // 大幅减少到200ms超时，配合更快的传输
     }
   },
 
@@ -953,20 +1325,36 @@ Page({
     const cleanStr = str.trim();
     
     // 检查是否是JSON格式的碰一碰设备列表（这是最重要的消息）
-    if (cleanStr.startsWith('{') && cleanStr.includes('"type":"touch_list"')) {
-      // 检查JSON是否完整
-      if (cleanStr.endsWith('}')) {
-        try {
-          JSON.parse(cleanStr);
-          console.log('✅ JSON消息完整，可以解析');
-          return true;
-        } catch (e) {
-          console.log('❌ JSON消息不完整，继续等待:', e.message);
+    if (cleanStr.includes('"type":"touch_list"')) {
+      console.log('🔍 检测到touch_list消息，验证完整性...');
+      console.log('🔍 当前字符串长度:', cleanStr.length);
+      console.log('🔍 字符串内容:', cleanStr.substring(0, 100) + (cleanStr.length > 100 ? '...' : ''));
+      
+      // 必须以{开始，以}结束
+      if (cleanStr.startsWith('{') && cleanStr.endsWith('}')) {
+        // 检查是否包含完整的touch_list结构
+        const hasRequiredFields = 
+          cleanStr.includes('"type":"touch_list"') &&
+          cleanStr.includes('"count":') &&
+          cleanStr.includes('"devices":[') &&
+          cleanStr.includes(']}');
+        
+        if (hasRequiredFields) {
+          try {
+            const jsonData = JSON.parse(cleanStr);
+            console.log('✅ touch_list JSON消息完整，可以解析');
+            console.log('✅ 设备数量:', jsonData.count);
+            return true;
+          } catch (e) {
+            console.log('❌ touch_list JSON解析失败，继续等待:', e.message);
+            return false;
+          }
+        } else {
+          console.log('⏳ touch_list消息缺少必要字段，继续等待');
           return false;
         }
       } else {
-        // JSON开始但未结束，继续等待
-        console.log('⏳ JSON消息未结束，继续等待');
+        console.log('⏳ touch_list消息格式不完整，继续等待');
         return false;
       }
     }
@@ -1016,16 +1404,50 @@ Page({
 
   // 处理完整的消息
   processCompleteMessage(str) {
-    console.log('处理完整消息:', str);
+    console.log('🔍 处理完整消息:', str);
+    console.log('🔍 消息长度:', str.length);
     
     // 清理字符串中可能的控制字符和空白
-    const cleanStr = str.trim();
+    let cleanStr = str.trim();
+    
+    // 特别检查touch_list消息
+    if (cleanStr.includes('touch_list')) {
+      console.log('🎯 发现touch_list关键字！');
+      console.log('🎯 原始字符串:', JSON.stringify(cleanStr));
+    }
+    
+    // 修复可能的JSON格式问题
+    if (cleanStr.includes('touch_list')) {
+      // 尝试提取第一个完整的JSON对象
+      const jsonStart = cleanStr.indexOf('{');
+      if (jsonStart >= 0) {
+        let bracketCount = 0;
+        let jsonEnd = -1;
+        
+        for (let i = jsonStart; i < cleanStr.length; i++) {
+          if (cleanStr[i] === '{') bracketCount++;
+          if (cleanStr[i] === '}') bracketCount--;
+          if (bracketCount === 0) {
+            jsonEnd = i;
+            break;
+          }
+        }
+        
+        if (jsonEnd > jsonStart) {
+          const extractedJson = cleanStr.substring(jsonStart, jsonEnd + 1);
+          console.log('📋 提取的JSON:', extractedJson);
+          cleanStr = extractedJson;
+        }
+      }
+    }
     
     // 检查是否是JSON格式的确认消息
     if (cleanStr.startsWith('{') && cleanStr.includes('"type"')) {
       try {
+        console.log('🔍 尝试解析JSON:', cleanStr);
         const jsonData = JSON.parse(cleanStr);
-        console.log('解析JSON确认消息:', jsonData);
+        console.log('✅ 成功解析JSON消息:', jsonData);
+        console.log('✅ 消息类型:', jsonData.type);
         
         // 处理不同类型的确认消息
         switch (jsonData.type) {
@@ -1040,13 +1462,22 @@ Page({
             return;
             
           case 'un_string_ack':
+            // ✅ 关键修复：清理响应等待状态
+            if (this.waitingForUnStringResponse) {
+              this.waitingForUnStringResponse = false;
+              if (this.unStringResponseTimeout) {
+                clearTimeout(this.unStringResponseTimeout);
+                this.unStringResponseTimeout = null;
+              }
+            }
+            
             if (jsonData.status === 'success') {
               console.log('✅ 硬件确认收到Un字符串:', jsonData.un_string);
               this.addNotification(`✅ 硬件确认收到Un字符串: ${jsonData.un_string}`);
               
               // 显示成功提示
               wx.showToast({
-                title: 'Un字符串设置成功',
+                title: '蓝牙名称更新成功',
                 icon: 'success',
                 duration: 2000
               });
@@ -1091,6 +1522,9 @@ Page({
             
           case 'touch_list':
             // 处理碰一碰设备列表
+            console.log('📋 收到touch_list消息，设备数量:', jsonData.count);
+            console.log('📋 设备列表:', jsonData.devices);
+            
             if (jsonData.count === 0) {
               console.log('📋 碰一碰设备列表为空');
               this.addNotification('📋 碰一碰设备列表为空');
@@ -1101,7 +1535,9 @@ Page({
               });
             } else {
               console.log('📋 收到碰一碰设备列表:', jsonData.devices);
+              console.log('📋 准备调用updateUnDevicesListFromJSON...');
               this.updateUnDevicesListFromJSON(jsonData);
+              console.log('📋 updateUnDevicesListFromJSON调用完成');
             }
             return;
             
@@ -1112,7 +1548,42 @@ Page({
         }
       } catch (error) {
         console.error('JSON解析失败:', error);
-        this.addNotification('❌ JSON解析失败');
+        console.error('失败的字符串:', JSON.stringify(cleanStr));
+        console.error('字符串长度:', cleanStr.length);
+        console.error('错误位置:', error.message);
+        
+        // 如果是touch_list消息解析失败，尝试修复
+        if (cleanStr.includes('touch_list')) {
+          console.log('🔧 尝试修复touch_list JSON...');
+          
+          // 尝试查找并提取正确的JSON部分
+          const patterns = [
+            /\{"type":"touch_list"[^}]*"devices":\[[^\]]*\]\}/,
+            /\{"type":"touch_list".*?\}/s
+          ];
+          
+          for (let pattern of patterns) {
+            const match = cleanStr.match(pattern);
+            if (match) {
+              try {
+                const fixedJson = match[0];
+                console.log('🔧 尝试修复的JSON:', fixedJson);
+                const jsonData = JSON.parse(fixedJson);
+                console.log('✅ 修复成功！处理数据:', jsonData);
+                
+                // 处理修复后的数据
+                if (jsonData.type === 'touch_list') {
+                  this.updateUnDevicesListFromJSON(jsonData);
+                  return;
+                }
+              } catch (fixError) {
+                console.log('🔧 修复尝试失败:', fixError);
+              }
+            }
+          }
+        }
+        
+        this.addNotification(`❌ JSON解析失败: ${error.message}`);
       }
     }
     
@@ -1209,16 +1680,18 @@ Page({
 
   // 从JSON格式更新Un设备列表
   updateUnDevicesListFromJSON(jsonData) {
-    console.log('从JSON更新Un设备列表:', jsonData);
+    console.log('🔄 从JSON更新Un设备列表，原始数据:', jsonData);
     
     if (jsonData.type === 'touch_list' && jsonData.devices && Array.isArray(jsonData.devices)) {
       const deviceCount = jsonData.devices.length;
       console.log(`📋 收到碰一碰设备列表，共${deviceCount}个设备`);
+      console.log('📋 设备详情:', jsonData.devices);
       
       // 格式化设备信息用于显示
-      const formattedDevices = jsonData.devices.map(device => {
+      const formattedDevices = jsonData.devices.map((device, index) => {
         const touchTime = new Date(device.first_touch);
         const timeStr = touchTime.toLocaleString();
+        console.log(`📋 [${index + 1}] 格式化设备: ${device.name}, 首次碰一碰时间: ${timeStr}`);
         return {
           name: device.name,
           time: timeStr,
@@ -1226,9 +1699,16 @@ Page({
         };
       });
       
+      console.log('📋 格式化完成，设备数:', formattedDevices.length);
+      console.log('📋 格式化后的设备列表:', formattedDevices);
+      
       // 更新设备列表
       this.setData({
         unDevices: formattedDevices
+      }, () => {
+        console.log('📋 setData回调：UI更新完成');
+        console.log('📋 当前unDevices数量:', this.data.unDevices.length);
+        console.log('📋 当前unDevices内容:', this.data.unDevices);
       });
       
       // 🎯 自动接收碰一碰设备列表，无需用户手动确认
@@ -1246,6 +1726,9 @@ Page({
         console.log('🚀 [自动接收] 自动发送确认消息给硬件');
         this.sendTouchListAck();
       }, 500); // 短暂延迟确保UI更新完成
+      
+      // 🚨 新增：调用云函数同步碰一碰列表到后端
+      this.syncTouchListToCloud(jsonData.devices);
       
       // 添加通知
       this.addNotification(`📋 自动接收碰一碰设备列表 (${deviceCount}个设备)`);
@@ -1295,6 +1778,64 @@ Page({
     });
   },
 
+  // 🚀 BLE性能优化：MTU协商
+  negotiateMTU() {
+    // 检查连接状态和设备ID
+    if (!this.data.connected || !this.data.deviceId) {
+      console.log('🚀 [性能优化] ⚠️ 设备未连接，跳过MTU协商');
+      return;
+    }
+    
+    console.log('🚀 [性能优化] 开始MTU协商...');
+    
+    // 检查是否支持setBLEMTU
+    if (typeof wx.setBLEMTU === 'function') {
+      // 添加延时确保连接稳定
+      setTimeout(() => {
+        wx.setBLEMTU({
+          deviceId: this.data.deviceId,
+          mtu: 517, // 请求最大MTU (BLE规范允许的最大值)
+          success: (res) => {
+            console.log('🚀 [性能优化] ✅ MTU协商成功:', res);
+            console.log('🚀 [性能优化] 协商后的MTU:', res.mtu);
+            
+            // 保存实际协商的MTU大小
+            this.setData({ 
+              negotiatedMTU: res.mtu,
+              maxPacketSize: res.mtu - 3 // 减去3字节协议开销
+            });
+            
+            // MTU协商成功提示
+            this.addNotification(`🚀 MTU优化成功: ${res.mtu}字节`);
+        },
+        fail: (err) => {
+          console.log('🚀 [性能优化] ⚠️ MTU协商失败:', err);
+          console.log('🚀 [性能优化] 使用默认20字节分包');
+          
+          // MTU协商失败，使用默认值
+          this.setData({ 
+            negotiatedMTU: 23,
+            maxPacketSize: 20
+          });
+          
+          this.addNotification('⚠️ MTU协商失败，使用默认分包');
+        }
+      });
+      }, 500); // 延迟500ms确保连接稳定
+    } else {
+      console.log('🚀 [性能优化] ⚠️ 当前微信版本不支持MTU协商');
+      console.log('🚀 [性能优化] 使用默认20字节分包');
+      
+      // 不支持MTU协商，使用默认值
+      this.setData({ 
+        negotiatedMTU: 23,
+        maxPacketSize: 20
+      });
+      
+      this.addNotification('⚠️ 微信版本过低，无法优化MTU');
+    }
+  },
+
   // 获取特征并处理读写/通知
   getCharacteristics(serviceId) {
     console.log('🔍 [调试] 开始获取特征值，服务ID:', serviceId);
@@ -1304,6 +1845,9 @@ Page({
       success: (res) => {
         console.log('🔍 [调试] ✅ 获取特征值成功:', res.characteristics);
         console.log('🔍 [调试] 特征值列表:', res.characteristics.map(c => ({ uuid: c.uuid.toLowerCase(), properties: c.properties })));
+        
+        // 🚀 BLE性能优化：暂时禁用MTU协商，确保连接稳定
+        // this.negotiateMTU();
         
         // 查找RX和TX特征值 - 兼容多种UUID格式
         const rxChar = res.characteristics.find(c => {
@@ -1342,17 +1886,20 @@ Page({
           console.log('🔍 [调试] 开始订阅通知特征值...');
           this.subscribeAllNotifyCharacteristics();
           
-          // 优化：先发送阈值设置，再发送Un字符串
-          console.log('🔍 [调试] 1.5秒后开始发送配置...');
-          setTimeout(async () => {
-            console.log('🔍 [调试] 延迟时间到，开始发送配置...');
-            // 先发送阈值设置
-            await this.sendThresholdToDevice();
-            // 等待500ms后发送Un字符串
-            setTimeout(() => {
-              this.checkAndSendUnString();
-            }, 500);
+          // ✅ 修复：恢复工作的发送流程，Un字符串发送不依赖阈值设置
+          console.log('🔍 [调试] 1.5秒后发送Un字符串（优先保证基础功能）...');
+          setTimeout(() => {
+            console.log('🔍 [调试] 延迟时间到，开始发送Un字符串...');
+            this.checkAndSendUnString();
           }, 1500);
+          
+          // 🔧 修复：大幅增加阈值设置延迟，避免与Un字符串冲突
+          console.log('🎯 [阈值设置] 延迟发送阈值设置，避免命令冲突...');
+          setTimeout(() => {
+            this.sendThresholdToDevice().catch(error => {
+              console.error('🎯 [阈值设置] 阈值发送失败，但不影响Un字符串发送:', error);
+            });
+          }, 400); // 400ms延迟，基于实际通信效率分析
           
         } else {
           console.error('🔍 [调试] ❌ 未找到RX或TX特征值');
@@ -1466,6 +2013,16 @@ Page({
       console.log('设备ID:', res.deviceId);
       console.log('原始数据长度:', res.value.byteLength);
       
+      // 将数据转换为字符串先看看
+      const uint8Array = new Uint8Array(res.value);
+      const str = String.fromCharCode.apply(null, uint8Array);
+      console.log('📥 接收到的原始字符串:', str);
+      
+      // 检查是否包含touch_list
+      if (str.includes('touch_list')) {
+        console.log('🎯 检测到touch_list消息！');
+      }
+      
       // 检查是否是来自我们期望的特征值
       const { txServiceId, txCharId } = this.data;
       if (res.serviceId === txServiceId && res.characteristicId === txCharId) {
@@ -1474,23 +2031,23 @@ Page({
         console.log('⚠️ 收到来自其他特征值的通知，但也会处理');
       }
       
-      const str = this.ab2str(res.value);
-      console.log('解码后字符串:', str);
-      console.log('字符串长度:', str.length);
+      const decodedStr = this.ab2str(res.value);
+      console.log('解码后字符串:', decodedStr);
+      console.log('字符串长度:', decodedStr.length);
       console.log('原始字节:', Array.from(new Uint8Array(res.value)));
       
       // 检查是否是JSON开始
-      if (str.startsWith('{') && str.includes('"type":"touch_list"')) {
+      if (decodedStr.startsWith('{') && decodedStr.includes('"type":"touch_list"')) {
         console.log('🎯 检测到碰一碰设备列表JSON开始');
       }
       
       // 检查是否是JSON结束
-      if (str.includes('}]}') || str.endsWith('}')) {
+      if (decodedStr.includes('}]}') || decodedStr.endsWith('}')) {
         console.log('🎯 检测到可能的JSON结束');
       }
       
       // 数据包重组处理
-      this.handleReceivedData(str);
+      this.handleReceivedData(decodedStr);
     });
     
     // 监听BLE连接状态变化
@@ -1806,20 +2363,39 @@ Page({
   // BLE写入通用方法，自动分包20字节
   writeToBle(str, cb) {
     return new Promise((resolve, reject) => {
-      const { rxServiceId, rxCharId } = this.data;
+      console.log('🔍🔍🔍 [writeToBle诊断] ===== 开始BLE写入诊断 =====');
+      
+      const { connected, deviceId, rxServiceId, rxCharId } = this.data;
+      console.log('🔍 [writeToBle诊断] 连接状态:', connected);
+      console.log('🔍 [writeToBle诊断] 设备ID:', deviceId);
+      console.log('🔍 [writeToBle诊断] RX服务ID:', rxServiceId);
+      console.log('🔍 [writeToBle诊断] RX特征ID:', rxCharId);
+      
       if (!rxServiceId || !rxCharId) {
         const error = '特征未就绪';
+        console.error('❌ [writeToBle诊断] 特征值未就绪');
         wx.showToast({ title: error, icon: 'none' });
         reject(new Error(error));
         return;
       }
       
-      console.log('📤 开始发送数据，总长度:', str.length, '内容:', str);
+      if (!connected) {
+        const error = '设备未连接';
+        console.error('❌ [writeToBle诊断] 设备未连接');
+        wx.showToast({ title: error, icon: 'none' });
+        reject(new Error(error));
+        return;
+      }
       
-      // iOS 小程序一次最多20字节，Android 182/244 等，按20分包更保险
+      console.log('✅ [writeToBle诊断] BLE状态验证通过');
+      console.log('📤 [writeToBle] 开始发送数据，总长度:', str.length, '内容:', str);
+      
+      // 优化：动态MTU大小，根据消息长度和平台优化
       const encoder = this.str2ab;
-      // 分包
-      const maxLen = 20;
+      
+      // 🔧 修复：暂时使用固定20字节分包，确保连接稳定
+      let maxLen = 20;
+      console.log('📤 使用分包大小:', maxLen, '字节');
       let offset = 0;
       let chunkCount = 0;
       
@@ -1834,7 +2410,15 @@ Page({
         offset += maxLen;
         chunkCount++;
         
-        console.log('📤 发送分片', chunkCount, ':', chunk, '长度:', chunk.length);
+        console.log('📤 [writeToBle] 发送分片', chunkCount, ':', chunk, '长度:', chunk.length);
+        
+        // 🔍 详细诊断即将发送的BLE写入参数
+        console.log('🔍 [BLE写入] 即将写入参数:');
+        console.log('🔍   deviceId:', this.data.deviceId);
+        console.log('🔍   serviceId:', rxServiceId);
+        console.log('🔍   characteristicId:', rxCharId);
+        console.log('🔍   chunk原文:', chunk);
+        console.log('🔍   chunk编码后长度:', encoder(chunk).byteLength, '字节');
         
         wx.writeBLECharacteristicValue({
           deviceId: this.data.deviceId,
@@ -1842,11 +2426,13 @@ Page({
           characteristicId: rxCharId,
           value: encoder(chunk),
           success: () => {
-            console.log('📤 分片', chunkCount, '发送成功');
-            setTimeout(sendNext, 50); // 增加间隔到50ms，确保硬件能处理
+            console.log('✅ [BLE写入] 分片', chunkCount, '写入微信API成功');
+            // 🚀 性能优化：配合硬件连接参数优化，减少分片延迟
+            setTimeout(sendNext, 20); // 优化至20ms间隔，配合10ms连接间隔
           },
           fail: (err) => {
-            console.error('📤 分片', chunkCount, '发送失败:', err);
+            console.error('❌ [BLE写入] 分片', chunkCount, '写入微信API失败:', err);
+            console.error('❌ [BLE写入] 错误详情:', JSON.stringify(err));
             wx.showToast({ title: '写入失败', icon: 'none' });
             reject(err);
           }

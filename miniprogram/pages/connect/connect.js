@@ -46,6 +46,10 @@ Page({
     userCards: [],          // 用户名片数据
     isLoading: false,       // 是否正在加载
     loadError: '',          // 加载错误信息
+    // 碰一碰相关数据
+    touchListResult: null,  // 碰一碰匹配结果
+    matchedFriends: [],     // 已匹配的朋友
+    unmatchedDevices: [],   // 未匹配的设备
     notes: [                // 注释数据
       { id: 1, title: '时间的使用者', content: '探索时间管理与生活节奏的艺术' },
       { id: 2, title: '感官交界', content: '体验多感官融合的奇妙世界' },
@@ -116,6 +120,9 @@ Page({
       scrollOffset: -200 // 设置初始滚动位置，与偏移量保持一致
     });
     
+    // 加载碰一碰结果
+    this.loadTouchListResult();
+    
     this.initUserCards();
     this.generateStars();
     this.initAnimation();
@@ -141,6 +148,10 @@ Page({
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().updateSelected('/pages/connect/connect');
     }
+    
+    // 每次显示页面时重新加载碰一碰结果
+    console.log('[ConnectPage] onShow - 重新加载碰一碰数据');
+    this.loadTouchListResult();
   },
 
   /**
@@ -840,10 +851,20 @@ Page({
   showUserDetail: async function(userData) {
     console.log('[ConnectPage] 显示用户详细信息:', userData);
     
+    // 检查是否是未匹配的设备
+    if (!userData) {
+      wx.showToast({
+        title: '该设备用户未注册',
+        icon: 'none',
+        duration: 2000
+      });
+      return;
+    }
+    
     // 构建用户详细信息
     const userDetail = {
-      name: userData.advancedTags?.displayName || userData.userInfo?.nickName || '未知用户',
-      avatarUrl: userData.userInfo?.avatarUrl || '/images/default-avatar.jpg',
+      name: userData.displayName || userData.advancedTags?.displayName || userData.userInfo?.nickName || '未知用户',
+      avatarUrl: userData.avatarUrl || userData.userInfo?.avatarUrl || '/images/default-avatar.jpg',
       professionalTags: userData.advancedTags?.professionalTags || [],
       interestTags: userData.advancedTags?.interestTags || [],
       personalityTags: userData.advancedTags?.personalityTags || [],
@@ -851,8 +872,12 @@ Page({
       contactInfo: userData.advancedTags?.contactInfo || '',
       personalTagsText: userData.advancedTags?.personalTagsText || '',
       threshold: userData.advancedTags?.threshold || 3,
-      totalTags: userData.advancedTags?.totalTags || 0,
-      qrCodeUrl: userData.advancedTags?.qrCodeUrl || ''
+      totalTags: userData.totalTags || userData.advancedTags?.totalTags || 0,
+      qrCodeUrl: userData.advancedTags?.qrCodeUrl || '',
+      // 碰一碰相关信息
+      matchScore: userData.matchScore,
+      matchedTags: userData.matchedTags,
+      firstTouchTime: userData.firstTouchTime
     };
     
     // 处理二维码URL（如果是云存储文件ID）
@@ -1420,6 +1445,37 @@ Page({
   },
 
   /**
+   * 加载碰一碰匹配结果
+   */
+  loadTouchListResult: function() {
+    try {
+      const result = wx.getStorageSync('touchListResult');
+      console.log('[ConnectPage] 尝试加载碰一碰结果，存储中的数据:', result);
+      
+      if (result) {
+        console.log('[ConnectPage] 找到碰一碰结果:', {
+          matchedUsers: result.matchedUsers?.length || 0,
+          unmatchedDevices: result.unmatchedDevices?.length || 0,
+          updateTime: result.updateTime
+        });
+        
+        this.setData({
+          touchListResult: result,
+          matchedFriends: result.matchedUsers || [],
+          unmatchedDevices: result.unmatchedDevices || []
+        });
+        
+        // 立即刷新显示
+        this.initUserCards();
+      } else {
+        console.log('[ConnectPage] 未找到碰一碰结果，显示空状态');
+      }
+    } catch (error) {
+      console.error('[ConnectPage] 加载碰一碰结果失败:', error);
+    }
+  },
+
+  /**
    * 初始化用户名片卡片
    */
   initUserCards: async function() {
@@ -1427,45 +1483,133 @@ Page({
     this.setData({ isLoading: true, loadError: '' });
 
     try {
-      // 从users_adv集合获取所有用户数据
-      const users = await this.getUsersFromUsersAdv();
+      // 优先显示碰一碰的朋友
+      const { matchedFriends, unmatchedDevices } = this.data;
+      let displayUsers = [];
       
-      if (users && users.length > 0) {
-        // 转换为卡片格式
-        const userCards = users.map((user, index) => ({
-          id: index + 1,
-          openid: user.openid,
-          name: user.advancedTags?.displayName || user.userInfo?.nickName || '未知用户',
-          subtitle: user.userInfo?.nickName || '',
-          description: this.generateUserDescription(user),
-          theme: user.advancedTags?.displayName || '用户名片',
+      if (matchedFriends.length > 0 || unmatchedDevices.length > 0) {
+        console.log('[ConnectPage] 使用碰一碰数据创建卡片');
+        
+        // 先添加已匹配的朋友
+        displayUsers = matchedFriends.map((friend, index) => ({
+          id: `matched_${index}`,
+          openid: friend.openid,
+          name: friend.displayName || '未知用户',
+          subtitle: `${friend.matchScore}个共同标签`,
+          description: friend.matchedTags ? friend.matchedTags.slice(0, 3).join(' · ') : '暂无标签',
+          theme: '碰一碰朋友',
           color: this.getUserThemeColor(index),
-          avatarUrl: user.userInfo?.avatarUrl || '/images/default-avatar.jpg',
-          userData: user, // 保存完整的用户数据
-          encodedTags: user.encodedTags || '',
-          totalTags: user.advancedTags?.totalTags || 0,
-          threshold: user.advancedTags?.threshold || 3,
+          avatarUrl: friend.avatarUrl || '/images/default-avatar.jpg',
+          userData: friend,
+          isMatched: true,
+          matchScore: friend.matchScore,
+          matchedTags: friend.matchedTags,
+          totalTags: friend.totalTags || 0,
+          firstTouchTime: friend.firstTouchTime,
           details: {
-            concept: this.generateUserDescription(user),
-            features: this.getUserTags(user),
-            philosophy: user.advancedTags?.personalTagsText || '暂无个性标签'
+            concept: `匹配度: ${friend.matchScore}个共同标签`,
+            features: friend.matchedTags || [],
+            philosophy: '通过碰一碰认识的朋友'
           }
         }));
-
-        console.log('[ConnectPage] 用户名片卡片初始化成功:', userCards.length, '个用户');
         
-        this.setData({
-          userCards: userCards,
-          isLoading: false
+        // 再添加未匹配的设备 - 优化显示逻辑
+        const unmatchedCards = unmatchedDevices.map((device, index) => {
+          const deviceInfo = this.analyzeUnmatchedDevice(device);
+          
+          return {
+            id: `unmatched_${index}`,
+            openid: null,
+            name: deviceInfo.displayName,
+            subtitle: deviceInfo.subtitle,
+            description: deviceInfo.description,
+            theme: deviceInfo.theme,
+            color: deviceInfo.color,
+            avatarUrl: '/images/default-device.jpg',
+            userData: null,
+            isMatched: false,
+            deviceName: device.deviceName,
+            firstTouchTime: device.firstTouchTime,
+            matchScore: deviceInfo.matchScore,
+            matchedTags: deviceInfo.matchedTags,
+            totalTags: deviceInfo.totalTags,
+            details: {
+              concept: deviceInfo.concept,
+              features: deviceInfo.features,
+              philosophy: deviceInfo.philosophy
+            }
+          };
         });
-      } else {
-        console.log('[ConnectPage] 未找到用户数据');
-        this.setData({
-          userCards: [],
-          isLoading: false,
-          loadError: '暂无用户数据'
-        });
+        
+        displayUsers = [...displayUsers, ...unmatchedCards];
       }
+      
+      // 检查是否有未匹配的设备需要特殊显示（本地模式等）
+      if (displayUsers.length === 0 && unmatchedDevices.length > 0) {
+        console.log('[ConnectPage] 显示未匹配设备');
+        
+        // 显示未匹配的设备，包括本地模式设备
+        const unmatchedCards = unmatchedDevices.map((device, index) => {
+          const deviceInfo = this.analyzeUnmatchedDevice(device);
+          
+          return {
+            id: `unmatched_${index}`,
+            openid: null,
+            name: deviceInfo.displayName,
+            subtitle: deviceInfo.subtitle,
+            description: deviceInfo.description,
+            theme: deviceInfo.theme,
+            color: deviceInfo.color,
+            avatarUrl: '/images/default-device.jpg',
+            userData: null,
+            isMatched: false,
+            deviceName: device.deviceName,
+            firstTouchTime: device.firstTouchTime,
+            matchScore: deviceInfo.matchScore,
+            matchedTags: deviceInfo.matchedTags,
+            totalTags: deviceInfo.totalTags,
+            isLocalMode: device.status === 'local_mode',
+            details: {
+              concept: deviceInfo.concept,
+              features: deviceInfo.features,
+              philosophy: deviceInfo.philosophy
+            }
+          };
+        });
+        
+        displayUsers = [...displayUsers, ...unmatchedCards];
+      }
+      
+      // 如果完全没有数据，显示提示信息
+      if (displayUsers.length === 0) {
+        console.log('[ConnectPage] 无任何碰一碰数据，显示空状态');
+        // 创建一个提示卡片
+        displayUsers = [{
+          id: 'empty',
+          openid: null,
+          name: '开始碰一碰',
+          subtitle: '暂无朋友',
+          description: '使用设备与朋友碰一碰，即可在这里看到匹配的朋友',
+          theme: '提示',
+          color: '#999999',
+          avatarUrl: '/images/default-avatar.jpg',
+          userData: null,
+          isMatched: false,
+          isEmpty: true,
+          details: {
+            concept: '使用UnionLink设备与朋友碰一碰',
+            features: ['自动记录碰一碰的朋友', '显示标签匹配度', '发现志同道合的伙伴'],
+            philosophy: '通过碰一碰，让社交更简单'
+          }
+        }];
+      }
+      
+      console.log('[ConnectPage] 用户名片卡片初始化成功:', displayUsers.length, '个用户');
+      
+      this.setData({
+        userCards: displayUsers,
+        isLoading: false
+      });
     } catch (error) {
       console.error('[ConnectPage] 初始化用户名片失败:', error);
       this.setData({
@@ -2938,5 +3082,93 @@ ${JSON.stringify(tribeMembers, null, 2)}
         isPaired: false
       }
     });
+  },
+
+  /**
+   * 分析未匹配设备的信息
+   */
+  analyzeUnmatchedDevice(device) {
+    const deviceName = device.deviceName || '未知设备';
+    
+    // 分析设备名称是否是Un编码的标签
+    if (deviceName.startsWith('Un') && deviceName.length === 16) {
+      console.log('[ConnectPage] 分析Un设备标签:', deviceName);
+      
+      try {
+        // 解码设备的标签信息
+        const deviceTags = this.decodeUnDeviceName(deviceName);
+        const myTags = wx.getStorageSync('myTags') || [];
+        
+        if (deviceTags && deviceTags.length > 0) {
+          // 计算匹配度
+          const matchedTags = myTags.filter(tag => deviceTags.includes(tag));
+          const matchScore = matchedTags.length;
+          
+          return {
+            displayName: `Un用户 (${deviceTags.length}个标签)`,
+            subtitle: matchScore > 0 ? `${matchScore}个共同标签` : '无共同标签',
+            description: matchScore > 0 ? 
+              `共同兴趣: ${matchedTags.slice(0, 3).join(' · ')}` : 
+              `TA的兴趣: ${deviceTags.slice(0, 3).join(' · ')}`,
+            theme: matchScore > 0 ? '潜在朋友' : '新朋友',
+            color: matchScore > 0 ? '#4CAF50' : '#2196F3',
+            matchScore: matchScore,
+            matchedTags: matchedTags,
+            totalTags: deviceTags.length,
+            concept: `标签匹配度: ${matchScore}/${deviceTags.length}`,
+            features: matchScore > 0 ? matchedTags : deviceTags.slice(0, 5),
+            philosophy: matchScore > 0 ? 
+              '你们有共同兴趣！邀请TA注册认识一下' : 
+              '发现新朋友！邀请TA注册扩展社交圈'
+          };
+        }
+      } catch (decodeError) {
+        console.warn('[ConnectPage] Un设备名称解码失败:', decodeError);
+      }
+    }
+    
+    // 本地模式或普通设备的默认处理
+    const isLocalMode = device.status === 'local_mode';
+    
+    return {
+      displayName: isLocalMode ? '本地模式设备' : (deviceName.length > 12 ? deviceName.substring(0, 12) + '...' : deviceName),
+      subtitle: isLocalMode ? '云函数未部署' : '未注册用户',
+      description: isLocalMode ? 
+        '等待云端服务部署后匹配用户信息' : 
+        '等待用户注册后显示详情',
+      theme: isLocalMode ? '本地设备' : '待连接设备',
+      color: isLocalMode ? '#ff9800' : '#999999',
+      matchScore: 0,
+      matchedTags: [],
+      totalTags: 0,
+      concept: isLocalMode ? '本地模式设备' : '未注册设备',
+      features: isLocalMode ? 
+        ['需要云函数支持', '等待服务端部署', '设备信息已记录'] :
+        ['等待注册'],
+      philosophy: isLocalMode ? 
+        '云函数部署后可匹配用户' : 
+        '邀请TA加入Unian社区'
+    };
+  },
+
+  /**
+   * 解码Un设备名称为标签
+   */
+  decodeUnDeviceName(deviceName) {
+    try {
+      // 移除"Un"前缀，获取14字符的编码部分
+      const encodedPart = deviceName.substring(2);
+      
+      // 这里需要实现与你的标签编码算法对应的解码逻辑
+      // 暂时返回示例数据，你需要根据实际编码算法修改
+      
+      // 示例：假设编码规则是base64编码的标签索引
+      // 实际实现需要根据你的编码算法
+      return ['编程', '音乐', '旅行', '摄影']; // 示例标签
+      
+    } catch (error) {
+      console.error('[ConnectPage] 设备名称解码失败:', error);
+      return [];
+    }
   }
 })

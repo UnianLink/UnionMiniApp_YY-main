@@ -1,5 +1,7 @@
 // 引入全局配置
 const Config = require('../../utils/config.js');
+// 引入标签主题配置
+const tagThemes = require('../../config/tagThemes.js');
 
 Page({
   data: {
@@ -78,6 +80,10 @@ Page({
       quirky: [] // 彩蛋标签选项
     },
     
+    // 标签主题相关
+    currentTheme: null, // 当前主题配置
+    themeCategories: [], // 主题分类
+    
     // 选择统计
     totalSelectedTags: 0,
     uploadedAvatarFileID: null,
@@ -97,7 +103,134 @@ Page({
     }
   },
 
+  /**
+   * 加载标签主题配置
+   */
+  loadTagTheme: function() {
+    console.log('[loadTagTheme] 加载标签主题配置');
+    
+    // 获取当前主题
+    const currentTheme = tagThemes.getCurrentTheme();
+    console.log('[loadTagTheme] 当前主题:', currentTheme.name);
+    
+    // 验证标签数量
+    if (!tagThemes.validateTagCount()) {
+      console.warn('[loadTagTheme] 标签数量验证警告');
+    }
+    
+    // 设置主题数据
+    this.setData({
+      currentTheme: currentTheme,
+      themeCategories: currentTheme.categories
+    });
+    
+    // 更新步骤配置以使用主题标签
+    this.updateStepsWithTheme(currentTheme);
+  },
+  
+  /**
+   * 使用主题更新步骤配置
+   */
+  updateStepsWithTheme: function(theme) {
+    console.log('[updateStepsWithTheme] 更新步骤配置');
+    
+    // 映射主题分类到步骤
+    const categoryMapping = {
+      'professional': 1,  // 专业领域 -> 步骤1
+      'genre': 1,        // 音乐流派 -> 步骤1
+      'anime_type': 1,   // 作品类型 -> 步骤1
+      'tech_field': 1,   // 技术领域 -> 步骤1
+      'art_form': 1,     // 艺术形式 -> 步骤1
+      
+      'interest': 2,     // 兴趣爱好 -> 步骤2
+      'instrument': 2,   // 乐器技能 -> 步骤2
+      'artist': 2,       // 喜爱艺人 -> 步骤2
+      'favorite_works': 2, // 喜爱作品 -> 步骤2
+      'programming': 2,  // 编程技能 -> 步骤2
+      'creative': 2,     // 创作领域 -> 步骤2
+      
+      'personality': 3,  // 性格特质 -> 步骤3
+      'festival': 3,     // 音乐节经历 -> 步骤3
+      'cosplay': 3,      // Cosplay相关 -> 步骤3
+      'innovation': 3,   // 创新方向 -> 步骤3
+      'art_style': 3,    // 艺术流派 -> 步骤3
+      
+      'quirky': 5,       // 个性彩蛋 -> 步骤5
+      'music_quirky': 5, // 音乐怪癖 -> 步骤5
+      'anime_quirky': 5, // 宅属性 -> 步骤5
+      'tech_quirky': 5,  // 极客属性 -> 步骤5
+      'art_quirky': 5,   // 艺术怪癖 -> 步骤5
+      
+      'acg_culture': 2   // 二次元文化 -> 步骤2（额外分类）
+    };
+    
+    // 清空现有标签选项
+    const newTagOptions = {
+      professional: [],
+      interest: [],
+      personality: [],
+      quirky: []
+    };
+    
+    // 根据主题分类填充标签选项
+    theme.categories.forEach(category => {
+      const step = categoryMapping[category.id];
+      
+      if (step === 1) {
+        // 专业领域类
+        newTagOptions.professional = newTagOptions.professional.concat(
+          category.tags.map(tag => ({
+            name: tag,
+            category: category.name,
+            color: category.color
+          }))
+        );
+      } else if (step === 2) {
+        // 兴趣爱好类
+        newTagOptions.interest = newTagOptions.interest.concat(
+          category.tags.map(tag => ({
+            name: tag,
+            category: category.name,
+            color: category.color
+          }))
+        );
+      } else if (step === 3) {
+        // 性格特质类
+        newTagOptions.personality = newTagOptions.personality.concat(
+          category.tags.map(tag => ({
+            name: tag,
+            category: category.name,
+            color: category.color
+          }))
+        );
+      } else if (step === 5) {
+        // 彩蛋类
+        newTagOptions.quirky = newTagOptions.quirky.concat(
+          category.tags.map(tag => ({
+            name: tag,
+            category: category.name,
+            color: category.color
+          }))
+        );
+      }
+    });
+    
+    // 更新标签选项
+    this.setData({
+      tagOptions: newTagOptions
+    });
+    
+    console.log('[updateStepsWithTheme] 标签选项已更新:', {
+      professional: newTagOptions.professional.length,
+      interest: newTagOptions.interest.length,
+      personality: newTagOptions.personality.length,
+      quirky: newTagOptions.quirky.length
+    });
+  },
+
   onLoad: function(options) {
+    // 加载标签主题配置
+    this.loadTagTheme();
     console.log('[Index] 页面加载 - 使用高级标签系统', options);
     
     // 检查是否是从connect页面跳转过来的
@@ -1536,5 +1669,68 @@ Page({
     this.setData({
       [`currentCategory.${step}`]: categoryName
     });
+  },
+  
+  /**
+   * 切换活动主题
+   */
+  switchTheme: function(themeName) {
+    console.log('[switchTheme] 切换主题:', themeName);
+    
+    if (tagThemes.setTheme(themeName)) {
+      // 重新加载主题
+      this.loadTagTheme();
+      
+      // 清空已选择的标签
+      this.setData({
+        advancedTags: {
+          professionalTags: [],
+          interestTags: [],
+          personalityTags: [],
+          quirkyTags: [],
+          threshold: 4,
+          displayName: '',
+          contactInfo: '',
+          personalTagsText: '',
+          qrCodeUrl: '',
+          photos: []
+        }
+      });
+      
+      wx.showToast({
+        title: `已切换到${this.data.currentTheme.name}`,
+        icon: 'success'
+      });
+    } else {
+      wx.showToast({
+        title: '主题切换失败',
+        icon: 'none'
+      });
+    }
+  },
+  
+  /**
+   * 预测LED灯光效果
+   */
+  predictLedEffect: function() {
+    const { advancedTags } = this.data;
+    
+    // 收集所有已选择的标签
+    const selectedTags = [
+      ...advancedTags.professionalTags,
+      ...advancedTags.interestTags,
+      ...advancedTags.personalityTags,
+      ...advancedTags.quirkyTags
+    ];
+    
+    if (selectedTags.length === 0) {
+      return '请先选择标签';
+    }
+    
+    // 预测LED效果
+    const effect = tagThemes.predictLedEffect(selectedTags);
+    console.log('[predictLedEffect] LED效果预测:', effect);
+    
+    return effect;
   }
 });

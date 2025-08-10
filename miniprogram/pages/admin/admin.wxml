@@ -1,0 +1,110 @@
+<!-- 管理员页面 - 主题配置 -->
+<view class="admin-container">
+  <!-- 顶部标题 -->
+  <view class="header">
+    <text class="title">活动主题管理</text>
+    <text class="subtitle">切换不同活动的标签主题配置</text>
+  </view>
+  
+  <!-- 权限检查 -->
+  <view wx:if="{{!isAdmin}}" class="no-auth">
+    <text>您没有管理员权限</text>
+  </view>
+  
+  <!-- 管理界面 -->
+  <view wx:else class="admin-content">
+    <!-- 当前主题信息 -->
+    <view class="current-theme-card">
+      <view class="card-header">
+        <text class="card-title">当前主题</text>
+        <view class="theme-badge">{{currentTheme}}</view>
+      </view>
+      <view class="theme-info">
+        <text class="theme-name">{{themeDetails.name}}</text>
+        <text class="theme-desc">{{themeDetails.description}}</text>
+      </view>
+      
+      <!-- 标签统计 -->
+      <view class="stats-section">
+        <view class="stat-item">
+          <text class="stat-value">{{tagStats.total}}</text>
+          <text class="stat-label">总标签数</text>
+        </view>
+        <view class="stat-item">
+          <text class="stat-value">{{tagStats.max}}</text>
+          <text class="stat-label">最大限制</text>
+        </view>
+        <view class="stat-item {{tagStats.total > tagStats.max ? 'warning' : ''}}">
+          <text class="stat-value">{{tagStats.total <= tagStats.max ? '正常' : '超限'}}</text>
+          <text class="stat-label">状态</text>
+        </view>
+      </view>
+    </view>
+    
+    <!-- 主题列表 -->
+    <view class="section">
+      <text class="section-title">可用主题</text>
+      <view class="theme-list">
+        <view class="theme-item {{item.isActive ? 'active' : ''}}" 
+              wx:for="{{themes}}" 
+              wx:key="id"
+              data-id="{{item.id}}"
+              bindtap="onThemeSelect">
+          <view class="theme-item-header">
+            <text class="theme-item-name">{{item.name}}</text>
+            <view wx:if="{{item.isActive}}" class="active-indicator">当前</view>
+          </view>
+          <text class="theme-item-desc">{{item.description}}</text>
+        </view>
+      </view>
+    </view>
+    
+    <!-- 分类详情 -->
+    <view class="section">
+      <text class="section-title">标签分类</text>
+      <view class="category-list">
+        <view class="category-item" 
+              wx:for="{{tagStats.categories}}" 
+              wx:for-index="name"
+              wx:for-item="cat"
+              wx:key="name"
+              data-name="{{name}}"
+              bindtap="viewCategoryDetail">
+          <view class="category-header">
+            <text class="category-name">{{name}}</text>
+            <view class="category-badge" style="background: linear-gradient(135deg, {{cat.color.name === '暖色系' ? '#ff6b6b, #ffd93d' : cat.color.name === '冷色系' ? '#667eea, #764ba2' : cat.color.name === '中性色' ? '#20bf6b, #26de81' : '#f368e0, #ee5a6f'}})">
+              {{cat.color.name}}
+            </view>
+          </view>
+          <view class="category-info">
+            <text class="info-item">{{cat.count}}个标签</text>
+            <text class="info-item">{{cat.required ? '必选' : '可选'}}</text>
+            <text class="info-item">{{cat.color.ledEffect}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+    
+    <!-- 颜色效果预览 -->
+    <view class="section">
+      <text class="section-title">LED效果预览</text>
+      <view class="effect-list">
+        <view class="effect-item" 
+              wx:for="{{colorEffects}}" 
+              wx:key="name"
+              data-effect="{{item}}"
+              bindtap="previewLedEffect">
+          <view class="effect-preview" style="background: linear-gradient(135deg, hsl({{item.hueRange[0]}}, 70%, 50%), hsl({{item.hueRange[1]}}, 70%, 50%))"></view>
+          <text class="effect-name">{{item.name}}</text>
+          <text class="effect-desc">{{item.ledEffect}}</text>
+        </view>
+      </view>
+    </view>
+    
+    <!-- 操作按钮 -->
+    <view class="action-buttons">
+      <button class="btn-export" bindtap="exportConfig">导出配置</button>
+      <button class="btn-refresh" bindtap="onRefresh">刷新</button>
+    </view>
+  </view>
+</view>

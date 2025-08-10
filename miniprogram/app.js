@@ -5,7 +5,7 @@ App({
     logged: false,
     openid: '',
     tabBar: {
-      selected: 0,
+      selected: 2,
       lastUpdateTime: 0
     }
   },
@@ -135,7 +135,7 @@ App({
   initTabBarState: function() {
     // 不再从本地存储读取，统一由页面路由决定
     this.globalData.tabBar = {
-      selected: 0,
+      selected: 2,
       lastUpdateTime: Date.now()
     };
   },
