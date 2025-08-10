@@ -222,6 +222,33 @@ Page({
       this.handleReceivedData(JSON.stringify(message));
     };
     
+    // 设置连接丢失处理回调
+    this.handshakeClient.onConnectionLoss = (lossInfo) => {
+      console.error('🔴 握手协议检测到连接丢失:', lossInfo);
+      
+      this.setData({
+        connected: false,
+        deviceReady: false,
+        protocolState: `连接丢失: ${lossInfo.reason}`
+      });
+      
+      // 显示重连提示
+      wx.showModal({
+        title: '连接中断',
+        content: `设备连接已中断：${lossInfo.reason}\n已尝试${lossInfo.autoReconnectAttempts}次自动重连`,
+        showCancel: true,
+        cancelText: '返回扫描',
+        confirmText: '手动重连',
+        success: (res) => {
+          if (res.confirm) {
+            this.connectWithHandshake();
+          } else {
+            this.backToScan();
+          }
+        }
+      });
+    };
+    
     // 覆盖握手客户端的发送方法，直接调用device.js的writeToBle逻辑
     this.handshakeClient.sendMessage = (message) => {
       return new Promise((resolve, reject) => {
@@ -1038,11 +1065,17 @@ Page({
     }
   },
 
-  // 🚨 新增：同步碰一碰列表到云端
+  // 🚨 新增：同步碰一碰列表到云端（添加错误处理和降级方案）
   async syncTouchListToCloud(devices) {
     try {
       console.log('☁️ 开始同步碰一碰列表到云端...');
       console.log('☁️ 设备列表:', devices);
+      
+      // 检查云开发是否可用
+      if (!wx.cloud || typeof wx.cloud.callFunction !== 'function') {
+        console.warn('⚠️ 云开发不可用，跳过云端同步');
+        return;
+      }
       
       // 获取当前用户的openid - 修正获取方式
       const userInfo = wx.getStorageSync('userInfo');
@@ -1052,19 +1085,24 @@ Page({
       console.log('☁️ 用户openid:', openid);
       
       if (!openid) {
-        console.error('❌ 无法获取用户openid');
-        this.addNotification('⚠️ 请先在主页登录');
+        console.warn('⚠️ 无法获取用户openid，跳过云端同步');
+        // 不要显示错误提示，因为这不是关键功能
         return;
       }
       
-      // 调用云函数
-      const res = await wx.cloud.callFunction({
-        name: 'syncTouchList',
-        data: {
-          openid: openid,
-          touchList: devices
-        }
-      });
+      // 调用云函数（添加超时和重试机制）
+      const res = await Promise.race([
+        wx.cloud.callFunction({
+          name: 'syncTouchList',
+          data: {
+            openid: openid,
+            touchList: devices
+          }
+        }),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('云函数调用超时')), 5000);
+        })
+      ]);
       
       console.log('☁️ 云函数返回结果:', res.result);
       
@@ -1099,17 +1137,20 @@ Page({
       }
       
     } catch (error) {
-      console.error('❌ 调用云函数失败:', error);
-      console.error('❌ 错误详情:', error.errCode, error.errMsg);
+      console.warn('⚠️ 云函数调用失败（非关键功能）:', error.message || error.errMsg);
       
-      // 如果云函数未部署或调用失败，使用本地存储作为fallback
-      if (error.errCode === -501000 || error.errMsg?.includes('FUNCTION_NOT_FOUND')) {
-        console.log('🔄 云函数未部署，使用本地存储fallback...');
-        this.handleTouchListFallback(devices);
-        this.addNotification('⚠️ 云函数未部署，使用本地模式');
+      // 静默处理云函数错误，不影响主要功能
+      if (error.errCode === -501000 || error.message?.includes('FUNCTION_NOT_FOUND') || error.errMsg?.includes('FUNCTION_NOT_FOUND')) {
+        console.log('📝 云函数未部署，跳过云端同步');
+        // 可选：使用本地存储作为fallback
+        // this.handleTouchListFallback(devices);
+      } else if (error.message?.includes('超时')) {
+        console.log('📝 云函数调用超时，跳过云端同步');
       } else {
-        this.addNotification('❌ 网络错误，无法同步朋友列表');
+        console.log('📝 其他云函数错误，跳过云端同步');
       }
+      
+      // 不显示错误提示给用户，因为这不是关键功能
     }
   },
   

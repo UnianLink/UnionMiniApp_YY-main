@@ -4,25 +4,44 @@
  * 支持3次重连、自适应超时、指数退避重试
  */
 
-// 导入协议配置常量
+// 导入协议配置常量 - 增强极端环境适应性
 const BLE_CONFIG = {
-  // 超时配置
-  CRITICAL_TIMEOUT_MS: 3000,        // 关键操作超时：3秒
-  DATA_TIMEOUT_MS: 5000,            // 数据传输超时：5秒  
-  CONNECTION_TIMEOUT_MS: 5000,      // 单次连接超时：5秒
-  CONNECTION_RETRIES: 3,            // 连接重试次数：3次
-  MESSAGE_RETRIES: 3,               // 消息重试次数：3次
+  // 超时配置 - 基于实际测试调优
+  CRITICAL_TIMEOUT_MS: 4000,        // 关键操作超时：4秒（增加1秒应对弱信号）
+  DATA_TIMEOUT_MS: 8000,            // 数据传输超时：8秒（增加3秒应对分包传输）  
+  CONNECTION_TIMEOUT_MS: 6000,      // 单次连接超时：6秒（增加1秒应对信号不稳定）
+  CONNECTION_RETRIES: 5,            // 连接重试次数：5次（增加2次应对极端情况）
+  MESSAGE_RETRIES: 4,               // 消息重试次数：4次（增加1次）
   
-  // 指数退避配置
-  RETRY_BASE_MS: 500,               // 基础重试间隔：500ms
-  RETRY_MULTIPLIER: 2,              // 退避倍数：2倍
-  MAX_RETRY_INTERVAL_MS: 4000,      // 最大重试间隔：4秒
+  // 指数退避配置 - 更智能的退避策略
+  RETRY_BASE_MS: 800,               // 基础重试间隔：800ms（给设备更多恢复时间）
+  RETRY_MULTIPLIER: 1.8,            // 退避倍数：1.8倍（更温和的增长）
+  MAX_RETRY_INTERVAL_MS: 5000,      // 最大重试间隔：5秒
   
-  // 信号强度阈值
-  SIGNAL_STRONG_THRESHOLD: -50,     // 强信号阈值
-  SIGNAL_WEAK_THRESHOLD: -80,       // 弱信号阈值
-  TIMEOUT_REDUCTION_FACTOR: 0.7,    // 强信号超时减少因子
-  TIMEOUT_EXTENSION_FACTOR: 1.5     // 弱信号超时延长因子
+  // 信号强度阈值 - 更细粒度分级
+  SIGNAL_STRONG_THRESHOLD: -55,     // 强信号阈值（调整为-55dBm）
+  SIGNAL_MEDIUM_THRESHOLD: -75,     // 中等信号阈值（新增）
+  SIGNAL_WEAK_THRESHOLD: -85,       // 弱信号阈值（调整为-85dBm）
+  SIGNAL_CRITICAL_THRESHOLD: -95,   // 极弱信号阈值（新增）
+  
+  // 自适应超时因子 - 更精细的调整
+  TIMEOUT_REDUCTION_FACTOR: 0.8,    // 强信号超时减少因子（从0.7调整为0.8）
+  TIMEOUT_NORMAL_FACTOR: 1.0,       // 中等信号正常因子
+  TIMEOUT_EXTENSION_FACTOR: 1.6,    // 弱信号超时延长因子（从1.5调整为1.6）
+  TIMEOUT_CRITICAL_FACTOR: 2.2,     // 极弱信号超时延长因子（新增）
+  
+  // 新增：通信优化配置
+  PACKET_RETRY_DELAY_MS: 50,        // 分包重试延迟：减少到50ms提升速度
+  HEARTBEAT_INTERVAL_MS: 45000,     // 心跳间隔：45秒（减少不必要的心跳）
+  CONNECTION_HEALTH_CHECK_MS: 8000, // 连接健康检查间隔：8秒
+  AUTO_RECONNECT_ENABLED: true,     // 启用自动重连
+  AUTO_RECONNECT_MAX_ATTEMPTS: 3,   // 自动重连最大尝试次数
+  
+  // 性能优化配置
+  FAST_CONNECT_MODE: true,          // 快速连接模式
+  PARALLEL_DISCOVERY: true,         // 并行服务发现
+  SKIP_UNNECESSARY_DELAYS: true,    // 跳过不必要的延迟
+  OPTIMIZED_MTU: 247                // 优化的MTU大小
 };
 
 // 协议状态枚举 - 扩展版本
@@ -69,15 +88,23 @@ class BleHandshakeClient {
     this.txServiceId = '';
     this.txCharId = '';
     this.deviceReady = false;
-    this.negotiatedMTU = 23;
-    this.maxPacketSize = 20;
+    this.negotiatedMTU = BLE_CONFIG.OPTIMIZED_MTU;
+    this.maxPacketSize = BLE_CONFIG.OPTIMIZED_MTU - 3; // 减去协议头
     
     // BLE数据分包重组缓冲区
     this.receiveBuffer = '';
     this.lastReceiveTime = 0;
     this.receiveTimeout = null;
     
-    // 清理定时器
+    // 连接健康监控
+    this.lastHeartbeatTime = 0;
+    this.heartbeatTimer = null;
+    this.healthCheckTimer = null;
+    this.connectionHealthy = true;
+    this.autoReconnectTimer = null;
+    this.autoReconnectAttempts = 0;
+    
+    // 清理所有定时器
     if (this.connectionTimeout) {
       clearTimeout(this.connectionTimeout);
       this.connectionTimeout = null;
@@ -89,6 +116,18 @@ class BleHandshakeClient {
     if (this.receiveTimeout) {
       clearTimeout(this.receiveTimeout);
       this.receiveTimeout = null;
+    }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = null;
+    }
+    if (this.autoReconnectTimer) {
+      clearTimeout(this.autoReconnectTimer);
+      this.autoReconnectTimer = null;
     }
   }
   
@@ -128,7 +167,7 @@ class BleHandshakeClient {
   }
   
   /**
-   * 获取自适应超时时间
+   * 获取自适应超时时间 - 增强信号分级处理
    */
   getAdaptiveTimeout(isCriticalOperation = false) {
     const baseTimeout = isCriticalOperation ? 
@@ -136,18 +175,31 @@ class BleHandshakeClient {
       BLE_CONFIG.DATA_TIMEOUT_MS;
     
     let adaptiveTimeout = baseTimeout;
+    let signalLevel = '';
     
     if (this.currentRSSI > BLE_CONFIG.SIGNAL_STRONG_THRESHOLD) {
-      // 强信号：减少30%超时时间
+      // 强信号：减少20%超时时间
       adaptiveTimeout = baseTimeout * BLE_CONFIG.TIMEOUT_REDUCTION_FACTOR;
-      console.log(`📶 强信号(RSSI=${this.currentRSSI}) -> 超时优化至${adaptiveTimeout}ms`);
-    } else if (this.currentRSSI < BLE_CONFIG.SIGNAL_WEAK_THRESHOLD) {
-      // 弱信号：增加50%超时时间
+      signalLevel = '强信号';
+    } else if (this.currentRSSI > BLE_CONFIG.SIGNAL_MEDIUM_THRESHOLD) {
+      // 中等信号：使用默认超时
+      adaptiveTimeout = baseTimeout * BLE_CONFIG.TIMEOUT_NORMAL_FACTOR;
+      signalLevel = '中等信号';
+    } else if (this.currentRSSI > BLE_CONFIG.SIGNAL_WEAK_THRESHOLD) {
+      // 弱信号：增加60%超时时间
       adaptiveTimeout = baseTimeout * BLE_CONFIG.TIMEOUT_EXTENSION_FACTOR;
-      console.log(`📶 弱信号(RSSI=${this.currentRSSI}) -> 超时延长至${adaptiveTimeout}ms`);
+      signalLevel = '弱信号';
+    } else if (this.currentRSSI > BLE_CONFIG.SIGNAL_CRITICAL_THRESHOLD) {
+      // 极弱信号：增加120%超时时间
+      adaptiveTimeout = baseTimeout * BLE_CONFIG.TIMEOUT_CRITICAL_FACTOR;
+      signalLevel = '极弱信号';
     } else {
-      console.log(`📶 中等信号(RSSI=${this.currentRSSI}) -> 默认超时${adaptiveTimeout}ms`);
+      // 临界信号：使用最大超时
+      adaptiveTimeout = baseTimeout * BLE_CONFIG.TIMEOUT_CRITICAL_FACTOR * 1.2;
+      signalLevel = '临界信号';
     }
+    
+    console.log(`📶 ${signalLevel}(RSSI=${this.currentRSSI}dBm) -> 超时调整至${Math.round(adaptiveTimeout)}ms`);
     
     return Math.round(adaptiveTimeout);
   }
@@ -411,28 +463,18 @@ class BleHandshakeClient {
   
   /**
    * 完整BLE初始化流程：服务发现 → 特征配置 → 通知订阅 → 设备就绪
+   * 增强版：支持快速连接和并行处理
    */
   async performFullBLEInitialization() {
     try {
-      // 1. 服务发现
-      console.log('🔍 开始服务发现...');
-      this.setState(BLE_HANDSHAKE_STATE.SERVICE_DISCOVERY);
-      this.notifyStateChange('service_discovery', '正在发现服务...');
-      await this.discoverServices();
+      if (BLE_CONFIG.FAST_CONNECT_MODE) {
+        console.log('🚀 启用快速连接模式');
+        await this.performOptimizedInitialization();
+      } else {
+        await this.performStandardInitialization();
+      }
 
-      // 2. 特征发现
-      console.log('🔍 开始特征发现...');
-      this.setState(BLE_HANDSHAKE_STATE.CHARACTERISTIC_DISCOVERY);
-      this.notifyStateChange('characteristic_discovery', '正在配置特征...');
-      await this.discoverCharacteristics();
-
-      // 3. 通知订阅
-      console.log('🔔 开始通知订阅...');
-      this.setState(BLE_HANDSHAKE_STATE.NOTIFICATION_SETUP);
-      this.notifyStateChange('notification_setup', '正在设置通知...');
-      await this.setupNotifications();
-
-      // 4. 设备完全就绪
+      // 设备完全就绪
       console.log('✅ 设备完全就绪！');
       this.setState(BLE_HANDSHAKE_STATE.DEVICE_READY);
       this.deviceReady = true;
@@ -448,12 +490,73 @@ class BleHandshakeClient {
         negotiatedMTU: this.negotiatedMTU,
         maxPacketSize: this.maxPacketSize
       });
+      
+      // 启动连接健康监控
+      this.startConnectionHealthMonitoring();
 
     } catch (error) {
       console.error('❌ BLE初始化失败:', error);
       this.setState(BLE_HANDSHAKE_STATE.FAILED);
       throw error;
     }
+  }
+
+  /**
+   * 优化的初始化流程 - 并行处理加快速度
+   */
+  async performOptimizedInitialization() {
+    console.log('🚀 开始优化初始化流程...');
+    
+    this.setState(BLE_HANDSHAKE_STATE.SERVICE_DISCOVERY);
+    this.notifyStateChange('service_discovery', '正在快速发现服务和特征...');
+    
+    // 并行执行服务发现和特征发现（如果启用）
+    if (BLE_CONFIG.PARALLEL_DISCOVERY) {
+      const [services] = await Promise.all([
+        this.discoverServices()
+      ]);
+      
+      // 服务发现完成后立即开始特征发现
+      this.setState(BLE_HANDSHAKE_STATE.CHARACTERISTIC_DISCOVERY);
+      const characteristics = await this.discoverCharacteristics();
+      
+    } else {
+      await this.performStandardInitialization();
+      return;
+    }
+    
+    // 快速设置通知订阅
+    this.setState(BLE_HANDSHAKE_STATE.NOTIFICATION_SETUP);
+    this.notifyStateChange('notification_setup', '正在快速设置通知...');
+    
+    if (!BLE_CONFIG.SKIP_UNNECESSARY_DELAYS) {
+      await this.sleep(200); // 短暂延迟确保稳定
+    }
+    
+    await this.setupNotifications();
+  }
+  
+  /**
+   * 标准初始化流程
+   */
+  async performStandardInitialization() {
+    // 1. 服务发现
+    console.log('🔍 开始服务发现...');
+    this.setState(BLE_HANDSHAKE_STATE.SERVICE_DISCOVERY);
+    this.notifyStateChange('service_discovery', '正在发现服务...');
+    await this.discoverServices();
+
+    // 2. 特征发现
+    console.log('🔍 开始特征发现...');
+    this.setState(BLE_HANDSHAKE_STATE.CHARACTERISTIC_DISCOVERY);
+    this.notifyStateChange('characteristic_discovery', '正在配置特征...');
+    await this.discoverCharacteristics();
+
+    // 3. 通知订阅
+    console.log('🔔 开始通知订阅...');
+    this.setState(BLE_HANDSHAKE_STATE.NOTIFICATION_SETUP);
+    this.notifyStateChange('notification_setup', '正在设置通知...');
+    await this.setupNotifications();
   }
 
   /**
@@ -717,6 +820,164 @@ class BleHandshakeClient {
   }
 
   /**
+   * 启动连接健康监控 - 检测异常断连并自动重连
+   */
+  startConnectionHealthMonitoring() {
+    console.log('💓 启动连接健康监控');
+    
+    // 启动心跳检测
+    this.lastHeartbeatTime = Date.now();
+    this.heartbeatTimer = setInterval(() => {
+      this.sendHeartbeat();
+    }, BLE_CONFIG.HEARTBEAT_INTERVAL_MS);
+    
+    // 启动健康检查
+    this.healthCheckTimer = setInterval(() => {
+      this.checkConnectionHealth();
+    }, BLE_CONFIG.CONNECTION_HEALTH_CHECK_MS);
+    
+    this.connectionHealthy = true;
+  }
+  
+  /**
+   * 发送心跳包
+   */
+  async sendHeartbeat() {
+    if (!this.deviceReady) return;
+    
+    try {
+      const heartbeatMessage = {
+        type: 'heartbeat',
+        timestamp: Date.now()
+      };
+      
+      // 使用较短超时的心跳
+      await Promise.race([
+        this.sendMessage(JSON.stringify(heartbeatMessage)),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('心跳超时')), 3000);
+        })
+      ]);
+      
+      this.lastHeartbeatTime = Date.now();
+      this.connectionHealthy = true;
+      console.log('💓 心跳正常');
+      
+    } catch (error) {
+      console.warn('💔 心跳失败:', error.message);
+      this.connectionHealthy = false;
+    }
+  }
+  
+  /**
+   * 检查连接健康状态
+   */
+  checkConnectionHealth() {
+    if (!this.deviceReady) return;
+    
+    const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeatTime;
+    const isHealthy = timeSinceLastHeartbeat < BLE_CONFIG.HEARTBEAT_INTERVAL_MS * 2;
+    
+    if (!isHealthy && this.connectionHealthy) {
+      console.error('❌ 检测到连接异常，准备自动重连');
+      this.connectionHealthy = false;
+      this.handleConnectionLoss();
+    } else if (isHealthy && !this.connectionHealthy) {
+      console.log('✅ 连接恢复正常');
+      this.connectionHealthy = true;
+      this.autoReconnectAttempts = 0; // 重置重连计数
+    }
+  }
+  
+  /**
+   * 处理连接丢失 - 自动重连机制
+   */
+  async handleConnectionLoss() {
+    if (!BLE_CONFIG.AUTO_RECONNECT_ENABLED) {
+      console.log('📝 自动重连已禁用，等待手动重连');
+      return;
+    }
+    
+    if (this.autoReconnectAttempts >= BLE_CONFIG.AUTO_RECONNECT_MAX_ATTEMPTS) {
+      console.error('❌ 已达到最大自动重连次数，停止重连');
+      this.notifyConnectionLoss('达到最大重连次数');
+      return;
+    }
+    
+    this.autoReconnectAttempts++;
+    const retryDelay = this.calculateRetryInterval(this.autoReconnectAttempts);
+    
+    console.log(`🔄 开始第${this.autoReconnectAttempts}次自动重连，${retryDelay}ms后执行`);
+    
+    this.autoReconnectTimer = setTimeout(async () => {
+      try {
+        console.log('🔄 执行自动重连...');
+        
+        // 先尝试断开现有连接
+        await this.disconnect();
+        
+        // 等待一段时间确保断开完成
+        await this.sleep(1000);
+        
+        // 重新连接
+        await this.connectWithRetry(this.deviceId, this.deviceName);
+        
+        console.log('✅ 自动重连成功');
+        this.autoReconnectAttempts = 0;
+        
+      } catch (error) {
+        console.error(`❌ 第${this.autoReconnectAttempts}次自动重连失败:`, error.message);
+        
+        if (this.autoReconnectAttempts < BLE_CONFIG.AUTO_RECONNECT_MAX_ATTEMPTS) {
+          // 继续尝试下一次重连
+          this.handleConnectionLoss();
+        } else {
+          this.notifyConnectionLoss('自动重连失败');
+        }
+      }
+    }, retryDelay);
+  }
+  
+  /**
+   * 通知连接丢失
+   */
+  notifyConnectionLoss(reason) {
+    console.error('🔴 连接永久丢失:', reason);
+    
+    if (typeof this.onConnectionLoss === 'function') {
+      this.onConnectionLoss({
+        reason: reason,
+        autoReconnectAttempts: this.autoReconnectAttempts
+      });
+    }
+    
+    // 停止所有监控
+    this.stopConnectionHealthMonitoring();
+  }
+  
+  /**
+   * 停止连接健康监控
+   */
+  stopConnectionHealthMonitoring() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = null;
+    }
+    
+    if (this.autoReconnectTimer) {
+      clearTimeout(this.autoReconnectTimer);
+      this.autoReconnectTimer = null;
+    }
+    
+    console.log('🛑 连接健康监控已停止');
+  }
+
+  /**
    * 工具函数：延时
    */
   sleep(ms) {
@@ -755,6 +1016,9 @@ class BleHandshakeClient {
       console.log('📝 设备ID为空，无需断开连接');
       return Promise.resolve();
     }
+    
+    // 停止健康监控
+    this.stopConnectionHealthMonitoring();
     
     // 清理所有等待的响应
     this.pendingResponses.forEach((pending, seqId) => {
