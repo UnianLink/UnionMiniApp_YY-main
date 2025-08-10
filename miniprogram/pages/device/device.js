@@ -1,3 +1,6 @@
+// 导入BLE握手协议客户端
+const { BleHandshakeClient, BLE_CONFIG, BLE_HANDSHAKE_STATE } = require('../../utils/ble-handshake-client.js');
+
 Page({
   data: {
     // ===== 扫描相关 =====
@@ -14,6 +17,11 @@ Page({
     messages: [], // 消息收发记录
     notifications: [], // 设备通知记录
     input: '', // 输入框内容
+    
+    // ===== BLE握手协议相关 =====
+    protocolState: '空闲', // 协议状态显示
+    connectionAttempt: 0, // 当前连接尝试次数
+    maxRetries: 3, // 最大重试次数
     
     // 🚀 BLE性能优化字段
     negotiatedMTU: 23, // 协商的MTU大小，默认23字节
@@ -45,6 +53,9 @@ Page({
   
   // 页面加载时的处理
   onLoad(options) {
+    // 初始化BLE握手协议客户端
+    this.initHandshakeClient();
+    
     // 更新tabBar选中状态
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().updateSelected('/pages/device/device');
@@ -56,7 +67,7 @@ Page({
         deviceId: options.deviceId,
         showScanView: false 
       });
-      this.ensureAdapter(() => this.connect());
+      this.ensureAdapter(() => this.connectWithHandshake());
     } else {
       // 没有传入deviceId，显示扫描界面
       this.setData({ showScanView: true });
@@ -94,9 +105,238 @@ Page({
       this._deviceUpdateTimer = null;
     }
     
+    // 断开握手协议连接
+    if (this.handshakeClient) {
+      this.handshakeClient.disconnect();
+    }
+    
     if (this.data.connected) {
       this.disconnect();
     }
+  },
+
+  // ===== BLE握手协议客户端管理 =====
+  
+  /**
+   * 初始化BLE握手协议客户端 - 完全接管BLE通信
+   */
+  initHandshakeClient() {
+    this.handshakeClient = new BleHandshakeClient();
+    
+    // 设置状态变化回调
+    this.handshakeClient.onStateChange = (stateInfo) => {
+      console.log('🔄 握手协议状态变化:', stateInfo);
+      
+      this.setData({
+        protocolState: stateInfo.message || '未知状态',
+        connectionAttempt: stateInfo.attempt || 0
+      });
+      
+      // 处理不同状态
+      switch(stateInfo.state) {
+        case 'connecting':
+          this.setData({
+            connecting: true,
+            connected: false
+          });
+          break;
+          
+        case 'retrying':
+          wx.showToast({
+            title: `重试中... (${stateInfo.attempt}/${stateInfo.maxRetries})`,
+            icon: 'loading',
+            duration: 1000
+          });
+          break;
+          
+        case 'service_discovery':
+        case 'characteristic_discovery':
+        case 'notification_setup':
+          this.setData({
+            connecting: true, // 仍在初始化中
+            protocolState: stateInfo.message
+          });
+          break;
+          
+        case 'failed':
+          this.setData({
+            connecting: false,
+            connected: false,
+            protocolState: '连接失败'
+          });
+          
+          wx.showModal({
+            title: '连接失败',
+            content: stateInfo.message || '无法连接到设备，请重试',
+            showCancel: true,
+            cancelText: '返回扫描',
+            confirmText: '重试连接',
+            success: (res) => {
+              if (res.confirm) {
+                this.connectWithHandshake();
+              } else {
+                this.backToScan();
+              }
+            }
+          });
+          break;
+      }
+    };
+    
+    // 设置设备就绪回调 - 协议栈完全接管后的回调
+    this.handshakeClient.onDeviceReady = (deviceInfo) => {
+      console.log('✅ 设备完全就绪:', deviceInfo);
+      
+      // 更新设备状态
+      this.setData({
+        connecting: false,
+        connected: true,
+        deviceReady: true,
+        rxServiceId: deviceInfo.rxServiceId,
+        rxCharId: deviceInfo.rxCharId,
+        txServiceId: deviceInfo.txServiceId,
+        txCharId: deviceInfo.txCharId,
+        negotiatedMTU: deviceInfo.negotiatedMTU,
+        maxPacketSize: deviceInfo.maxPacketSize,
+        protocolState: '设备就绪，开始业务流程'
+      });
+      
+      // 显示连接成功提示
+      wx.showToast({
+        title: '连接成功',
+        icon: 'success',
+        duration: 2000
+      });
+      
+      // 添加连接成功通知
+      this.addNotification(`✅ 已连接到设备: ${deviceInfo.deviceName || '未知设备'}`);
+      
+      // 开始业务流程：发送Un字符串等
+      this.startBusinessLogic();
+    };
+    
+    // 设置消息接收回调
+    this.handshakeClient.onMessageReceived = (message) => {
+      console.log('📨 收到握手协议消息:', message);
+      // 转发给原有的消息处理逻辑
+      this.handleReceivedData(JSON.stringify(message));
+    };
+    
+    // 覆盖握手客户端的发送方法，直接调用device.js的writeToBle逻辑
+    this.handshakeClient.sendMessage = (message) => {
+      return new Promise((resolve, reject) => {
+        if (!this.handshakeClient.deviceReady || !this.handshakeClient.rxCharId) {
+          reject(new Error('设备未就绪'));
+          return;
+        }
+        
+        // 使用原有的writeToBle函数
+        this.writeToBle(message, '握手协议消息').then(resolve).catch(reject);
+      });
+    };
+    
+    console.log('🚀 BLE握手协议客户端初始化完成');
+  },
+
+  /**
+   * 使用握手协议连接设备 - 完整流程
+   */
+  async connectWithHandshake() {
+    const { deviceId, deviceName } = this.data;
+    
+    if (!this.handshakeClient) {
+      console.error('❌ 握手协议客户端未初始化');
+      return;
+    }
+    
+    console.log('🤝 开始完整握手协议连接流程:', deviceId, deviceName);
+    
+    try {
+      this.setData({
+        connecting: true,
+        connected: false,
+        protocolState: '开始连接...',
+        connectionAttempt: 0
+      });
+      
+      // 📌 关键修复：连接前先确保彻底断开之前的连接
+      await this.ensureDisconnected(deviceId);
+      
+      // 重置握手客户端状态
+      this.handshakeClient.reset();
+      
+      // 开始完整连接流程（连接→服务发现→特征配置→通知订阅→设备就绪）
+      await this.handshakeClient.connectWithRetry(deviceId, deviceName);
+      
+      console.log('✅ 握手协议完整流程成功');
+      
+    } catch (error) {
+      console.error('❌ 握手协议连接失败:', error);
+      this.setData({
+        connecting: false,
+        connected: false,
+        protocolState: '连接失败: ' + error.message
+      });
+    }
+  },
+
+  /**
+   * 确保设备完全断开连接 - 解决"already connect"问题
+   */
+  async ensureDisconnected(targetDeviceId) {
+    console.log(`🔍 检查设备${targetDeviceId}的连接状态...`);
+    
+    try {
+      // 如果握手客户端有连接，先断开
+      if (this.handshakeClient && this.handshakeClient.deviceId) {
+        console.log('🔌 发现握手客户端有连接，先断开...');
+        await this.handshakeClient.disconnect();
+        console.log('✅ 握手客户端连接已断开');
+      }
+      
+      // 额外尝试断开目标设备（防止有僵尸连接）
+      await new Promise((resolve) => {
+        wx.closeBLEConnection({
+          deviceId: targetDeviceId,
+          success: (res) => {
+            console.log('✅ 强制断开目标设备成功');
+            resolve(res);
+          },
+          fail: (err) => {
+            console.log('📝 强制断开目标设备失败（可能本来就没连接）:', err.errMsg);
+            resolve(err); // 不管成功失败都继续
+          }
+        });
+      });
+      
+      // 等待断开完全生效
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      console.log('⏳ 断开等待完成，可以安全重连');
+      
+    } catch (error) {
+      console.warn('⚠️ 断开连接过程中出现错误，但继续尝试连接:', error);
+    }
+  },
+  
+  /**
+   * 开始业务逻辑 - 设备就绪后的处理
+   */
+  startBusinessLogic() {
+    console.log('🚀 开始业务逻辑处理');
+    
+    // 延迟发送Un字符串，确保连接稳定
+    setTimeout(() => {
+      console.log('📤 发送Un字符串');
+      this.checkAndSendUnString();
+    }, 1000);
+    
+    // 延迟发送阈值设置
+    setTimeout(() => {
+      console.log('🎯 发送阈值设置');
+      this.sendThresholdToDevice().catch(error => {
+        console.error('🎯 阈值发送失败:', error);
+      });
+    }, 2000);
   },
 
   // ===== 蓝牙适配器管理 =====
@@ -308,7 +548,7 @@ Page({
       });
       
       // 连接设备，但不停止扫描，继续监控RSSI
-      this.connect();
+      this.connectWithHandshake();
     }, 800); // 等待动画完成
   },
 
@@ -344,12 +584,9 @@ Page({
   // 返回扫描界面
   backToScan() {
     // 如果已连接，先断开
-    if (this.data.connected) {
-      wx.closeBLEConnection({
-        deviceId: this.data.deviceId,
-        complete: () => {
-          this.resetToScan();
-        }
+    if (this.data.connected && this.handshakeClient) {
+      this.handshakeClient.disconnect().finally(() => {
+        this.resetToScan();
       });
     } else {
       this.resetToScan();
@@ -384,105 +621,7 @@ Page({
   },
 
   // ===== 设备连接功能 =====
-  connect() {
-    const { deviceId, deviceName } = this.data;
-    console.log('🔗 [连接] 开始连接设备:', deviceId, deviceName);
-    
-    // 🎯 设置连接超时定时器 (15秒)
-    if (this.data.connectionTimeout) {
-      clearTimeout(this.data.connectionTimeout);
-    }
-    
-    const timeoutId = setTimeout(() => {
-      console.log('⏰ [连接] 连接超时，返回扫描页面');
-      
-      // 清理连接状态
-      this.setData({
-        connecting: false,
-        connected: false
-      });
-      
-      // 显示超时提示
-      wx.showToast({
-        title: '连接超时',
-        icon: 'error',
-        duration: 2000
-      });
-      
-      // 延迟返回扫描页面
-      setTimeout(() => {
-        this.backToScan();
-      }, 1000);
-    }, 5000); // 5秒单次连接超时
-    
-    this.setData({
-      connectionTimeout: timeoutId
-    });
-    
-    wx.createBLEConnection({
-      deviceId: deviceId,
-      success: (res) => {
-        console.log('🔗 [连接] ✅ BLE连接成功:', res);
-        
-        // 🎯 清除超时定时器
-        if (this.data.connectionTimeout) {
-          clearTimeout(this.data.connectionTimeout);
-          this.setData({ connectionTimeout: null });
-        }
-        
-        // 🎯 更新连接状态
-        this.setData({
-          connecting: false,
-          connected: true,
-          isConnected: true,
-          deviceName: deviceName
-        });
-        
-        // 连接成功后立即获取服务和特征值
-        console.log('🔗 [连接] 开始获取服务...');
-        this.getServices();
-        
-        // 添加连接成功通知
-        this.addNotification(`✅ 已连接到设备: ${deviceName}`);
-        
-        // 显示连接成功提示
-        wx.showToast({
-          title: '连接成功',
-          icon: 'success',
-          duration: 2000
-        });
-      },
-      fail: (err) => {
-        console.error('🔗 [连接] ❌ 连接失败:', err);
-        
-        // 🎯 清除超时定时器
-        if (this.data.connectionTimeout) {
-          clearTimeout(this.data.connectionTimeout);
-          this.setData({ connectionTimeout: null });
-        }
-        
-        // 🎯 重置连接状态
-        this.setData({
-          connecting: false,
-          connected: false
-        });
-        
-        this.addNotification(`❌ 连接失败: ${err.errMsg}`);
-        
-        // 显示连接失败提示
-        wx.showToast({
-          title: '连接失败',
-          icon: 'error',
-          duration: 2000
-        });
-        
-        // 🎯 连接失败后延迟返回扫描页面
-        setTimeout(() => {
-          this.backToScan();
-        }, 2000);
-      }
-    });
-  },
+  // 原connect()方法已被握手协议完全替代
 
   // 连接后停止扫描，专注于接收硬件消息
   stopScanningAfterConnection() {
@@ -1740,43 +1879,7 @@ Page({
 
   // ===== 其余功能保持不变 =====
   // 获取设备的所有服务
-  getServices() {
-    console.log('🔍 [调试] 开始获取服务...');
-    wx.getBLEDeviceServices({
-      deviceId: this.data.deviceId,
-      success: (res) => {
-        console.log('🔍 [调试] ✅ 获取服务成功:', res.services);
-        console.log('🔍 [调试] 服务列表详情:', res.services.map(s => s.uuid.toLowerCase()));
-        this.setData({ services: res.services });
-        
-        // 查找目标服务 - 兼容多种UUID格式
-        const targetService = res.services.find(s => {
-          const uuid = s.uuid.toLowerCase();
-          // 支持多种UUID格式：fff0, 0000fff0, 0000fff0-0000-1000-8000-00805f9b34fb
-          return uuid === 'fff0' || 
-                 uuid === '0000fff0' || 
-                 uuid.startsWith('0000fff0-') ||
-                 uuid.includes('fff0');
-        });
-        
-        console.log('🔍 [调试] 目标服务查找结果:', targetService);
-        
-        if (targetService) {
-          console.log('🔍 [调试] ✅ 找到目标服务:', targetService.uuid);
-          console.log('🔍 [调试] 开始获取特征值...');
-          this.getCharacteristics(targetService.uuid);
-        } else {
-          console.error('🔍 [调试] ❌ 未找到目标服务 FFF0');
-          console.error('🔍 [调试] 可用服务:', res.services.map(s => s.uuid));
-          this.addNotification('❌ 未找到目标服务 FFF0');
-        }
-      },
-      fail: (err) => {
-        console.error('🔍 [调试] ❌ 获取服务失败:', err);
-        this.addNotification(`❌ 获取服务失败: ${err.errMsg}`);
-      }
-    });
-  },
+  // 原 getServices() 方法已被握手协议完全替代
 
   // 🚀 BLE性能优化：MTU协商
   negotiateMTU() {
@@ -1837,82 +1940,7 @@ Page({
   },
 
   // 获取特征并处理读写/通知
-  getCharacteristics(serviceId) {
-    console.log('🔍 [调试] 开始获取特征值，服务ID:', serviceId);
-    wx.getBLEDeviceCharacteristics({
-      deviceId: this.data.deviceId,
-      serviceId: serviceId,
-      success: (res) => {
-        console.log('🔍 [调试] ✅ 获取特征值成功:', res.characteristics);
-        console.log('🔍 [调试] 特征值列表:', res.characteristics.map(c => ({ uuid: c.uuid.toLowerCase(), properties: c.properties })));
-        
-        // 🚀 BLE性能优化：暂时禁用MTU协商，确保连接稳定
-        // this.negotiateMTU();
-        
-        // 查找RX和TX特征值 - 兼容多种UUID格式
-        const rxChar = res.characteristics.find(c => {
-          const uuid = c.uuid.toLowerCase();
-          return uuid === 'fff1' || 
-                 uuid === '0000fff1' || 
-                 uuid.startsWith('0000fff1-') ||
-                 uuid.includes('fff1');
-        });
-        
-        const txChar = res.characteristics.find(c => {
-          const uuid = c.uuid.toLowerCase();
-          return uuid === 'fff2' || 
-                 uuid === '0000fff2' || 
-                 uuid.startsWith('0000fff2-') ||
-                 uuid.includes('fff2');
-        });
-        
-        console.log('🔍 [调试] 查找结果 - RX特征(fff1):', rxChar ? '✅找到' : '❌未找到');
-        console.log('🔍 [调试] 查找结果 - TX特征(fff2):', txChar ? '✅找到' : '❌未找到');
-        
-        if (rxChar && txChar) {
-          console.log('🔍 [调试] ✅ 找到RX和TX特征值，设置数据...');
-          this.setData({
-            rxServiceId: serviceId,
-            rxCharId: rxChar.uuid,
-            txServiceId: serviceId,
-            txCharId: txChar.uuid
-          });
-          
-          console.log('🔍 [调试] 特征值已设置：');
-          console.log('🔍 [调试]   RX: serviceId=' + serviceId + ', charId=' + rxChar.uuid);
-          console.log('🔍 [调试]   TX: serviceId=' + serviceId + ', charId=' + txChar.uuid);
-          
-          // 订阅TX特征值的通知
-          console.log('🔍 [调试] 开始订阅通知特征值...');
-          this.subscribeAllNotifyCharacteristics();
-          
-          // ✅ 修复：恢复工作的发送流程，Un字符串发送不依赖阈值设置
-          console.log('🔍 [调试] 1.5秒后发送Un字符串（优先保证基础功能）...');
-          setTimeout(() => {
-            console.log('🔍 [调试] 延迟时间到，开始发送Un字符串...');
-            this.checkAndSendUnString();
-          }, 1500);
-          
-          // 🔧 修复：大幅增加阈值设置延迟，避免与Un字符串冲突
-          console.log('🎯 [阈值设置] 延迟发送阈值设置，避免命令冲突...');
-          setTimeout(() => {
-            this.sendThresholdToDevice().catch(error => {
-              console.error('🎯 [阈值设置] 阈值发送失败，但不影响Un字符串发送:', error);
-            });
-          }, 400); // 400ms延迟，基于实际通信效率分析
-          
-        } else {
-          console.error('🔍 [调试] ❌ 未找到RX或TX特征值');
-          console.error('🔍 [调试] 可用特征值:', res.characteristics.map(c => c.uuid));
-          this.addNotification('❌ 未找到RX或TX特征值');
-        }
-      },
-      fail: (err) => {
-        console.error('🔍 [调试] ❌ 获取特征值失败:', err);
-        this.addNotification(`❌ 获取特征值失败: ${err.errMsg}`);
-      }
-    });
-  },
+  // 原 getCharacteristics() 方法已被握手协议完全替代
 
   // 检查特征状态
   checkCharacteristics() {
@@ -1933,64 +1961,14 @@ Page({
       this.setData({ deviceReady: true });
     } else {
       console.log('❌ 通知特征未就绪');
-      // 尝试订阅所有可能的通知特征值
-      this.subscribeAllNotifyCharacteristics();
+      // 注意：通知订阅现在由握手协议统一处理
+      console.log('握手协议将自动处理通知订阅');
       // 延迟重试
       setTimeout(() => this.checkCharacteristics(), 1000);
     }
   },
 
-  // 订阅所有可能的通知特征值
-  subscribeAllNotifyCharacteristics() {
-    console.log('尝试订阅所有可能的通知特征值');
-    
-    const { services } = this.data;
-    if (!services || services.length === 0) {
-      console.log('没有发现服务，无法订阅');
-      return;
-    }
-    
-    services.forEach((service, serviceIndex) => {
-      console.log(`检查服务 ${serviceIndex + 1}:`, service.uuid);
-      
-      wx.getBLEDeviceCharacteristics({
-        deviceId: this.data.deviceId,
-        serviceId: service.uuid,
-        success: (res) => {
-          console.log(`服务 ${service.uuid} 的特征值:`, res.characteristics.map(c => ({
-            uuid: c.uuid,
-            properties: c.properties
-          })));
-          
-          res.characteristics.forEach(char => {
-            // 检查是否有通知或指示属性
-            if (char.properties.notify || char.properties.indicate) {
-              console.log('发现通知特征值:', char.uuid);
-              
-              // 尝试订阅所有通知特征值
-              wx.notifyBLECharacteristicValueChange({
-                deviceId: this.data.deviceId,
-                serviceId: service.uuid,
-                characteristicId: char.uuid,
-                state: true,
-                success: () => {
-                  console.log('✅ 成功订阅通知特征值:', char.uuid);
-                  // 订阅成功后设置BLE监听器
-                  this.setupBLEListener();
-                },
-                fail: (err) => {
-                  console.error('❌ 订阅通知特征值失败:', char.uuid, err);
-                }
-              });
-            }
-          });
-        },
-        fail: (err) => {
-          console.error('获取特征值失败:', service.uuid, err);
-        }
-      });
-    });
-  },
+  // 已移除 subscribeAllNotifyCharacteristics - 由握手协议统一处理
 
   // 设置BLE通知监听器
   setupBLEListener() {
@@ -2489,15 +2467,18 @@ Page({
 
   // 断开蓝牙连接
   disconnect() {
-    wx.closeBLEConnection({
-      deviceId: this.data.deviceId,
-      success: () => {
+    // 通过握手协议客户端断开连接
+    if (this.handshakeClient) {
+      this.handshakeClient.disconnect().then(() => {
         this.backToScan();
-      },
-      fail: () => {
+      }).catch(() => {
         this.backToScan();
-      }
-    });
+      });
+    } else {
+      // 兜底：直接返回扫描界面
+      console.warn('握手协议客户端未初始化，直接返回扫描界面');
+      this.backToScan();
+    }
   },
 
   // 清除调试信息
@@ -2576,38 +2557,44 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
       content: '确定要重新连接设备吗？',
       success: (res) => {
         if (res.confirm) {
-          // 断开当前连接
-          wx.closeBLEConnection({
-            deviceId: this.data.deviceId,
-            success: () => {
+          // 通过握手协议断开并重连
+          if (this.handshakeClient) {
+            this.handshakeClient.disconnect().then(() => {
               console.log('断开连接成功');
-              // 重置状态
-              this.setData({
-                connected: false,
-                deviceReady: false,
-                rxServiceId: '',
-                rxCharId: '',
-                txServiceId: '',
-                txCharId: '',
-                messages: [],
-                unDevices: []
-              });
-              this._bleListenerSet = false;
-              
+              this.resetConnectionState();
               // 重新连接
               setTimeout(() => {
-                this.connect();
+                this.connectWithHandshake();
               }, 1000);
-            },
-            fail: (err) => {
+            }).catch((err) => {
               console.error('断开连接失败:', err);
+              this.resetConnectionState();
               // 直接尝试重新连接
-              this.connect();
-            }
-          });
+              this.connectWithHandshake();
+            });
+          } else {
+            console.warn('握手协议客户端未初始化，重新初始化并连接');
+            this.resetConnectionState();
+            this.connectWithHandshake();
+          }
         }
       }
     });
+  },
+
+  // 重置连接状态
+  resetConnectionState() {
+    this.setData({
+      connected: false,
+      deviceReady: false,
+      rxServiceId: '',
+      rxCharId: '',
+      txServiceId: '',
+      txCharId: '',
+      messages: [],
+      unDevices: []
+    });
+    this._bleListenerSet = false;
   },
 
   // 手动触发订阅所有通知特征值
@@ -2622,11 +2609,14 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
           // 重置BLE监听器状态
           this._bleListenerSet = false;
           
-          // 强制订阅所有通知特征值
-          this.subscribeAllNotifyCharacteristics();
+          // 强制通过握手协议重新初始化
+          if (this.handshakeClient) {
+            console.log('通过握手协议重新处理通知订阅');
+            // 握手协议会自动处理通知订阅
+          }
           
           wx.showToast({
-            title: '正在订阅...',
+            title: '重新初始化中...',
             icon: 'loading',
             duration: 2000
           });
