@@ -614,7 +614,7 @@ Page({
     
     // 🚨 立即停止扫描，防止发现更多设备导致界面混乱
     if (this.data.scanning) {
-      this.stopScan();
+      this.stopContinuousScan();  // 修复：使用正确的函数名
       console.log('🛑 [连接] 开始连接时立即停止扫描');
     }
     

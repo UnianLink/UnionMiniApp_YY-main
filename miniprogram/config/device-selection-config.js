@@ -47,7 +47,7 @@ const DeviceSelectionConfig = {
    * - 设置过多(如15-20)：响应太慢，用户等待时间长
    * - 推荐值：8，平衡稳定性和响应速度
    */
-  RSSI_HISTORY_SIZE: 8,
+  RSSI_HISTORY_SIZE: 4,
 
   /**
    * RSSI标准差阈值（dBm）
@@ -57,7 +57,7 @@ const DeviceSelectionConfig = {
    * - 设置过高(如6dBm)：即使信号很不稳定也会推荐
    * - 推荐值：3.0dBm，适合一般环境的信号稳定性
    */
-  RSSI_STABILITY_THRESHOLD: 3.0,
+  RSSI_STABILITY_THRESHOLD: 10.0,
 
   /**
    * 需要持续稳定的时间（毫秒）
@@ -67,7 +67,7 @@ const DeviceSelectionConfig = {
    * - 设置过长(如8000ms)：用户等待时间过长，体验差
    * - 推荐值：4000ms，给足够时间收集稳定数据
    */
-  RSSI_STABLE_TIME: 4000,
+  RSSI_STABLE_TIME: 2000,
 
   /**
    * 最小置信度阈值（0-1之间）
@@ -77,7 +77,7 @@ const DeviceSelectionConfig = {
    * - 设置过高(如0.95)：要求过于严格，很少能推荐
    * - 推荐值：0.8，要求较高的置信度才推荐
    */
-  RSSI_CONFIDENCE_MIN: 0.8,
+  RSSI_CONFIDENCE_MIN: 0.6,
 
   // ===== 推荐撤回控制参数 =====
 
@@ -89,7 +89,7 @@ const DeviceSelectionConfig = {
    * - 设置过高(如0.85)：频繁撤回推荐，用户体验不稳定
    * - 推荐值：0.6，低于推荐阈值但给一定缓冲
    */
-  REVOCATION_CONFIDENCE_THRESHOLD: 0.6,
+  REVOCATION_CONFIDENCE_THRESHOLD: 0.4,
 
   // ===== 算法行为控制参数 =====
 
