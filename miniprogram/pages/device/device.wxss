@@ -1,8 +1,15 @@
 /* ===== 整体容器样式 ===== */
+page {
+  background-color: #000;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
 .container {
   padding: 0;
-  background: #f5f5f5;
+  background: #000;
   min-height: 100vh;
+  color: #fff;
 }
 
 /* ===== 扫描界面样式 ===== */
@@ -11,7 +18,7 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
+  background: linear-gradient(135deg, #1a1a1a 0%, #0d1117 100%);
 }
 
 /* 顶部标题区域 */
@@ -24,16 +31,62 @@
   display: block;
   font-size: 48rpx;
   font-weight: bold;
-  color: #2c3e50;
+  color: #ffffff;
   margin-bottom: 16rpx;
   letter-spacing: 2rpx;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .scan-subtitle {
   display: block;
   font-size: 28rpx;
-  color: #7f8c8d;
+  color: #8b949e;
   line-height: 1.5;
+}
+
+/* 蓝牙错误提示 */
+.bluetooth-error-banner {
+  background: linear-gradient(135deg, rgba(255, 107, 107, 0.1) 0%, rgba(255, 71, 87, 0.1) 100%);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin: 20rpx 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.bluetooth-error-banner .error-icon {
+  font-size: 48rpx;
+  margin-bottom: 12rpx;
+}
+
+.bluetooth-error-banner .error-message {
+  font-size: 30rpx;
+  color: #ff6b6b;
+  font-weight: 500;
+  margin-bottom: 8rpx;
+}
+
+.bluetooth-error-banner .error-hint {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* 扫描按钮区域 */
@@ -48,6 +101,8 @@
   color: white;
   border: none;
   border-radius: 60rpx;
+  box-shadow: 0 8rpx 30rpx rgba(102, 126, 234, 0.3);
+  transition: all 0.3s ease;
   width: 280rpx;
   height: 120rpx;
   margin: 0 auto;
@@ -199,12 +254,16 @@
 .devices-title {
   font-size: 32rpx;
   font-weight: 600;
-  color: #2c3e50;
+  color: #ffffff;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .devices-scanning-status {
   font-size: 24rpx;
-  color: #3498db;
+  color: #667eea;
   animation: blink 1.5s infinite;
 }
 
@@ -260,25 +319,32 @@
 
 /* 设备卡片 */
 .device-card {
-  background: white;
+  background: linear-gradient(135deg, #1a1a1a 0%, #161b22 100%);
   border-radius: 24rpx;
   padding: 32rpx 24rpx;
   margin-bottom: 20rpx;
-  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.4);
   display: flex;
   align-items: center;
   justify-content: space-between;
   transition: all 0.3s ease;
-  border: 2rpx solid transparent;
+  border: 2rpx solid rgba(255, 255, 255, 0.1);
   min-height: 120rpx;
   position: relative;
+  color: #ffffff;
+}
+
+.device-card:hover {
+  transform: translateY(-4rpx);
+  box-shadow: 0 12rpx 40rpx rgba(102, 126, 234, 0.3);
+  border-color: rgba(102, 126, 234, 0.5);
 }
 
 /* 主设备卡片（最强信号） */
 .device-card.primary {
-  background: linear-gradient(135deg, #fff 0%, #f8f9ff 100%);
-  border: 2rpx solid #667eea;
-  box-shadow: 0 12rpx 32rpx rgba(102, 126, 234, 0.2);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: 2rpx solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 12rpx 32rpx rgba(102, 126, 234, 0.4);
   margin-bottom: 32rpx;
 }
 
@@ -340,7 +406,7 @@
 .device-name-subtle {
   display: block;
   font-size: 22rpx;
-  color: #999;
+  color: #8b949e;
   margin-bottom: 6rpx;
   font-weight: 400;
   white-space: nowrap;
@@ -352,21 +418,21 @@
 .device-signal {
   display: block;
   font-size: 26rpx;
-  color: #666;
+  color: #c9d1d9;
   font-weight: 500;
   white-space: nowrap;
   letter-spacing: 0.5rpx;
 }
 
 .device-signal.strong {
-  color: #27ae60;
+  color: #39d353;
   font-weight: 600;
 }
 
 .device-update-time {
   display: block;
   font-size: 20rpx;
-  color: #95a5a6;
+  color: #6e7681;
   margin-top: 4rpx;
 }
 
@@ -513,8 +579,9 @@
 /* ===== 设备详情界面样式 ===== */
 .device-detail-container {
   padding: 32rpx;
-  background: #f5f5f5;
+  background: linear-gradient(135deg, #1a1a1a 0%, #0d1117 100%);
   min-height: 100vh;
+  color: #fff;
 }
 
 .top-nav {
@@ -523,33 +590,44 @@
   align-items: center;
   margin-bottom: 32rpx;
   padding: 24rpx 0;
-  border-bottom: 1rpx solid #e0e0e0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
 }
 
 .device-title {
   font-size: 36rpx;
   font-weight: 600;
-  color: #333;
+  color: #ffffff;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .back-button {
-  background: #f0f0f0;
-  color: #666;
-  border: none;
-  border-radius: 8rpx;
+  background: rgba(255, 255, 255, 0.1);
+  color: #c9d1d9;
+  border: 1rpx solid rgba(255, 255, 255, 0.2);
+  border-radius: 12rpx;
   padding: 16rpx 24rpx;
   font-size: 28rpx;
   min-height: 64rpx;
   line-height: 32rpx;
+  transition: all 0.3s ease;
+}
+
+.back-button:active {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(0.95);
 }
 
 /* 区块间距样式 */
 .section { 
   margin: 32rpx 0;
-  background: white;
+  background: linear-gradient(135deg, #1a1a1a 0%, #161b22 100%);
+  border: 1rpx solid rgba(102, 126, 234, 0.2);
   border-radius: 16rpx;
   padding: 32rpx;
-  box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.1);
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.4);
 }
 
 .section-header {
@@ -558,24 +636,35 @@
   align-items: center;
   margin-bottom: 24rpx;
   padding-bottom: 16rpx;
-  border-bottom: 1rpx solid #f0f0f0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
 }
 
 .section-title {
   font-size: 32rpx;
   font-weight: 600;
-  color: #333;
+  color: #ffffff;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .clear-button {
-  background: #ff4757;
+  background: linear-gradient(135deg, #ff4757 0%, #e74c3c 100%);
   color: white;
   border: none;
-  border-radius: 6rpx;
+  border-radius: 12rpx;
   padding: 8rpx 16rpx;
   font-size: 24rpx;
   min-height: 48rpx;
   line-height: 32rpx;
+  box-shadow: 0 4rpx 12rpx rgba(255, 71, 87, 0.3);
+  transition: all 0.3s ease;
+}
+
+.clear-button:active {
+  transform: scale(0.95);
+  box-shadow: 0 2rpx 8rpx rgba(255, 71, 87, 0.5);
 }
 
 /* 设备信息样式 */
@@ -587,7 +676,7 @@
 
 .info-label {
   font-size: 26rpx;
-  color: #666;
+  color: #8b949e;
   width: 140rpx;
   flex-shrink: 0;
   letter-spacing: 0.5rpx;
@@ -595,7 +684,7 @@
 
 .info-value {
   font-size: 26rpx;
-  color: #333;
+  color: #c9d1d9;
   flex: 1;
   letter-spacing: 0.5rpx;
   white-space: nowrap;
@@ -619,13 +708,14 @@
 .connecting-tip {
   margin-top: 16rpx;
   padding: 16rpx;
-  background: #e3f2fd;
-  border-radius: 8rpx;
+  background: rgba(102, 126, 234, 0.1);
+  border: 1rpx solid rgba(102, 126, 234, 0.3);
+  border-radius: 12rpx;
   text-align: center;
 }
 
 .connecting-tip text {
-  color: #1976d2;
+  color: #667eea;
   font-size: 24rpx;
 }
 
@@ -633,9 +723,9 @@
 .buffer-status {
   margin-top: 16rpx;
   padding: 16rpx;
-  background: #fff3cd;
-  border: 1rpx solid #ffeaa7;
-  border-radius: 8rpx;
+  background: rgba(243, 156, 18, 0.1);
+  border: 1rpx solid rgba(243, 156, 18, 0.3);
+  border-radius: 12rpx;
 }
 
 .buffer-status .info-label {
@@ -644,7 +734,7 @@
 }
 
 .buffer-status .info-value {
-  color: #856404;
+  color: #f39c12;
   font-weight: 500;
 }
 
@@ -652,16 +742,16 @@
   display: block;
   margin-top: 12rpx;
   font-size: 22rpx;
-  color: #856404;
-  background: #fff;
+  color: #f39c12;
+  background: rgba(0, 0, 0, 0.3);
   padding: 12rpx;
-  border-radius: 6rpx;
-  border: 1rpx solid #ffeaa7;
+  border-radius: 8rpx;
+  border: 1rpx solid rgba(243, 156, 18, 0.3);
   word-break: break-all;
   white-space: pre-wrap;
   max-height: 200rpx;
   overflow-y: auto;
-  font-family: monospace;
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
 }
 
 /* Un设备列表样式 */
@@ -672,33 +762,34 @@
 
 .device-count {
   font-size: 24rpx;
-  color: #666;
+  color: #8b949e;
   font-weight: 400;
 }
 
 .no-devices-found {
   text-align: center;
   padding: 40rpx 20rpx;
-  color: #999;
+  color: #6e7681;
 }
 
 .no-devices-found text {
   display: block;
   margin-bottom: 8rpx;
   font-size: 28rpx;
+  color: #c9d1d9;
 }
 
 .no-devices-found .no-devices-tip {
   font-size: 22rpx !important;
-  color: #ccc !important;
+  color: #8b949e !important;
 }
 
 .un-device-item {
   display: flex;
   align-items: center;
   padding: 20rpx 0;
-  border-bottom: 1rpx solid #f0f0f0;
-  transition: background-color 0.2s ease;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
 }
 
 .un-device-item:last-child {
@@ -706,7 +797,8 @@
 }
 
 .un-device-item:hover {
-  background-color: #f8f9fa;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8rpx;
 }
 
 .device-icon {
@@ -727,7 +819,7 @@
 .device-name {
   display: block;
   font-size: 28rpx;
-  color: #1976d2;
+  color: #667eea;
   font-weight: 600;
   margin-bottom: 4rpx;
   letter-spacing: 0.5rpx;
@@ -736,7 +828,7 @@
 .device-info {
   display: block;
   font-size: 24rpx;
-  color: #666;
+  color: #8b949e;
   font-weight: 400;
   letter-spacing: 0.5rpx;
   margin-bottom: 4rpx;
@@ -745,7 +837,7 @@
 .device-time {
   display: block;
   font-size: 20rpx;
-  color: #999;
+  color: #6e7681;
   font-weight: 400;
   letter-spacing: 0.5rpx;
 }
@@ -793,7 +885,7 @@
   display: flex;
   align-items: center;
   padding: 20rpx 0;
-  border-bottom: 1rpx solid #f0f0f0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
   transition: all 0.3s ease;
 }
 
@@ -802,7 +894,8 @@
 }
 
 .touch-device-item:hover {
-  background-color: #f8f9fa;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8rpx;
 }
 
 .touch-device-item .device-emoji {
@@ -811,7 +904,9 @@
 
 /* 输入框样式 */
 .message-input { 
-  border: 1rpx solid #ddd; 
+  background: rgba(0, 0, 0, 0.3);
+  border: 1rpx solid rgba(102, 126, 234, 0.5);
+  color: #c9d1d9;
   padding: 18rpx; 
   border-radius: 12rpx; 
   width: 100%;
@@ -819,6 +914,10 @@
   margin-bottom: 20rpx;
   box-sizing: border-box;
   letter-spacing: 0.5rpx;
+}
+
+.message-input::placeholder {
+  color: #8b949e;
 }
 
 .input-area {
@@ -833,10 +932,10 @@
 }
 
 .action-button {
-  background: #1976d2;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
-  border-radius: 8rpx; 
+  border-radius: 12rpx; 
   padding: 18rpx 24rpx;
   font-size: 26rpx;
   min-height: 68rpx;
@@ -845,6 +944,13 @@
   min-width: 140rpx;
   white-space: nowrap;
   letter-spacing: 0.5rpx;
+  box-shadow: 0 4rpx 12rpx rgba(102, 126, 234, 0.3);
+  transition: all 0.3s ease;
+}
+
+.action-button:active {
+  transform: scale(0.95);
+  box-shadow: 0 2rpx 8rpx rgba(102, 126, 234, 0.5);
 }
 
 .action-button.mini {
@@ -857,80 +963,88 @@
 }
 
 .action-button[disabled] {
-  background: #ccc;
-  color: #999;
+  background: rgba(139, 148, 158, 0.3);
+  color: #6e7681;
+  box-shadow: none;
 }
 
 /* 消息列表区域样式 */
 .msg-list { 
-  background: #fff; 
+  background: rgba(0, 0, 0, 0.4); 
+  border: 1rpx solid rgba(102, 126, 234, 0.3);
   min-height: 200rpx; 
-  max-height: 800rpx; /* 增加高度，确保长消息完整显示 */
-  overflow-y: auto; /* 改为auto，更好的滚动体验 */
+  max-height: 800rpx;
+  overflow-y: auto;
   margin: 16rpx 0; 
   padding: 12rpx; 
-  border-radius: 12rpx; 
-  border: 1rpx solid #e0e0e0;
+  border-radius: 12rpx;
+  backdrop-filter: blur(10rpx);
 }
 
-/* 单条消息样式 */
+/* 单条消息样式 - 修复白字白底问题 */
 .msg-item { 
   margin: 8rpx 0; 
-  padding: 16rpx; /* 增加内边距 */
-  background: #f8f9fa;
+  padding: 16rpx;
+  background: rgba(26, 26, 26, 0.8);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
   border-radius: 8rpx;
   font-size: 26rpx;
-  line-height: 1.6; /* 增加行高 */
+  line-height: 1.6;
   word-wrap: break-word;
   word-break: break-all;
-  white-space: pre-wrap; /* 保持换行和空格 */
-  width: 100%; /* 强制设置宽度 */
-  max-width: calc(100% - 32rpx); /* 确保不超出容器，减去margin */
-  overflow-wrap: break-word; /* 更好的换行处理 */
-  box-sizing: border-box; /* 包含padding和border在宽度内 */
-  overflow: hidden; /* 隐藏超出部分 */
+  white-space: pre-wrap;
+  width: 100%;
+  max-width: calc(100% - 32rpx);
+  overflow-wrap: break-word;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: #c9d1d9;
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
 }
 
 .no-messages {
   text-align: center;
   padding: 40rpx 20rpx;
-  color: #999;
+  color: #8b949e;
 }
 
 .no-messages text {
   font-size: 26rpx;
+  color: #c9d1d9;
 }
 
 /* 设备通知样式 */
 .notify-list {
-  background: #f8f9fa;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1rpx solid rgba(102, 126, 234, 0.3);
   min-height: 200rpx;
   max-height: 400rpx;
   overflow-y: scroll;
   margin: 16rpx 0;
   padding: 12rpx;
   border-radius: 12rpx;
-  border: 1rpx solid #e9ecef;
+  backdrop-filter: blur(10rpx);
 }
 
 .notify-item {
   display: flex;
   margin: 4rpx 0;
   padding: 8rpx;
-  background: white;
-  border-radius: 6rpx;
+  background: rgba(26, 26, 26, 0.8);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-radius: 8rpx;
   font-size: 26rpx;
 }
 
 .notify-time {
-  color: #6c757d;
+  color: #8b949e;
   width: 120rpx;
   flex-shrink: 0;
   font-size: 22rpx;
 }
 
 .notify-content {
-  color: #495057;
+  color: #c9d1d9;
   flex: 1;
   word-wrap: break-word;
   word-break: break-all;
@@ -940,18 +1054,21 @@
 
 /* 调试信息样式 */
 .debug-info {
-  background: #e3f2fd;
+  background: rgba(102, 126, 234, 0.1);
+  border: 1rpx solid rgba(102, 126, 234, 0.3);
   padding: 16rpx;
-  border-radius: 8rpx;
+  border-radius: 12rpx;
   margin: 8rpx 0;
   font-size: 24rpx;
-  color: #1976d2;
+  color: #667eea;
+  backdrop-filter: blur(10rpx);
 }
 
 .debug-info text {
   display: block;
   margin: 8rpx 0;
   word-break: break-all;
+  color: #c9d1d9;
 }
 
 /* 颜色设置样式 */
@@ -967,7 +1084,7 @@
 
 .color-label {
   font-size: 26rpx;
-  color: #666;
+  color: #8b949e;
   width: 60rpx;
   flex-shrink: 0;
   letter-spacing: 0.5rpx;
@@ -975,7 +1092,9 @@
 
 .color-input {
   flex: 1;
-  border: 1rpx solid #ddd;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1rpx solid rgba(102, 126, 234, 0.5);
+  color: #c9d1d9;
   padding: 14rpx;
   border-radius: 8rpx;
   font-size: 26rpx;
@@ -983,11 +1102,15 @@
   letter-spacing: 0.5rpx;
 }
 
+.color-input::placeholder {
+  color: #8b949e;
+}
+
 .send-colors-button {
-  background: #27ae60;
+  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
   color: white;
   border: none;
-  border-radius: 8rpx;
+  border-radius: 12rpx;
   padding: 18rpx 24rpx;
   font-size: 26rpx;
   min-height: 68rpx;
@@ -995,22 +1118,30 @@
   width: 100%;
   white-space: nowrap;
   letter-spacing: 0.5rpx;
+  box-shadow: 0 4rpx 12rpx rgba(39, 174, 96, 0.3);
+  transition: all 0.3s ease;
+}
+
+.send-colors-button:active {
+  transform: scale(0.95);
+  box-shadow: 0 2rpx 8rpx rgba(39, 174, 96, 0.5);
 }
 
 .send-colors-button[disabled] {
-  background: #ccc;
-  color: #999;
+  background: rgba(139, 148, 158, 0.3);
+  color: #6e7681;
+  box-shadow: none;
 }
 
 /* 底部操作区域 */
 .bottom-actions {
   margin-top: 40rpx;
   padding: 24rpx 0;
-  border-top: 1rpx solid #e0e0e0;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.1);
 }
 
 .disconnect-button {
-  background: #e74c3c;
+  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
   color: white;
   border: none;
   border-radius: 12rpx;
@@ -1022,6 +1153,13 @@
   width: 100%;
   white-space: nowrap;
   letter-spacing: 1rpx;
+  box-shadow: 0 4rpx 12rpx rgba(231, 76, 60, 0.3);
+  transition: all 0.3s ease;
+}
+
+.disconnect-button:active {
+  transform: scale(0.95);
+  box-shadow: 0 2rpx 8rpx rgba(231, 76, 60, 0.5);
 }
 
 /* 🔥 新增：单设备连接说明提示样式 */

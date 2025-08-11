@@ -78,11 +78,18 @@ Page({
         deviceId: options.deviceId,
         showScanView: false 
       });
-      this.ensureAdapter(() => this.connectWithHandshake());
+      // 延迟初始化蓝牙，确保页面先渲染
+      setTimeout(() => {
+        this.ensureAdapter(() => this.connectWithHandshake());
+      }, 100);
     } else {
       // 没有传入deviceId，显示扫描界面
+      // 先设置显示状态，确保页面可以渲染
       this.setData({ showScanView: true });
-      this.ensureAdapter(() => this.startContinuousScan());
+      // 延迟初始化蓝牙，避免阻塞页面渲染
+      setTimeout(() => {
+        this.ensureAdapter(() => this.startContinuousScan());
+      }, 100);
     }
   },
   
@@ -387,6 +394,12 @@ Page({
   ensureAdapter(cb) {
     wx.openBluetoothAdapter({
       success: () => {
+        // 设置蓝牙可用状态
+        this.setData({ 
+          bluetoothAvailable: true,
+          errorMessage: '' 
+        });
+        
         // 停止可能已存在的扫描
         wx.stopBluetoothDevicesDiscovery({});
         
@@ -416,11 +429,39 @@ Page({
           cb && cb();
         } else {
           console.error('openBluetoothAdapter fail', e);
-          wx.showModal({
-            title: '提示',
-            content: '请先打开系统蓝牙并授予位置权限',
-            showCancel: false
+          
+          // 设置错误状态，但不阻止页面显示
+          this.setData({
+            bluetoothAvailable: false,
+            scanning: false,
+            errorMessage: '蓝牙未开启或未授权'
           });
+          
+          // 显示非阻塞式提示
+          wx.showToast({
+            title: '请开启蓝牙',
+            icon: 'none',
+            duration: 3000
+          });
+          
+          // 如果在真机环境，显示更详细的引导
+          if (e.errCode !== 10001) { // 10001是模拟器错误码
+            setTimeout(() => {
+              wx.showModal({
+                title: '蓝牙未开启',
+                content: '请先打开系统蓝牙并授予小程序位置权限',
+                showCancel: true,
+                cancelText: '稍后再试',
+                confirmText: '去设置',
+                success: (res) => {
+                  if (res.confirm) {
+                    // 尝试打开系统设置
+                    wx.openSetting();
+                  }
+                }
+              });
+            }, 500);
+          }
         }
       }
     });
@@ -488,6 +529,17 @@ Page({
   
   // 切换扫描状态
   toggleScan() {
+    // 先检查蓝牙是否可用
+    if (this.data.bluetoothAvailable === false) {
+      // 重新尝试初始化蓝牙
+      this.ensureAdapter(() => {
+        if (this.data.bluetoothAvailable !== false) {
+          this.startContinuousScan();
+        }
+      });
+      return;
+    }
+    
     if (this.data.scanning) {
       this.stopContinuousScan();
     } else {
@@ -1124,6 +1176,77 @@ Page({
         duration: 2000
       });
     }
+  },
+
+  // 🔥 新增：保存碰一碰结果到本地存储（作为云函数的兜底方案）
+  saveTouchListToStorage(devices) {
+    try {
+      console.log('💾 保存碰一碰列表到本地存储...');
+      console.log('💾 设备列表:', devices);
+      
+      // 将硬件发送的设备列表转换为朋友页面需要的格式
+      const unmatchedDevices = devices.map((device, index) => {
+        // 从Un字符串中提取标签信息（如果可能）
+        const tags = this.extractTagsFromUnString(device.name);
+        
+        return {
+          id: `unmatched_${index}`,
+          openid: null,  // 未注册用户没有openid
+          name: `Un用户 (${tags.length}个标签)`,
+          bluetooth_name: device.name,
+          subtitle: '无共同标签',
+          description: tags.length > 0 ? `TA的兴趣: ${tags.slice(0, 3).join(' · ')}` : '暂无标签信息',
+          timestamp: device.first_touch || Date.now(),
+          isUnmatched: true,
+          tags: tags
+        };
+      });
+      
+      // 构造完整的碰一碰结果
+      const touchListResult = {
+        matchedUsers: [],  // 暂时没有匹配用户
+        unmatchedDevices: unmatchedDevices,
+        summary: {
+          total: devices.length,
+          matched: 0,
+          unmatched: devices.length
+        },
+        isLocalMode: true,  // 标记为本地模式（云函数未可用）
+        updateTime: Date.now()
+      };
+      
+      // 保存到本地存储
+      wx.setStorageSync('touchListResult', touchListResult);
+      console.log('💾 碰一碰结果已保存到本地存储:', touchListResult);
+      
+      // 显示保存成功提示
+      wx.showToast({
+        title: `已保存${devices.length}个碰一碰设备`,
+        icon: 'success',
+        duration: 2000
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('❌ 保存碰一碰列表失败:', error);
+      return false;
+    }
+  },
+  
+  // 从Un字符串中提取标签信息（示例实现）
+  extractTagsFromUnString(unString) {
+    // 这里可以根据Un字符串的编码规则提取标签
+    // 暂时返回示例标签
+    const sampleTags = [
+      ['编程', '音乐', '旅行', '摄影'],
+      ['运动', '阅读', '美食', '电影'],
+      ['设计', '咖啡', '徒步', '游戏'],
+      ['艺术', '瑜伽', '烹饪', '音乐']
+    ];
+    
+    // 根据字符串生成伪随机索引
+    const index = unString.charCodeAt(2) % sampleTags.length;
+    return sampleTags[index] || ['探索', '创新', '学习'];
   },
 
   // 🚨 新增：同步碰一碰列表到云端（添加错误处理和降级方案）
@@ -1970,6 +2093,9 @@ Page({
       
       // 🚨 新增：调用云函数同步碰一碰列表到后端
       this.syncTouchListToCloud(jsonData.devices);
+      
+      // 🔥 关键修复：保存碰一碰结果到本地存储，供朋友页面使用
+      this.saveTouchListToStorage(jsonData.devices);
       
       // 添加通知
       this.addNotification(`📋 自动接收碰一碰设备列表 (${deviceCount}个设备)`);

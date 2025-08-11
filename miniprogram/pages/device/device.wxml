@@ -7,6 +7,13 @@
       <text class="scan-subtitle">请确保您的设备已开启并靠近手机</text>
     </view>
     
+    <!-- 蓝牙错误提示 -->
+    <view wx:if="{{bluetoothAvailable === false}}" class="bluetooth-error-banner">
+      <view class="error-icon">⚠️</view>
+      <text class="error-message">{{errorMessage || '蓝牙未开启或未授权'}}</text>
+      <text class="error-hint">请在系统设置中开启蓝牙和位置权限</text>
+    </view>
+    
     <!-- 扫描按钮区域 -->
     <view class="scan-button-area">
       <button class="scan-button {{scanning ? 'scanning' : ''}}" bindtap="toggleScan">
