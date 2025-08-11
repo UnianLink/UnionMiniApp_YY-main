@@ -831,18 +831,47 @@ Page({
     const index = e.currentTarget.dataset.index;
     const card = this.data.userCards[index];
     
-    if (card && card.userData) {
-      console.log('[ConnectPage] 点击用户卡片:', card.name, 'openid:', card.openid);
-      
-      // 直接显示用户详细信息
+    if (!card) {
+      console.error('[ConnectPage] 用户卡片不存在，索引:', index);
+      return;
+    }
+    
+    console.log('[ConnectPage] 点击用户卡片:', card.name);
+    
+    // 🔥 修复：区分真实用户和碰一碰虚拟用户
+    if (card.userData) {
+      // 真实注册用户 - 显示详细信息
+      console.log('[ConnectPage] 真实用户，显示详细信息');
       this.showUserDetail(card.userData);
+    } else if (card.id && card.id.startsWith('unmatched_')) {
+      // 碰一碰虚拟用户 - 显示简单信息
+      console.log('[ConnectPage] 碰一碰虚拟用户，显示简单信息');
+      this.showUnmatchedDeviceInfo(card);
     } else {
-      console.error('[ConnectPage] 用户卡片数据无效:', card);
+      // 未知类型
+      console.warn('[ConnectPage] 未知卡片类型:', card);
       wx.showToast({
-        title: '用户信息无效',
-        icon: 'none'
+        title: '用户类型不明',
+        icon: 'none',
+        duration: 1500
       });
     }
+  },
+
+  /**
+   * 显示碰一碰虚拟用户信息
+   */
+  showUnmatchedDeviceInfo: function(card) {
+    console.log('[ConnectPage] 显示碰一碰设备信息:', card);
+    
+    // 显示设备的基本信息和建议
+    wx.showModal({
+      title: '碰一碰设备',
+      content: `设备名称：${card.name}\n\n${card.description || '这是一个还未在小程序中注册的Un设备用户。'}\n\n建议TA也下载小程序完善个人资料，这样你们就能看到更详细的匹配信息啦！`,
+      showCancel: false,
+      confirmText: '知道了',
+      confirmColor: '#4CAF50'
+    });
   },
 
   /**
@@ -1864,14 +1893,27 @@ Page({
         console.log('从class_bar获取数据成功', res.data);
         console.log('class_bar原始数据结构检查:', res.data);
         
-        // 根据README文档，数据结构应该是 res.data[0].data
+        // 智能解析数据结构
         let classifications = [];
-        if (res.data && res.data.length > 0 && res.data[0].data) {
-          classifications = res.data[0].data;
-          console.log('解析出的主题数组:', classifications);
+        if (res.data && res.data.length > 0) {
+          // 检查是否是嵌套结构 res.data[0].data
+          if (res.data[0].data && Array.isArray(res.data[0].data)) {
+            classifications = res.data[0].data;
+            console.log('✅ 使用嵌套结构解析出的主题数组:', classifications.length, '个主题');
+          } 
+          // 检查是否是直接数组结构，且第一个元素有theme属性
+          else if (res.data[0].theme) {
+            classifications = res.data;
+            console.log('✅ 使用直接数组结构解析出的主题数组:', classifications.length, '个主题');
+          }
+          // 其他情况的兜底处理
+          else {
+            console.warn('⚠️ 未知的数据结构，使用降级处理');
+            classifications = res.data;
+          }
         } else {
-          console.error('class_bar数据结构不符合预期');
-          classifications = res.data; // 降级处理
+          console.error('❌ class_bar数据为空或无效');
+          classifications = [];
         }
 
         // 获取当前用户openid并重排序
@@ -2001,22 +2043,34 @@ Page({
   loadCommunityMembers: function() {
     const currentThemeIndex = this.data.currentTrackIndex;
     const currentTheme = this.data.userCards[currentThemeIndex];
-    const classifications = this.data.classifications; // 使用新的数据结构
-    const currentUserOpenid = this.data.currentUserOpenId; // 使用新的字段名
+    const classifications = this.data.classifications;
+    const currentUserOpenid = this.data.currentUserOpenId;
     
     console.log('=== 【新版本】开始加载社群成员 ===');
     console.log('当前主题索引:', currentThemeIndex);
     console.log('当前主题:', currentTheme);
-    console.log('分类数据长度:', classifications.length);
-    console.log('当前用户openid:', currentUserOpenid);
     
-    if (!currentTheme) {
-      console.error('当前主题为空');
+    // 🔥 关键修复：检查当前主题是否是碰一碰生成的虚拟用户
+    if (!currentTheme || !currentTheme.name) {
+      console.error('❌ 当前主题为空');
       return;
     }
     
-    if (!classifications.length) {
-      console.error('分类数据为空');
+    // 检查是否是碰一碰生成的Un用户（虚拟用户）
+    if (currentTheme.name.startsWith('Un用户') || currentTheme.id.startsWith('unmatched_')) {
+      console.log('🎯 当前是碰一碰虚拟用户，跳过社群数据加载');
+      this.setData({
+        communityMembers: [],
+        currentUserCommunity: null
+      });
+      return;
+    }
+    console.log('分类数据长度:', classifications.length);
+    console.log('当前用户openid:', currentUserOpenid);
+    
+    // 继续处理真实社群主题 - 统一检查
+    if (!classifications || classifications.length === 0) {
+      console.error('❌ 分类数据为空，等待数据加载');
       wx.showToast({
         title: '请等待数据加载完成',
         icon: 'none'
@@ -2025,7 +2079,7 @@ Page({
     }
     
     if (!currentUserOpenid) {
-      console.error('用户openid为空');
+      console.error('❌ 用户openid为空');
       wx.showToast({
         title: '请稍后重试',
         icon: 'none'
@@ -2033,35 +2087,18 @@ Page({
       return;
     }
     
-               // 【调试】先查看实际的数据结构
-      console.log('=== 调试信息 ===');
-      console.log('classifications原始数据:', classifications);
-      console.log('classifications长度:', classifications.length);
-      if (classifications.length > 0) {
-        console.log('classifications[0]结构:', classifications[0]);
-        console.log('classifications[0]的keys:', Object.keys(classifications[0]));
-      }
-      
-      // 【修正】classifications数组每个元素直接就是主题对象
-      if (!classifications.length) {
-        console.error('classifications数据为空');
-        wx.showToast({
-          title: '暂无分类数据',
-          icon: 'none'
-        });
-        return;
-      }
-      
-      console.log('可用主题列表:', classifications.map(t => t.theme));
-      console.log('当前选择的主题名:', currentTheme.name);
-      
-      // 直接在classifications数组中匹配主题名称
-      const themeData = classifications.find(theme => theme.theme === currentTheme.name);
+    // 🔍 调试信息
+    console.log('=== 调试信息 ===');
+    console.log('可用主题列表:', classifications.map(t => t.theme));
+    console.log('当前选择的主题名:', currentTheme.name);
+    
+    // 🎯 在真实社群分类中匹配主题
+    const themeData = classifications.find(theme => theme.theme === currentTheme.name);
     console.log('找到的主题数据:', themeData);
     
-          if (!themeData || !themeData.communities) {
-        console.log('未找到当前主题的社群数据:', currentTheme.name);
-        console.log('可用的主题列表:', classifications.map(t => t.theme));
+    if (!themeData || !themeData.communities) {
+      console.log('⚠️ 未找到当前主题的社群数据:', currentTheme.name);
+      console.log('可用的主题列表:', classifications.map(t => t.theme));
       this.setData({
         communityMembers: [],
         currentUserCommunity: null

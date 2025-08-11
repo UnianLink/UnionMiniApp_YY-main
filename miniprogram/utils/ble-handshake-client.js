@@ -444,6 +444,14 @@ class BleHandshakeClient {
       // 处理其他类型的消息
       console.log('📨 收到消息:', messageObj.type);
       
+      // 🔥 特殊处理：心跳响应
+      if (messageObj.type === 'heartbeat_ack') {
+        console.log('💓 收到心跳响应，连接健康');
+        this.lastHeartbeatTime = Date.now();
+        this.connectionHealthy = true;
+        return; // 心跳响应不需要进一步处理
+      }
+      
       if (typeof this.onMessageReceived === 'function') {
         this.onMessageReceived(messageObj);
       }
@@ -851,20 +859,23 @@ class BleHandshakeClient {
         timestamp: Date.now()
       };
       
-      // 使用较短超时的心跳
-      await Promise.race([
-        this.sendMessage(JSON.stringify(heartbeatMessage)),
-        new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('心跳超时')), 3000);
-        })
-      ]);
+      // 🔥 修复：直接发送心跳，不等待响应（避免超时错误）
+      // 心跳响应会在 handleReceivedMessage 中单独处理
+      await this.sendMessage(JSON.stringify(heartbeatMessage));
       
-      this.lastHeartbeatTime = Date.now();
-      this.connectionHealthy = true;
-      console.log('💓 心跳正常');
+      console.log('💓 心跳已发送，等待响应...');
+      
+      // 设置2秒后检查是否收到响应
+      setTimeout(() => {
+        const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeatTime;
+        if (timeSinceLastHeartbeat > 5000) { // 5秒内没收到响应才算失败
+          console.warn('💔 心跳响应超时');
+          this.connectionHealthy = false;
+        }
+      }, 2000);
       
     } catch (error) {
-      console.warn('💔 心跳失败:', error.message);
+      console.warn('💔 心跳发送失败:', error.message);
       this.connectionHealthy = false;
     }
   }

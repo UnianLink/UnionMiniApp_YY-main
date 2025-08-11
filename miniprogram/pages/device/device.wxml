@@ -49,16 +49,18 @@
           </view>
         </view>
         
-        <!-- 最强信号设备卡片（突出显示） -->
-        <view class="device-card primary" bindtap="connectDevice" data-deviceid="{{devices[0].deviceId}}">
-          <view class="best-signal-badge">最强信号</view>
+        <!-- 🧠 智能推荐设备（贴手机背面识别） -->
+        <view wx:if="{{recommendedDevice}}" class="device-card primary" 
+              bindtap="connectDevice" 
+              data-deviceid="{{recommendedDevice.deviceId}}">
+          <view class="best-signal-badge">{{recommendedDevice.recommendReason}}</view>
           <view class="device-icon">
             <view class="necklace-icon">💎</view>
           </view>
           <view class="device-info">
-            <text class="device-name-subtle">{{devices[0].name}}</text>
-            <text class="device-signal strong">信号强度: {{devices[0].RSSI !== undefined ? devices[0].RSSI : '-'}} dBm</text>
-            <text class="device-update-time">{{devices[0].updateTime || '刚刚更新'}}</text>
+            <text class="device-name-subtle">{{recommendedDevice.name}}</text>
+            <text class="device-signal strong">信号强度: {{recommendedDevice.RSSI}} dBm</text>
+            <text class="device-update-time">{{recommendedDevice.updateTime || '刚刚更新'}}</text>
           </view>
           <view class="connect-button">
             <text class="connect-text">点击连接</text>
@@ -66,10 +68,42 @@
           </view>
         </view>
         
-        <!-- 其他设备列表 -->
-        <view wx:if="{{devices.length > 1}}" class="other-devices">
-          <text class="other-devices-title">其他设备</text>
-          <view wx:for="{{devices}}" wx:key="deviceId" wx:if="{{index > 0}}" 
+        <!-- 🔍 等待智能识别状态 -->
+        <view wx:elif="{{devices.length > 0 && !recommendedDevice}}" class="smart-waiting">
+          <view class="waiting-animation">
+            <view class="waiting-dot"></view>
+            <view class="waiting-dot"></view>
+            <view class="waiting-dot"></view>
+          </view>
+          <text class="waiting-text">正在智能识别最近的设备...</text>
+          <text class="waiting-subtitle">请将您的设备贴近手机背面</text>
+          <text class="device-count">已发现 {{devices.length}} 个设备，正在分析信号稳定性</text>
+          
+          <!-- 设备分析进度 -->
+          <view class="analysis-progress">
+            <view wx:for="{{devices}}" wx:key="deviceId" wx:if="{{index < 3}}" class="device-analysis">
+              <text class="device-name">{{item.name}}</text>
+              <text class="device-rssi">{{item.RSSI}}dBm</text>
+              <view class="stability-indicator">
+                <view class="stability-dots">
+                  <view class="dot {{item.historySize >= 2 ? 'filled' : ''}}"></view>
+                  <view class="dot {{item.historySize >= 4 ? 'filled' : ''}}"></view>
+                  <view class="dot {{item.historySize >= 6 ? 'filled' : ''}}"></view>
+                  <view class="dot {{item.historySize >= 8 ? 'filled' : ''}}"></view>
+                </view>
+              </view>
+            </view>
+            <text wx:if="{{devices.length > 3}}" class="more-devices">...还有{{devices.length - 3}}个设备</text>
+          </view>
+        </view>
+        
+        <!-- 📱 其他候选设备列表（收起状态） -->
+        <view wx:if="{{devices.length > 1 && showOtherDevices}}" class="other-devices">
+          <text class="other-devices-title" bindtap="toggleOtherDevices">
+            其他设备 ({{devices.length - (recommendedDevice ? 1 : 0)}}) {{showOtherDevices ? '▼' : '▶'}}
+          </text>
+          <view wx:for="{{devices}}" wx:key="deviceId" 
+                wx:if="{{!recommendedDevice || item.deviceId !== recommendedDevice.deviceId}}"
                 class="device-card secondary" 
                 bindtap="connectDevice" 
                 data-deviceid="{{item.deviceId}}">
@@ -82,6 +116,11 @@
             </view>
             <view class="connect-arrow">→</view>
           </view>
+        </view>
+        
+        <!-- 显示其他设备按钮 -->
+        <view wx:elif="{{devices.length > 1}}" class="show-others-btn" bindtap="toggleOtherDevices">
+          <text>显示其他 {{devices.length - (recommendedDevice ? 1 : 0)}} 个设备</text>
         </view>
         
         <!-- 连接提示 -->

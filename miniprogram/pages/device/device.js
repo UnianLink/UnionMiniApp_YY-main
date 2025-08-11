@@ -1,5 +1,7 @@
 // 导入BLE握手协议客户端
 const { BleHandshakeClient, BLE_CONFIG, BLE_HANDSHAKE_STATE } = require('../../utils/ble-handshake-client.js');
+// 导入智能设备选择配置
+const DeviceSelectionConfig = require('../../config/device-selection-config.js');
 
 Page({
   data: {
@@ -47,12 +49,21 @@ Page({
     showConnectionGuide: false, // 是否显示连接引导
     connectionAnimation: false, // 连接动画状态
     
+    // ===== 智能设备选择相关 =====
+    recommendedDevice: null, // 智能推荐的设备
+    showOtherDevices: false, // 是否显示其他设备列表
+    deviceSelectionTimer: null, // 设备选择定时器
+    lastStableCheck: 0, // 上次稳定性检查时间
+    
     // ===== Un设备列表相关 =====
     unDevices: [] // Un开头的设备列表
   },
   
   // 页面加载时的处理
   onLoad(options) {
+    // 🔬 初始化设备历史记录（不能放在data中，因为Map不可序列化）
+    this.deviceHistory = new Map();
+    
     // 初始化BLE握手协议客户端
     this.initHandshakeClient();
     
@@ -103,6 +114,12 @@ Page({
     if (this._deviceUpdateTimer) {
       clearInterval(this._deviceUpdateTimer);
       this._deviceUpdateTimer = null;
+    }
+    
+    // 🔬 清理设备历史记录，防止内存泄漏
+    if (this.deviceHistory) {
+      this.deviceHistory.clear();
+      this.deviceHistory = null;
     }
     
     // 断开握手协议连接
@@ -504,6 +521,9 @@ Page({
             // 更新列表（使用Map去重并保留最新RSSI）
             const map = new Map(this.data.devices.map(d => [d.deviceId, d]));
             filteredDevices.forEach(d => {
+              // 🔬 更新RSSI历史记录
+              this.updateDeviceRSSIHistory(d.deviceId, d.RSSI, now);
+              
               // 添加更新时间信息
               const existingDevice = map.get(d.deviceId);
               map.set(d.deviceId, {
@@ -519,12 +539,28 @@ Page({
               return !d.lastSeen || (now - d.lastSeen) < 30000;
             });
             
+            // 为所有设备添加历史信息
+            devices = devices.map(device => {
+              const history = this.deviceHistory.get(device.deviceId);
+              return {
+                ...device,
+                historySize: history ? history.rssiHistory.length : 0
+              };
+            });
+            
             // 按RSSI从高到低排序
             devices.sort((a, b) => (b.RSSI || -999) - (a.RSSI || -999));
             
-            // 更新设备列表，显示所有发现的设备
+            // 🧠 智能设备选择算法
+            const smartRecommendation = this.smartDeviceSelection(devices);
+            
+            // 🔄 动态推荐撤回检查
+            const shouldRevokeRecommendation = this.checkRecommendationRevocation(smartRecommendation);
+            
+            // 更新设备列表和推荐设备
             this.setData({ 
               devices: devices,
+              recommendedDevice: shouldRevokeRecommendation ? null : smartRecommendation,
               showConnectionGuide: devices.length > 0
             });
             
@@ -555,17 +591,32 @@ Page({
 
   // 点击设备，停止扫描并连接设备
   connectDevice(e) {
+    // 🛡️ 防重复连接保护
+    if (this.data.connecting || this.data.connected) {
+      console.log('⚠️ [连接] 忽略重复连接请求 - 当前状态:', {
+        connecting: this.data.connecting,
+        connected: this.data.connected
+      });
+      return;
+    }
+    
     const deviceId = e.currentTarget.dataset.deviceid;
     
     console.log('🔗 [连接] 用户点击连接设备:', deviceId);
     
-    // 🎯 立即设置连接状态为正在连接
+    // 🎯 立即设置连接状态为正在连接，防止重复点击
     this.setData({ 
       connecting: true,
       connected: false,
       connectionAnimation: false, // 停止旋转动画
       showConnectionGuide: false // 隐藏连接引导
     });
+    
+    // 🚨 立即停止扫描，防止发现更多设备导致界面混乱
+    if (this.data.scanning) {
+      this.stopScan();
+      console.log('🛑 [连接] 开始连接时立即停止扫描');
+    }
     
     // 延迟切换到设备详情页面
     setTimeout(() => {
@@ -856,18 +907,28 @@ Page({
       
       console.log('✅ [调试] 16字节Un字符串发送完成，等待硬件确认...');
       
-      // ✅ 关键修复：等待硬件响应而不是立即显示成功
-      // 设置响应等待标志
+      // ✅ 智能响应等待：只在连接不稳定时显示超时
       this.waitingForUnStringResponse = true;
       this.unStringResponseTimeout = setTimeout(() => {
         if (this.waitingForUnStringResponse) {
           console.log('⚠️ [调试] 等待硬件Un字符串确认超时');
           this.waitingForUnStringResponse = false;
-          wx.showToast({
-            title: '硬件响应超时',
-            icon: 'none',
-            duration: 2000
-          });
+          
+          // 🔥 修复：检查连接状态，避免误导性超时提示
+          const bleClient = this.bleHandshakeClient;
+          const isHealthy = bleClient && bleClient.connectionHealthy;
+          
+          if (isHealthy) {
+            console.log('💡 连接健康，可能是消息丢失，不显示超时提示');
+            // 连接正常时不显示超时，可能只是消息丢失
+          } else {
+            console.warn('💔 连接不健康，显示超时提示');
+            wx.showToast({
+              title: '请检查设备连接',
+              icon: 'none',
+              duration: 2000
+            });
+          }
         }
       }, 8000); // 8秒超时（用户协议规定）
       
@@ -2692,6 +2753,284 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
     this.writeToBle(readyMessage, () => {
       console.log('已发送设备就绪信号');
       wx.showToast({ title: '连接完成，等待设备消息', icon: 'success' });
+    });
+  },
+
+  /**
+   * 🧠 智能设备选择算法 - 基于RSSI滤波和稳定性的高精度识别
+   * @param {Array} devices 设备列表
+   * @returns {Object|null} 推荐的设备对象或null
+   */
+  smartDeviceSelection(devices) {
+    if (!devices || devices.length === 0) {
+      return null;
+    }
+
+    // 🎛️ 使用配置文件中的参数，开发者可通过修改配置文件来调整算法行为
+    const RSSI_STRONG_THRESHOLD = DeviceSelectionConfig.RSSI_STRONG_THRESHOLD;
+    const RSSI_PROXIMITY_THRESHOLD = DeviceSelectionConfig.RSSI_PROXIMITY_THRESHOLD;
+    const RSSI_CANDIDATE_MIN = DeviceSelectionConfig.RSSI_CANDIDATE_MIN;
+    const RSSI_CONFIDENCE_MIN = DeviceSelectionConfig.RSSI_CONFIDENCE_MIN;
+
+    // 过滤出有效的候选设备（信号不能太弱）
+    const candidates = devices.filter(d => d.RSSI >= RSSI_CANDIDATE_MIN);
+    
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    // 为每个候选设备计算滤波后的RSSI和稳定性
+    const enrichedCandidates = candidates.map(device => {
+      const history = this.deviceHistory.get(device.deviceId);
+      const filteredRSSI = this.calculateFilteredRSSI(device.deviceId);
+      const stability = this.calculateRSSIStability(device.deviceId);
+      const confidence = this.calculateConfidence(device.deviceId);
+      
+      return {
+        ...device,
+        filteredRSSI,
+        stability,
+        confidence,
+        historySize: history ? history.rssiHistory.length : 0
+      };
+    });
+
+    // 情况1：只有一个设备，但需要稳定性检查
+    if (enrichedCandidates.length === 1) {
+      const device = enrichedCandidates[0];
+      if (device.confidence >= RSSI_CONFIDENCE_MIN && device.stability.isStable) {
+        return {
+          ...device,
+          recommendReason: '唯一稳定设备'
+        };
+      } else {
+        console.log('🤔 [智能选择] 唯一设备信号不够稳定，继续观察', 
+          {name: device.name, confidence: device.confidence.toFixed(2), stable: device.stability.isStable});
+        return null;
+      }
+    }
+
+    // 情况2：有设备信号特别强且稳定（贴手机背面）
+    const stableCloseDevices = enrichedCandidates.filter(d => 
+      d.filteredRSSI >= RSSI_PROXIMITY_THRESHOLD && 
+      d.confidence >= RSSI_CONFIDENCE_MIN &&
+      d.stability.isStable
+    );
+    
+    if (stableCloseDevices.length === 1) {
+      return {
+        ...stableCloseDevices[0],
+        recommendReason: '极强稳定信号'
+      };
+    } else if (stableCloseDevices.length > 1) {
+      // 多个极强信号，选择最稳定的
+      const mostStable = stableCloseDevices.sort((a, b) => b.confidence - a.confidence)[0];
+      return {
+        ...mostStable,
+        recommendReason: `极强信号(置信度${(mostStable.confidence * 100).toFixed(0)}%)`
+      };
+    }
+
+    // 情况3：检查是否有设备明显强于其他设备且稳定
+    const stableCandidates = enrichedCandidates.filter(d => 
+      d.confidence >= RSSI_CONFIDENCE_MIN && d.stability.isStable
+    );
+
+    if (stableCandidates.length === 0) {
+      console.log('🤔 [智能选择] 所有设备信号都不够稳定，继续观察', 
+        enrichedCandidates.map(d => ({
+          name: d.name, 
+          rssi: d.filteredRSSI.toFixed(1), 
+          confidence: (d.confidence * 100).toFixed(0) + '%',
+          stable: d.stability.isStable
+        })));
+      return null;
+    }
+
+    const sortedStable = stableCandidates.sort((a, b) => b.filteredRSSI - a.filteredRSSI);
+    const strongest = sortedStable[0];
+    const secondStrongest = sortedStable[1];
+
+    if (secondStrongest && (strongest.filteredRSSI - secondStrongest.filteredRSSI) >= RSSI_STRONG_THRESHOLD) {
+      return {
+        ...strongest,
+        recommendReason: `稳定领先${(strongest.filteredRSSI - secondStrongest.filteredRSSI).toFixed(1)}dBm`
+      };
+    }
+
+    // 情况4：稳定设备信号差不多，继续等待
+    console.log('🤔 [智能选择] 稳定设备信号强度相近，等待更明显差异', 
+      stableCandidates.map(d => ({
+        name: d.name, 
+        rssi: d.filteredRSSI.toFixed(1),
+        confidence: (d.confidence * 100).toFixed(0) + '%'
+      })));
+    
+    return null;
+  },
+
+  /**
+   * 🔬 更新设备RSSI历史记录
+   * @param {string} deviceId 设备ID
+   * @param {number} rssi RSSI值
+   * @param {number} timestamp 时间戳
+   */
+  updateDeviceRSSIHistory(deviceId, rssi, timestamp) {
+    const RSSI_HISTORY_SIZE = DeviceSelectionConfig.RSSI_HISTORY_SIZE;
+    
+    if (!this.deviceHistory.has(deviceId)) {
+      this.deviceHistory.set(deviceId, {
+        rssiHistory: [],
+        timestamps: [],
+        firstSeenTime: timestamp
+      });
+    }
+    
+    const history = this.deviceHistory.get(deviceId);
+    
+    // 添加新的RSSI值
+    history.rssiHistory.push(rssi);
+    history.timestamps.push(timestamp);
+    
+    // 保持历史记录大小限制
+    if (history.rssiHistory.length > RSSI_HISTORY_SIZE) {
+      history.rssiHistory.shift();
+      history.timestamps.shift();
+    }
+  },
+
+  /**
+   * 📊 计算滤波后的RSSI（移动平均）
+   * @param {string} deviceId 设备ID
+   * @returns {number} 滤波后的RSSI值
+   */
+  calculateFilteredRSSI(deviceId) {
+    const history = this.deviceHistory.get(deviceId);
+    if (!history || history.rssiHistory.length === 0) {
+      return -999;
+    }
+    
+    // 简单移动平均
+    const sum = history.rssiHistory.reduce((acc, val) => acc + val, 0);
+    return sum / history.rssiHistory.length;
+  },
+
+  /**
+   * 📈 计算RSSI稳定性
+   * @param {string} deviceId 设备ID
+   * @returns {Object} {isStable: boolean, stdDev: number, sampleSize: number}
+   */
+  calculateRSSIStability(deviceId) {
+    const RSSI_STABILITY_THRESHOLD = DeviceSelectionConfig.RSSI_STABILITY_THRESHOLD;
+    const MIN_SAMPLES = DeviceSelectionConfig.MIN_SAMPLES_FOR_STABILITY;
+    
+    const history = this.deviceHistory.get(deviceId);
+    if (!history || history.rssiHistory.length < MIN_SAMPLES) {
+      return {
+        isStable: false,
+        stdDev: 999,
+        sampleSize: history ? history.rssiHistory.length : 0
+      };
+    }
+    
+    // 计算标准差
+    const mean = this.calculateFilteredRSSI(deviceId);
+    const variance = history.rssiHistory.reduce((acc, val) => {
+      const diff = val - mean;
+      return acc + diff * diff;
+    }, 0) / history.rssiHistory.length;
+    
+    const stdDev = Math.sqrt(variance);
+    
+    return {
+      isStable: stdDev <= RSSI_STABILITY_THRESHOLD,
+      stdDev,
+      sampleSize: history.rssiHistory.length
+    };
+  },
+
+  /**
+   * 🎯 计算设备推荐置信度
+   * @param {string} deviceId 设备ID
+   * @returns {number} 置信度 (0-1)
+   */
+  calculateConfidence(deviceId) {
+    const RSSI_STABLE_TIME = DeviceSelectionConfig.RSSI_STABLE_TIME;
+    
+    const history = this.deviceHistory.get(deviceId);
+    if (!history || history.rssiHistory.length === 0) {
+      return 0;
+    }
+    
+    const now = Date.now();
+    const observationTime = now - history.firstSeenTime;
+    const stability = this.calculateRSSIStability(deviceId);
+    
+    // 🎛️ 基础置信度：基于观察时间
+    const timeConfidence = Math.min(observationTime / RSSI_STABLE_TIME, 1) * DeviceSelectionConfig.CONFIDENCE_WEIGHT_TIME;
+    
+    // 🎛️ 稳定性置信度：基于标准差
+    const stabilityConfidence = stability.isStable ? 
+      Math.max(0, (5 - stability.stdDev) / 5) * DeviceSelectionConfig.CONFIDENCE_WEIGHT_STABILITY : 0;
+    
+    // 🎛️ 样本数置信度：基于历史记录完整度
+    const sampleConfidence = Math.min(stability.sampleSize / DeviceSelectionConfig.RSSI_HISTORY_SIZE, 1) * DeviceSelectionConfig.CONFIDENCE_WEIGHT_SAMPLES;
+    
+    return Math.min(timeConfidence + stabilityConfidence + sampleConfidence, 1);
+  },
+
+  /**
+   * 🔄 检查是否应该撤回当前推荐
+   * @param {Object|null} newRecommendation 新的推荐结果
+   * @returns {boolean} true表示应该撤回推荐
+   */
+  checkRecommendationRevocation(newRecommendation) {
+    const currentRecommended = this.data.recommendedDevice;
+    
+    // 如果当前没有推荐设备，不需要撤回
+    if (!currentRecommended) {
+      return false;
+    }
+    
+    // 如果新推荐是同一个设备，不撤回
+    if (newRecommendation && newRecommendation.deviceId === currentRecommended.deviceId) {
+      return false;
+    }
+    
+    // 检查当前推荐设备的稳定性
+    const currentDeviceConfidence = this.calculateConfidence(currentRecommended.deviceId);
+    const currentDeviceStability = this.calculateRSSIStability(currentRecommended.deviceId);
+    
+    const REVOCATION_CONFIDENCE_THRESHOLD = DeviceSelectionConfig.REVOCATION_CONFIDENCE_THRESHOLD;
+    
+    // 如果当前推荐设备变得不稳定，撤回推荐
+    if (currentDeviceConfidence < REVOCATION_CONFIDENCE_THRESHOLD || !currentDeviceStability.isStable) {
+      console.log('⚠️ [智能选择] 撤回不稳定的推荐设备:', {
+        device: currentRecommended.name,
+        confidence: (currentDeviceConfidence * 100).toFixed(0) + '%',
+        stable: currentDeviceStability.isStable,
+        stdDev: currentDeviceStability.stdDev.toFixed(1)
+      });
+      
+      // 显示撤回推荐的提示
+      wx.showToast({
+        title: '设备信号不稳定，重新识别中...',
+        icon: 'none',
+        duration: 2000
+      });
+      
+      return true;
+    }
+    
+    return false;
+  },
+
+  /**
+   * 切换显示其他设备列表
+   */
+  toggleOtherDevices() {
+    this.setData({
+      showOtherDevices: !this.data.showOtherDevices
     });
   }
 });
