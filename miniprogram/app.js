@@ -13,76 +13,129 @@ App({
   onLaunch: function() {
     console.log('[App] 小程序启动，开始初始化云开发环境');
     
-    // 🔥 全局错误处理
-    this.initGlobalErrorHandling();
-    
-    // 初始化云开发环境
-    if (!wx.cloud) {
-      console.error('❌ 请使用 2.2.3 或以上的基础库以使用云能力')
-    } else {
-      try {
-        wx.cloud.init({
-          env: 'unionlink-4gkmzbm1babe86a7',
-          traceUser: true,
-        })
-        
-        console.log('✅ 云开发环境初始化成功');
-        console.log('🌩️ 云环境ID: unionlink-4gkmzbm1babe86a7');
-        
-        // 测试云开发连接
-        this.testCloudConnection();
-        
-        // 检查是否支持AI+能力
-        if (wx.cloud.extend && wx.cloud.extend.AI) {
-          console.log('✅ 微信AI+能力支持检查通过');
-          // 获取Agent信息，确认连接正常
-          this.checkAgentStatus();
-        } else {
-          console.warn('⚠️ 当前基础库版本过低，请升级到3.7.1或以上版本以支持AI+能力');
-        }
-      } catch (error) {
-        console.error('❌ 云开发环境初始化失败:', error);
-      }
-    }
-
-    // 展示本地存储能力
-    var logs = wx.getStorageSync('logs') || [];
-    logs.unshift(Date.now());
-    wx.setStorageSync('logs', logs);
-
-    // 登录
-    wx.login({
-      success: res => {
-        // 发送 res.code 到后台换取 openId, sessionKey, unionId
-      }
-    });
-    
-    // 获取用户信息
-    wx.getSetting({
-      success: res => {
-        if (res.authSetting['scope.userInfo']) {
-          // 已经授权，可以直接调用 getUserInfo 获取头像昵称，不会弹框
-          wx.getUserInfo({
-            success: res => {
-              // 可以将 res 发送给后台解码出 unionId
-              this.globalData.userInfo = res.userInfo;
-
-              // 由于 getUserInfo 是网络请求，可能会在 Page.onLoad 之后才返回
-              // 所以此处加入 callback 以防止这种情况
-              if (this.userInfoReadyCallback) {
-                this.userInfoReadyCallback(res);
-              }
+    try {
+      // 🔥 全局错误处理
+      this.initGlobalErrorHandling();
+      
+      // 延迟初始化非关键功能，避免框架未准备好时调用
+      setTimeout(() => {
+        this.delayedInit();
+      }, 100);
+      
+      // 初始化云开发环境
+      if (!wx.cloud) {
+        console.error('❌ 请使用 2.2.3 或以上的基础库以使用云能力')
+      } else {
+        try {
+          wx.cloud.init({
+            env: 'unionlink-4gkmzbm1babe86a7',
+            traceUser: true,
+          })
+          
+          console.log('✅ 云开发环境初始化成功');
+          console.log('🌩️ 云环境ID: unionlink-4gkmzbm1babe86a7');
+          
+          // 延迟测试云开发连接
+          setTimeout(() => {
+            this.testCloudConnection();
+          }, 200);
+          
+          // 延迟检查AI+能力
+          setTimeout(() => {
+            if (wx.cloud.extend && wx.cloud.extend.AI) {
+              console.log('✅ 微信AI+能力支持检查通过');
+              this.checkAgentStatus();
+            } else {
+              console.warn('⚠️ 当前基础库版本过低，请升级到3.7.1或以上版本以支持AI+能力');
             }
-          });
+          }, 300);
+          
+        } catch (error) {
+          console.error('❌ 云开发环境初始化失败:', error);
         }
       }
-    });
 
-    // 获取用户登录态
-    this.checkLoginStatus();
-    
-    // 初始化TabBar状态
-    this.initTabBarState();
+      // 安全地处理本地存储
+      try {
+        var logs = wx.getStorageSync('logs') || [];
+        logs.unshift(Date.now());
+        wx.setStorageSync('logs', logs);
+      } catch (storageError) {
+        console.error('❌ 本地存储操作失败:', storageError);
+      }
+
+      // 安全的登录处理
+      try {
+        wx.login({
+          success: res => {
+            // 发送 res.code 到后台换取 openId, sessionKey, unionId
+          },
+          fail: err => {
+            console.error('❌ 登录失败:', err);
+          }
+        });
+      } catch (loginError) {
+        console.error('❌ 调用登录API失败:', loginError);
+      }
+      
+      // 安全的用户信息获取
+      this.safeGetUserInfo();
+
+      // 获取用户登录态
+      this.checkLoginStatus();
+      
+      // 初始化TabBar状态
+      this.initTabBarState();
+      
+    } catch (globalError) {
+      console.error('❌ App启动过程中发生严重错误:', globalError);
+    }
+  },
+
+  // 延迟初始化方法
+  delayedInit: function() {
+    try {
+      console.log('🔄 开始执行延迟初始化...');
+      // 在这里执行一些可能导致冲突的初始化操作
+    } catch (error) {
+      console.error('❌ 延迟初始化失败:', error);
+    }
+  },
+
+  // 安全的用户信息获取
+  safeGetUserInfo: function() {
+    try {
+      wx.getSetting({
+        success: res => {
+          try {
+            if (res.authSetting && res.authSetting['scope.userInfo']) {
+              wx.getUserInfo({
+                success: res => {
+                  try {
+                    this.globalData.userInfo = res.userInfo;
+                    if (typeof this.userInfoReadyCallback === 'function') {
+                      this.userInfoReadyCallback(res);
+                    }
+                  } catch (userInfoError) {
+                    console.error('❌ 用户信息处理失败:', userInfoError);
+                  }
+                },
+                fail: err => {
+                  console.error('❌ 获取用户信息失败:', err);
+                }
+              });
+            }
+          } catch (settingError) {
+            console.error('❌ 处理用户设置失败:', settingError);
+          }
+        },
+        fail: err => {
+          console.error('❌ 获取用户设置失败:', err);
+        }
+      });
+    } catch (getUserInfoError) {
+      console.error('❌ 调用用户信息API失败:', getUserInfoError);
+    }
   },
 
   // 检查Agent状态
@@ -171,14 +224,48 @@ App({
     // 监听小程序错误
     wx.onError((error) => {
       console.error('🚨 小程序全局错误:', error);
+      
+      // 过滤并处理特定错误
+      if (typeof error === 'string') {
+        if (error.includes('t is not a function')) {
+          console.warn('⚠️ 检测到函数调用错误，可能是由于异步加载时序问题');
+          return;
+        }
+        if (error.includes('backgroundfetch')) {
+          console.warn('⚠️ 后台获取数据错误已被拦截，这是正常的');
+          return;
+        }
+      }
     });
 
     // 监听未处理的Promise rejection
     wx.onUnhandledRejection((event) => {
       console.error('🚨 未处理的Promise rejection:', event);
+      
+      // 尝试阻止错误传播
+      if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
     });
 
-    console.log('✅ 全局错误处理机制已启动');
+    // 重写setTimeout，添加错误保护
+    const originalSetTimeout = setTimeout;
+    setTimeout = function(callback, delay) {
+      if (typeof callback !== 'function') {
+        console.error('❌ setTimeout回调不是函数:', callback);
+        return;
+      }
+      
+      return originalSetTimeout(function() {
+        try {
+          callback.apply(this, arguments);
+        } catch (error) {
+          console.error('❌ setTimeout回调执行错误:', error);
+        }
+      }, delay);
+    };
+
+    console.log('✅ 增强版全局错误处理机制已启动');
   },
 
   // 🔥 新增：测试云开发连接

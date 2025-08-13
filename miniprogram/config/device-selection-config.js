@@ -77,7 +77,7 @@ const DeviceSelectionConfig = {
    * - 设置过高(如0.95)：要求过于严格，很少能推荐
    * - 推荐值：0.8，要求较高的置信度才推荐
    */
-  RSSI_CONFIDENCE_MIN: 0.6,
+  RSSI_CONFIDENCE_MIN: 0.7,
 
   // ===== 推荐撤回控制参数 =====
 
