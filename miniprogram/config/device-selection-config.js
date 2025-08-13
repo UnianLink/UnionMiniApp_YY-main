@@ -25,7 +25,7 @@ const DeviceSelectionConfig = {
    * - 设置过高(如-30dBm)：只有贴得很近才识别，可能漏检
    * - 推荐值：-40dBm，适合典型硬件功率
    */
-  RSSI_PROXIMITY_THRESHOLD: -40,
+  RSSI_PROXIMITY_THRESHOLD: -45,
 
   /**
    * 候选设备最小RSSI值
@@ -35,7 +35,7 @@ const DeviceSelectionConfig = {
    * - 设置过高(如-60dBm)：可能过滤掉一些有效设备
    * - 推荐值：-70dBm，过滤掉信号很弱的设备
    */
-  RSSI_CANDIDATE_MIN: -70,
+  RSSI_CANDIDATE_MIN: -60,
 
   // ===== RSSI 滤波和稳定性参数 =====
 

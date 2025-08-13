@@ -3186,14 +3186,14 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
     // 情况1：只有一个设备，但需要稳定性检查
     if (enrichedCandidates.length === 1) {
       const device = enrichedCandidates[0];
-      if (device.confidence >= RSSI_CONFIDENCE_MIN && device.stability.isStable) {
+      if (device.confidence >= RSSI_CONFIDENCE_MIN && device.stability.isStable && device.filteredRSSI >= RSSI_PROXIMITY_THRESHOLD) {
         return {
           ...device,
           recommendReason: '唯一稳定设备'
         };
       } else {
-        console.log('🤔 [智能选择] 唯一设备信号不够稳定，继续观察', 
-          {name: device.name, confidence: device.confidence.toFixed(2), stable: device.stability.isStable});
+        console.log('🤔 [智能选择] 唯一设备不满足推荐条件，继续观察', 
+          {name: device.name, rssi: device.filteredRSSI.toFixed(1), confidence: device.confidence.toFixed(2), stable: device.stability.isStable, threshold: RSSI_PROXIMITY_THRESHOLD});
         return null;
       }
     }
@@ -3221,16 +3221,18 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
 
     // 情况3：检查是否有设备明显强于其他设备且稳定
     const stableCandidates = enrichedCandidates.filter(d => 
-      d.confidence >= RSSI_CONFIDENCE_MIN && d.stability.isStable
+      d.confidence >= RSSI_CONFIDENCE_MIN && d.stability.isStable && d.filteredRSSI >= RSSI_PROXIMITY_THRESHOLD
     );
 
     if (stableCandidates.length === 0) {
-      console.log('🤔 [智能选择] 所有设备信号都不够稳定，继续观察', 
+      console.log('🤔 [智能选择] 所有设备都不满足推荐条件，继续观察', 
         enrichedCandidates.map(d => ({
           name: d.name, 
           rssi: d.filteredRSSI.toFixed(1), 
           confidence: (d.confidence * 100).toFixed(0) + '%',
-          stable: d.stability.isStable
+          stable: d.stability.isStable,
+          rssiThreshold: RSSI_PROXIMITY_THRESHOLD,
+          passThreshold: d.filteredRSSI >= RSSI_PROXIMITY_THRESHOLD
         })));
       return null;
     }
