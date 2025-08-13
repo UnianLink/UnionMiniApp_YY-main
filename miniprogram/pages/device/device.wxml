@@ -14,134 +14,183 @@
       <text class="error-hint">请在系统设置中开启蓝牙和位置权限</text>
     </view>
     
-    <!-- 扫描按钮区域 -->
-    <view class="scan-button-area">
-      <button class="scan-button {{scanning ? 'scanning' : ''}}" bindtap="toggleScan">
-        <view class="button-content">
-          <view wx:if="{{scanning}}" class="scanning-indicator">
-            <view class="scan-wave"></view>
-            <view class="scan-wave delay"></view>
-          </view>
-          <text>{{scanning ? '停止扫描' : '开始扫描'}}</text>
+    <!-- 状态指示器区域 -->
+    <view class="status-indicator-area">
+      <view class="status-indicator {{searchingMyDevice ? 'searching-my' : searchingAllDevices ? 'searching-all' : 'idle'}}">
+        <view wx:if="{{searchingMyDevice || searchingAllDevices}}" class="searching-animation">
+          <view class="scan-wave"></view>
+          <view class="scan-wave delay"></view>
         </view>
-      </button>
-      <text class="scan-hint">{{scanning ? '正在搜索附近的智能项链...' : '点击按钮开始搜索设备'}}</text>
+        <text class="status-message">{{statusMessage}}</text>
+      </view>
     </view>
     
     <!-- 设备发现区域 -->
     <view class="device-discovery-area">
-      <!-- 扫描中状态 -->
-      <view wx:if="{{scanning && devices.length === 0}}" class="scanning-state">
-        <view class="scanning-animation">
-          <view class="scanning-circle"></view>
-          <view class="scanning-circle"></view>
-          <view class="scanning-circle"></view>
-        </view>
-        <text class="scanning-text">正在搜索智能项链...</text>
-      </view>
       
-      <!-- 设备发现状态 -->
-      <view wx:elif="{{devices.length > 0}}" class="device-found-state">
-        <!-- 设备列表标题 -->
-        <view class="devices-header">
-          <text class="devices-title">发现 {{devices.length}} 个设备</text>
-          <text wx:if="{{scanning}}" class="devices-scanning-status">🔄 持续扫描中</text>
-        </view>
-        <!-- 旋转的连接引导动画 -->
-        <view class="connection-guide {{connectionAnimation ? 'animate' : ''}}">
-          <view class="guide-ring">
-            <view class="guide-dot"></view>
-            <view class="guide-dot"></view>
-            <view class="guide-dot"></view>
-          </view>
+      <!-- ===== 我的设备区域 ===== -->
+      <view wx:if="{{boundDevice}}" class="my-device-section">
+        <view class="section-title">
+          <text class="title-text">我的设备</text>
         </view>
         
-        <!-- 🧠 智能推荐设备（贴手机背面识别） -->
-        <view wx:if="{{recommendedDevice}}" class="device-card primary" 
-              bindtap="connectDevice" 
-              data-deviceid="{{recommendedDevice.deviceId}}">
-          <view class="best-signal-badge">{{recommendedDevice.recommendReason}}</view>
+        <view class="bound-device-card {{connected ? 'connected' : searchingMyDevice ? 'searching' : 'offline'}}">
           <view class="device-icon">
             <view class="necklace-icon">💎</view>
           </view>
           <view class="device-info">
-            <text class="device-name-subtle">{{recommendedDevice.name}}</text>
-            <text class="device-signal strong">信号强度: {{recommendedDevice.RSSI}} dBm</text>
-            <text class="device-update-time">{{recommendedDevice.updateTime || '刚刚更新'}}</text>
+            <text class="device-name">{{boundDevice.deviceName}}</text>
+            <text class="device-status">
+              {{connected ? '✅ 已连接' : searchingMyDevice ? '🔍 搜索中...' : '💤 离线'}}
+            </text>
+            <text wx:if="{{boundDevice.connectCount}}" class="connect-stats">
+              已连接 {{boundDevice.connectCount}} 次
+            </text>
           </view>
-          <view class="connect-button">
-            <text class="connect-text">点击连接</text>
-            <view class="connect-arrow">→</view>
-          </view>
-        </view>
-        
-        <!-- 🔍 等待智能识别状态 -->
-        <view wx:elif="{{devices.length > 0 && !recommendedDevice}}" class="smart-waiting">
-          <view class="waiting-animation">
-            <view class="waiting-dot"></view>
-            <view class="waiting-dot"></view>
-            <view class="waiting-dot"></view>
-          </view>
-          <text class="waiting-text">正在智能识别最近的设备...</text>
-          <text class="waiting-subtitle">请将您的设备贴近手机背面</text>
-          <text class="device-count">已发现 {{devices.length}} 个设备，正在分析信号稳定性</text>
-          
-          <!-- 设备分析进度 -->
-          <view class="analysis-progress">
-            <view wx:for="{{devices}}" wx:key="deviceId" wx:if="{{index < 3}}" class="device-analysis">
-              <text class="device-name">{{item.name}}</text>
-              <text class="device-rssi">{{item.RSSI}}dBm</text>
-              <view class="stability-indicator">
-                <view class="stability-dots">
-                  <view class="dot {{item.historySize >= 2 ? 'filled' : ''}}"></view>
-                  <view class="dot {{item.historySize >= 4 ? 'filled' : ''}}"></view>
-                  <view class="dot {{item.historySize >= 6 ? 'filled' : ''}}"></view>
-                  <view class="dot {{item.historySize >= 8 ? 'filled' : ''}}"></view>
-                </view>
-              </view>
-            </view>
-            <text wx:if="{{devices.length > 3}}" class="more-devices">...还有{{devices.length - 3}}个设备</text>
+          <view class="device-actions">
+            <button wx:if="{{!connected && !searchingMyDevice}}" 
+                    class="action-btn primary" 
+                    bindtap="reconnectMyDevice">重新连接</button>
+            <button wx:if="{{connected}}" 
+                    class="action-btn secondary" 
+                    bindtap="disconnect">断开连接</button>
+            <button class="action-btn danger" 
+                    bindtap="unbindDevice">解除绑定</button>
           </view>
         </view>
         
-        <!-- 📱 其他候选设备列表（收起状态） -->
-        <view wx:if="{{devices.length > 1 && showOtherDevices}}" class="other-devices">
-          <text class="other-devices-title" bindtap="toggleOtherDevices">
-            其他设备 ({{devices.length - (recommendedDevice ? 1 : 0)}}) {{showOtherDevices ? '▼' : '▶'}}
-          </text>
-          <view wx:for="{{devices}}" wx:key="deviceId" 
-                wx:if="{{!recommendedDevice || item.deviceId !== recommendedDevice.deviceId}}"
-                class="device-card secondary" 
-                bindtap="connectDevice" 
-                data-deviceid="{{item.deviceId}}">
-            <view class="device-icon small">
-              <view class="necklace-icon">💎</view>
-            </view>
-            <view class="device-info">
-              <text class="device-name-subtle">{{item.name}}</text>
-              <text class="device-signal">{{item.RSSI}} dBm</text>
-            </view>
-            <view class="connect-arrow">→</view>
+        <!-- 其他设备阻止提示 -->
+        <view class="blocked-section">
+          <view class="section-title">
+            <text class="title-text">其他设备</text>
           </view>
-        </view>
-        
-        <!-- 显示其他设备按钮 -->
-        <view wx:elif="{{devices.length > 1}}" class="show-others-btn" bindtap="toggleOtherDevices">
-          <text>显示其他 {{devices.length - (recommendedDevice ? 1 : 0)}} 个设备</text>
-        </view>
-        
-        <!-- 连接提示 -->
-        <view class="connection-tip">
-          <text>发现您的智能项链</text>
-          <text class="tip-subtitle">点击上方卡片开始连接</text>
+          <view class="block-notice">
+            <view class="block-icon">📝</view>
+            <text class="block-message">需要先解绑我的设备才能使用其他设备</text>
+          </view>
         </view>
       </view>
       
-      <!-- 未发现设备状态 -->
-      <view wx:else class="no-devices">
-        <view class="no-device-icon">🔍</view>
-        <text class="no-device-text">未发现智能项链</text>
-        <text class="no-devices-tip">请确保设备已开启并处于可发现状态</text>
+      <!-- ===== 可用设备区域（未绑定时显示）===== -->
+      <view wx:elif="{{!boundDevice}}" class="available-devices-section">
+        <!-- 搜索中状态 -->
+        <view wx:if="{{searchingAllDevices && devices.length === 0}}" class="scanning-state">
+          <view class="scanning-animation">
+            <view class="scanning-circle"></view>
+            <view class="scanning-circle"></view>
+            <view class="scanning-circle"></view>
+          </view>
+          <text class="scanning-text">正在搜索智能项链...</text>
+        </view>
+        
+        <!-- 设备发现状态 -->
+        <view wx:elif="{{devices.length > 0}}" class="device-found-state">
+          <view class="section-title">
+            <text class="title-text">可用设备</text>
+          </view>
+          
+          <!-- 设备列表标题 -->
+          <view class="devices-header">
+            <text class="devices-title">发现 {{devices.length}} 个设备</text>
+            <text wx:if="{{scanning}}" class="devices-scanning-status">🔄 持续扫描中</text>
+          </view>
+          
+          <!-- 旋转的连接引导动画 -->
+          <view class="connection-guide {{connectionAnimation ? 'animate' : ''}}">
+            <view class="guide-ring">
+              <view class="guide-dot"></view>
+              <view class="guide-dot"></view>
+              <view class="guide-dot"></view>
+            </view>
+          </view>
+          
+          <!-- 🧠 智能推荐设备（贴手机背面识别） -->
+          <view wx:if="{{recommendedDevice}}" class="device-card primary" 
+                bindtap="connectDevice" 
+                data-deviceid="{{recommendedDevice.deviceId}}">
+            <view class="best-signal-badge">{{recommendedDevice.recommendReason}}</view>
+            <view class="device-icon">
+              <view class="necklace-icon">💎</view>
+            </view>
+            <view class="device-info">
+              <text class="device-name-subtle">{{recommendedDevice.name}}</text>
+              <text class="device-signal strong">信号强度: {{recommendedDevice.RSSI}} dBm</text>
+              <text class="device-update-time">{{recommendedDevice.updateTime || '刚刚更新'}}</text>
+            </view>
+            <view class="connect-button">
+              <text class="connect-text">点击连接</text>
+              <view class="connect-arrow">→</view>
+            </view>
+          </view>
+          
+          <!-- 🔍 等待智能识别状态 -->
+          <view wx:elif="{{devices.length > 0 && !recommendedDevice}}" class="smart-waiting">
+            <view class="waiting-animation">
+              <view class="waiting-dot"></view>
+              <view class="waiting-dot"></view>
+              <view class="waiting-dot"></view>
+            </view>
+            <text class="waiting-text">正在智能识别最近的设备...</text>
+            <text class="waiting-subtitle">请将您的设备贴近手机背面</text>
+            <text class="device-count">已发现 {{devices.length}} 个设备，正在分析信号稳定性</text>
+            
+            <!-- 设备分析进度 -->
+            <view class="analysis-progress">
+              <view wx:for="{{devices}}" wx:key="deviceId" wx:if="{{index < 3}}" class="device-analysis">
+                <text class="device-name">{{item.name}}</text>
+                <text class="device-rssi">{{item.RSSI}}dBm</text>
+                <view class="stability-indicator">
+                  <view class="stability-dots">
+                    <view class="dot {{item.historySize >= 2 ? 'filled' : ''}}"></view>
+                    <view class="dot {{item.historySize >= 4 ? 'filled' : ''}}"></view>
+                    <view class="dot {{item.historySize >= 6 ? 'filled' : ''}}"></view>
+                    <view class="dot {{item.historySize >= 8 ? 'filled' : ''}}"></view>
+                  </view>
+                </view>
+              </view>
+              <text wx:if="{{devices.length > 3}}" class="more-devices">...还有{{devices.length - 3}}个设备</text>
+            </view>
+          </view>
+          
+          <!-- 📱 其他候选设备列表（收起状态） -->
+          <view wx:if="{{devices.length > 1 && showOtherDevices}}" class="other-devices">
+            <text class="other-devices-title" bindtap="toggleOtherDevices">
+              其他设备 ({{devices.length - (recommendedDevice ? 1 : 0)}}) {{showOtherDevices ? '▼' : '▶'}}
+            </text>
+            <view wx:for="{{devices}}" wx:key="deviceId" 
+                  wx:if="{{!recommendedDevice || item.deviceId !== recommendedDevice.deviceId}}"
+                  class="device-card secondary" 
+                  bindtap="connectDevice" 
+                  data-deviceid="{{item.deviceId}}">
+              <view class="device-icon small">
+                <view class="necklace-icon">💎</view>
+              </view>
+              <view class="device-info">
+                <text class="device-name-subtle">{{item.name}}</text>
+                <text class="device-signal">{{item.RSSI}} dBm</text>
+              </view>
+              <view class="connect-arrow">→</view>
+            </view>
+          </view>
+          
+          <!-- 显示其他设备按钮 -->
+          <view wx:elif="{{devices.length > 1}}" class="show-others-btn" bindtap="toggleOtherDevices">
+            <text>显示其他 {{devices.length - (recommendedDevice ? 1 : 0)}} 个设备</text>
+          </view>
+          
+          <!-- 连接提示 -->
+          <view class="connection-tip">
+            <text>发现您的智能项链</text>
+            <text class="tip-subtitle">点击上方卡片开始连接</text>
+          </view>
+        </view>
+        
+        <!-- 未发现设备状态 -->
+        <view wx:else class="no-devices">
+          <view class="no-device-icon">🔍</view>
+          <text class="no-device-text">未发现智能项链</text>
+          <text class="no-devices-tip">请确保设备已开启并处于可发现状态</text>
+        </view>
       </view>
     </view>
   </view>

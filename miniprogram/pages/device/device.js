@@ -62,13 +62,623 @@ Page({
     isCloudSyncing: false, // 是否正在云同步
     lastCloudSyncTime: '', // 最后一次云同步时间
     lastCloudSyncError: '', // 最后一次同步错误信息
-    cloudSyncStatus: 'idle' // idle, syncing, success, error
+    cloudSyncStatus: 'idle', // idle, syncing, success, error
+    
+    // ===== 设备绑定相关状态 =====
+    boundDevice: null, // 绑定的设备信息
+    searchingMyDevice: false, // 是否正在搜索我的设备
+    searchingAllDevices: false, // 是否正在搜索所有设备
+    statusMessage: '正在初始化...', // 当前状态提示信息
+    blockOtherDevices: false, // 是否阻止连接其他设备
+  },
+
+  // ===== 设备绑定管理工具函数 =====
+  
+  /**
+   * 获取当前绑定的设备信息
+   */
+  getBoundDevice() {
+    try {
+      const boundDevice = wx.getStorageSync('myBoundDevice');
+      if (!boundDevice) return null;
+      
+      // 验证是否属于当前用户
+      if (this.isSameUser(boundDevice)) {
+        return boundDevice;
+      } else {
+        // 如果不是当前用户的设备，清除绑定记录
+        this.clearBoundDevice();
+        return null;
+      }
+    } catch (error) {
+      console.error('获取绑定设备失败:', error);
+      return null;
+    }
+  },
+
+  /**
+   * 保存设备绑定信息
+   */
+  saveBoundDevice(deviceInfo) {
+    try {
+      const currentUser = getApp().globalData.openid || wx.getStorageSync('openid');
+      if (!currentUser) {
+        console.warn('用户未登录，无法保存设备绑定');
+        return false;
+      }
+
+      const boundDevice = {
+        deviceId: deviceInfo.deviceId,
+        deviceName: deviceInfo.deviceName,
+        userOpenid: currentUser,
+        bindTime: Date.now(),
+        lastConnectTime: Date.now(),
+        connectCount: (deviceInfo.connectCount || 0) + 1
+      };
+
+      wx.setStorageSync('myBoundDevice', boundDevice);
+      console.log('✅ 设备绑定成功:', boundDevice.deviceName);
+      return true;
+    } catch (error) {
+      console.error('保存设备绑定失败:', error);
+      return false;
+    }
+  },
+
+  /**
+   * 更新设备连接统计
+   */
+  updateDeviceConnection(deviceInfo) {
+    const boundDevice = this.getBoundDevice();
+    if (boundDevice && boundDevice.deviceId === deviceInfo.deviceId) {
+      boundDevice.lastConnectTime = Date.now();
+      boundDevice.connectCount = (boundDevice.connectCount || 0) + 1;
+      
+      try {
+        wx.setStorageSync('myBoundDevice', boundDevice);
+        console.log('📊 更新设备连接统计:', boundDevice.connectCount);
+      } catch (error) {
+        console.error('更新连接统计失败:', error);
+      }
+    }
+  },
+
+  /**
+   * 清除设备绑定
+   */
+  clearBoundDevice() {
+    try {
+      wx.removeStorageSync('myBoundDevice');
+      console.log('🗑️ 设备绑定已清除');
+      return true;
+    } catch (error) {
+      console.error('清除设备绑定失败:', error);
+      return false;
+    }
+  },
+
+  /**
+   * 验证设备是否属于当前用户
+   */
+  isSameUser(deviceInfo) {
+    if (!deviceInfo || !deviceInfo.userOpenid) return false;
+    
+    const currentUser = getApp().globalData.openid || wx.getStorageSync('openid');
+    return deviceInfo.userOpenid === currentUser;
+  },
+
+  /**
+   * 检查设备是否已绑定
+   */
+  isDeviceBound() {
+    return !!this.getBoundDevice();
+  },
+
+  /**
+   * 获取设备绑定状态信息（用于UI显示）
+   */
+  getDeviceBindingStatus() {
+    const boundDevice = this.getBoundDevice();
+    if (!boundDevice) {
+      return {
+        bound: false,
+        deviceName: '',
+        bindTime: '',
+        connectCount: 0
+      };
+    }
+
+    return {
+      bound: true,
+      deviceId: boundDevice.deviceId,
+      deviceName: boundDevice.deviceName,
+      bindTime: new Date(boundDevice.bindTime).toLocaleString(),
+      lastConnectTime: new Date(boundDevice.lastConnectTime).toLocaleString(),
+      connectCount: boundDevice.connectCount || 0
+    };
+  },
+
+  /**
+   * 初始化设备绑定状态
+   */
+  initDeviceBinding() {
+    const boundDevice = this.getBoundDevice();
+    this.setData({
+      boundDevice: boundDevice,
+      blockOtherDevices: !!boundDevice,
+      statusMessage: boundDevice ? 
+        `正在寻找我的设备 ${boundDevice.deviceName}...` : 
+        '正在搜索可用设备...'
+    });
+    console.log('🔗 设备绑定状态初始化:', boundDevice ? '已绑定' : '未绑定');
+  },
+
+  // ===== 智能扫描流程控制 =====
+
+  /**
+   * 启动智能扫描流程（自动判断绑定设备或搜索所有设备）
+   */
+  startIntelligentFlow() {
+    const boundDevice = this.getBoundDevice();
+    if (boundDevice) {
+      this.startBoundDeviceFlow(boundDevice);
+    } else {
+      this.startDiscoveryFlow();
+    }
+  },
+
+  /**
+   * 绑定设备的专属搜索流程
+   */
+  async startBoundDeviceFlow(boundDevice) {
+    console.log('🔍 开始搜索我的设备:', boundDevice.deviceName);
+    
+    this.setData({ 
+      boundDevice: boundDevice,
+      searchingMyDevice: true,
+      searchingAllDevices: false,
+      blockOtherDevices: true,
+      statusMessage: `正在寻找我的设备 ${boundDevice.deviceName}...`
+    });
+    
+    try {
+      await this.searchForSpecificDevice(boundDevice);
+    } catch (error) {
+      console.error('搜索我的设备失败:', error);
+      this.handleMyDeviceNotFound();
+    }
+  },
+
+  /**
+   * 未绑定时的设备发现流程
+   */
+  startDiscoveryFlow() {
+    console.log('🔍 开始搜索所有可用设备');
+    
+    this.setData({ 
+      boundDevice: null,
+      searchingMyDevice: false,
+      searchingAllDevices: true,
+      blockOtherDevices: false,
+      statusMessage: '正在搜索可用设备...'
+    });
+    
+    // 启动连续扫描
+    this.startContinuousScan();
+  },
+
+  /**
+   * 搜索特定的绑定设备
+   */
+  searchForSpecificDevice(boundDevice) {
+    return new Promise((resolve, reject) => {
+      let searchTimeout;
+      let deviceFound = false;
+      
+      // 设置30秒搜索超时
+      searchTimeout = setTimeout(() => {
+        if (!deviceFound) {
+          this.stopContinuousScan();
+          reject(new Error('搜索超时'));
+        }
+      }, 30000);
+
+      // 开始扫描
+      this.startContinuousScan();
+      
+      // 监听设备发现
+      const checkForMyDevice = () => {
+        const devices = this.data.devices;
+        const myDevice = devices.find(d => 
+          d.deviceId === boundDevice.deviceId || 
+          d.name === boundDevice.deviceName
+        );
+        
+        if (myDevice && !deviceFound) {
+          deviceFound = true;
+          clearTimeout(searchTimeout);
+          console.log('✅ 找到我的设备，开始自动连接');
+          this.connectToMyDevice(myDevice);
+          resolve(myDevice);
+        }
+      };
+
+      // 每秒检查一次
+      this.deviceCheckInterval = setInterval(checkForMyDevice, 1000);
+    });
+  },
+
+  /**
+   * 连接到我的设备
+   */
+  async connectToMyDevice(device) {
+    try {
+      this.setData({ 
+        statusMessage: `正在连接我的设备 ${device.name}...`
+      });
+      
+      await this.connectDevice({ 
+        currentTarget: { 
+          dataset: { deviceid: device.deviceId }
+        }
+      });
+      
+      // 更新连接统计
+      this.updateDeviceConnection({
+        deviceId: device.deviceId,
+        deviceName: device.name
+      });
+      
+    } catch (error) {
+      console.error('连接我的设备失败:', error);
+      wx.showToast({ title: '连接失败', icon: 'error' });
+    }
+  },
+
+  /**
+   * 停止所有扫描活动
+   */
+  stopAllScanning() {
+    console.log('🛑 停止所有扫描活动');
+    
+    // 停止连续扫描
+    this.stopContinuousScan();
+    
+    // 清理设备检查定时器
+    if (this.deviceCheckInterval) {
+      clearInterval(this.deviceCheckInterval);
+      this.deviceCheckInterval = null;
+    }
+    
+    // 更新状态
+    this.setData({
+      searchingMyDevice: false,
+      searchingAllDevices: false,
+      statusMessage: '扫描已停止'
+    });
+  },
+
+  /**
+   * 处理我的设备未找到情况
+   */
+  handleMyDeviceNotFound() {
+    console.log('⚠️ 我的设备未找到');
+    
+    this.setData({ 
+      searchingMyDevice: false,
+      statusMessage: '我的设备离线'
+    });
+    
+    wx.showModal({
+      title: '设备未找到',
+      content: `未在附近找到您的设备 ${this.data.boundDevice.deviceName}\n\n可能原因：\n• 设备不在蓝牙范围内\n• 设备电量不足或关机`,
+      confirmText: '继续等待',
+      cancelText: '解除绑定',
+      success: (res) => {
+        if (res.confirm) {
+          // 用户选择继续等待，2秒后重新搜索
+          setTimeout(() => {
+            if (this.data.boundDevice) {
+              this.startBoundDeviceFlow(this.data.boundDevice);
+            }
+          }, 2000);
+        } else {
+          // 用户选择解绑
+          this.performUnbind();
+        }
+      }
+    });
+  },
+
+  // ===== 设备绑定管理操作 =====
+
+  /**
+   * 解绑设备按钮点击事件
+   */
+  unbindDevice() {
+    const boundDevice = this.getBoundDevice();
+    if (!boundDevice) {
+      wx.showToast({ title: '没有绑定设备', icon: 'none' });
+      return;
+    }
+
+    wx.showModal({
+      title: '确认解绑',
+      content: `确定解除与 ${boundDevice.deviceName} 的绑定吗？\n\n解绑后：\n✓ 碰一碰历史记录会保留\n✓ 可以绑定其他设备\n✗ 需要重新配对才能使用该设备`,
+      confirmText: '确认解绑',
+      confirmColor: '#ff4444',
+      cancelText: '取消',
+      success: (res) => {
+        if (res.confirm) {
+          this.performUnbind();
+        }
+      }
+    });
+  },
+
+  /**
+   * 执行设备解绑操作
+   */
+  performUnbind() {
+    console.log('🗑️ 开始执行设备解绑');
+    
+    // 先断开当前连接（如果已连接）
+    if (this.data.connected) {
+      this.disconnect();
+    }
+    
+    // 停止所有搜索活动
+    this.stopAllScanning();
+    
+    // 清除设备绑定记录
+    const success = this.clearBoundDevice();
+    
+    if (success) {
+      // 更新UI状态
+      this.setData({ 
+        boundDevice: null,
+        connected: false,
+        blockOtherDevices: false,
+        searchingMyDevice: false,
+        statusMessage: '正在搜索可用设备...'
+      });
+      
+      // 显示成功提示
+      wx.showToast({ 
+        title: '解绑成功', 
+        icon: 'success',
+        duration: 2000 
+      });
+      
+      // 延迟启动设备发现流程
+      setTimeout(() => {
+        this.startDiscoveryFlow();
+      }, 1000);
+      
+      console.log('✅ 设备解绑完成，开始搜索新设备');
+      
+    } else {
+      wx.showToast({ 
+        title: '解绑失败', 
+        icon: 'error' 
+      });
+    }
+  },
+
+  /**
+   * 重新连接我的设备
+   */
+  async reconnectMyDevice() {
+    const boundDevice = this.getBoundDevice();
+    if (!boundDevice) {
+      wx.showToast({ title: '没有绑定设备', icon: 'none' });
+      return;
+    }
+
+    console.log('🔄 开始重新连接我的设备');
+    this.startBoundDeviceFlow(boundDevice);
+  },
+
+  /**
+   * 处理自动设备绑定
+   */
+  handleAutoBinding(deviceInfo) {
+    console.log('🔗 检查是否需要自动绑定设备');
+    
+    const boundDevice = this.getBoundDevice();
+    const currentDeviceId = this.data.deviceId;
+    const currentDeviceName = deviceInfo.deviceName || this.data.deviceName;
+    
+    if (!boundDevice) {
+      // 首次连接设备，自动绑定
+      console.log('🆕 首次连接设备，开始自动绑定');
+      
+      const bindingSuccess = this.saveBoundDevice({
+        deviceId: currentDeviceId,
+        deviceName: currentDeviceName
+      });
+      
+      if (bindingSuccess) {
+        // 更新UI状态
+        const updatedBoundDevice = this.getBoundDevice();
+        this.setData({
+          boundDevice: updatedBoundDevice,
+          blockOtherDevices: true,
+          statusMessage: '✅ 已连接并绑定设备'
+        });
+        
+        // 显示绑定成功提示
+        wx.showToast({
+          title: '设备已自动绑定',
+          icon: 'success',
+          duration: 2000
+        });
+        
+        console.log('✅ 设备自动绑定成功:', currentDeviceName);
+        
+      } else {
+        console.error('❌ 设备自动绑定失败');
+      }
+      
+    } else if (boundDevice.deviceId === currentDeviceId) {
+      // 连接的是已绑定的设备，更新连接统计
+      console.log('📊 连接已绑定设备，更新连接统计');
+      
+      this.updateDeviceConnection({
+        deviceId: currentDeviceId,
+        deviceName: currentDeviceName
+      });
+      
+      // 更新UI状态
+      const updatedBoundDevice = this.getBoundDevice();
+      this.setData({
+        boundDevice: updatedBoundDevice,
+        statusMessage: '✅ 已连接到我的设备'
+      });
+      
+    } else {
+      // 连接的设备与绑定设备不符（理论上不应该发生）
+      console.warn('⚠️ 连接设备与绑定设备不匹配');
+    }
+  },
+
+  // ===== 智能状态提示和错误处理 =====
+
+  /**
+   * 更新状态消息
+   */
+  updateStatusMessage() {
+    const { boundDevice, connected, searchingMyDevice, searchingAllDevices } = this.data;
+    
+    let statusMessage = '';
+    if (boundDevice) {
+      if (connected) {
+        statusMessage = `✅ ${boundDevice.deviceName} 已连接`;
+      } else if (searchingMyDevice) {
+        statusMessage = `🔍 正在寻找 ${boundDevice.deviceName}...`;
+      } else {
+        statusMessage = `💤 ${boundDevice.deviceName} 离线`;
+      }
+    } else {
+      if (searchingAllDevices) {
+        statusMessage = '🔍 正在搜索可用设备...';
+      } else {
+        statusMessage = '点击下方设备开始连接';
+      }
+    }
+    
+    this.setData({ statusMessage });
+  },
+
+  /**
+   * 处理蓝牙错误
+   */
+  handleBluetoothError(error) {
+    console.error('🚨 蓝牙错误:', error);
+    
+    let errorMessage = '';
+    let canRetry = false;
+    
+    if (error.message) {
+      const msg = error.message.toLowerCase();
+      
+      if (msg.includes('not available') || msg.includes('not enabled')) {
+        errorMessage = '蓝牙未开启，请在系统设置中开启蓝牙';
+      } else if (msg.includes('not authorized') || msg.includes('unauthorized')) {
+        errorMessage = '蓝牙权限未授权，请在设置中允许蓝牙权限';
+      } else if (msg.includes('already connect')) {
+        errorMessage = '设备连接冲突，正在重置连接...';
+        canRetry = true;
+      } else if (msg.includes('connection timeout') || msg.includes('timeout')) {
+        errorMessage = '连接超时，请确保设备在蓝牙范围内';
+        canRetry = true;
+      } else if (msg.includes('device not found')) {
+        errorMessage = '设备未找到，请确保设备已开启';
+        canRetry = true;
+      } else {
+        errorMessage = `连接异常: ${error.message}`;
+        canRetry = true;
+      }
+    } else {
+      errorMessage = '未知蓝牙错误';
+      canRetry = true;
+    }
+    
+    // 更新UI状态
+    this.setData({
+      connecting: false,
+      searchingMyDevice: false,
+      searchingAllDevices: false,
+      statusMessage: errorMessage
+    });
+    
+    // 显示错误提示
+    if (canRetry) {
+      wx.showModal({
+        title: '连接失败',
+        content: errorMessage + '\n\n是否重试？',
+        confirmText: '重试',
+        cancelText: '取消',
+        success: (res) => {
+          if (res.confirm) {
+            setTimeout(() => {
+              this.startIntelligentFlow();
+            }, 1000);
+          }
+        }
+      });
+    } else {
+      wx.showToast({
+        title: errorMessage,
+        icon: 'none',
+        duration: 3000
+      });
+    }
+  },
+
+  /**
+   * 处理连接成功状态
+   */
+  handleConnectionSuccess(deviceInfo) {
+    console.log('🎉 连接成功处理');
+    
+    const deviceName = deviceInfo.deviceName || this.data.deviceName;
+    
+    this.setData({
+      connecting: false,
+      connected: true,
+      searchingMyDevice: false,
+      searchingAllDevices: false,
+      statusMessage: `✅ ${deviceName} 已连接`
+    });
+    
+    // 停止所有搜索活动
+    this.stopAllScanning();
+  },
+
+  /**
+   * 处理连接失败状态
+   */
+  handleConnectionFailure(error) {
+    console.error('💥 连接失败处理:', error);
+    
+    this.setData({
+      connecting: false,
+      connected: false,
+      statusMessage: '连接失败，请重试'
+    });
+    
+    // 根据错误类型进行相应处理
+    this.handleBluetoothError(error);
   },
   
   // 页面加载时的处理
   onLoad(options) {
     // 🔬 初始化设备历史记录（不能放在data中，因为Map不可序列化）
     this.deviceHistory = new Map();
+    
+    // 初始化设备绑定状态
+    this.initDeviceBinding();
     
     // 初始化BLE握手协议客户端
     this.initHandshakeClient();
@@ -90,11 +700,10 @@ Page({
       }, 100);
     } else {
       // 没有传入deviceId，显示扫描界面
-      // 先设置显示状态，确保页面可以渲染
       this.setData({ showScanView: true });
-      // 延迟初始化蓝牙，避免阻塞页面渲染
+      // 延迟启动智能扫描流程
       setTimeout(() => {
-        this.ensureAdapter(() => this.startContinuousScan());
+        this.ensureAdapter(() => this.startIntelligentFlow());
       }, 100);
     }
   },
@@ -106,16 +715,21 @@ Page({
       this.getTabBar().updateSelected('/pages/device/device');
     }
     
-    // 如果在扫描界面且没有连接设备，继续扫描
-    if (this.data.showScanView && !this.data.connected && !this.data.scanning) {
-      this.startContinuousScan();
+    // 重新初始化设备绑定状态
+    this.initDeviceBinding();
+    
+    // 如果在扫描界面且没有连接设备，启动智能扫描流程
+    if (this.data.showScanView && !this.data.connected) {
+      setTimeout(() => {
+        this.startIntelligentFlow();
+      }, 300); // 给页面足够时间初始化
     }
   },
   
   // 页面隐藏时
   onHide() {
-    // 停止扫描以节省电量
-    this.stopContinuousScan();
+    // 停止所有扫描以节省电量
+    this.stopAllScanning();
   },
   
   // 页面卸载时
@@ -241,6 +855,9 @@ Page({
       // 添加连接成功通知
       this.addNotification(`✅ 已连接到设备: ${deviceInfo.deviceName || '未知设备'}`);
       
+      // 🔗 自动绑定设备（如果尚未绑定）
+      this.handleAutoBinding(deviceInfo);
+      
       // 开始业务流程：发送Un字符串等
       this.startBusinessLogic();
     };
@@ -334,6 +951,9 @@ Page({
         connected: false,
         protocolState: '连接失败: ' + error.message
       });
+      
+      // 使用新的错误处理机制
+      this.handleConnectionFailure(error);
     }
   },
 
@@ -659,6 +1279,26 @@ Page({
     }
     
     const deviceId = e.currentTarget.dataset.deviceid;
+    const device = this.data.devices.find(d => d.deviceId === deviceId);
+    
+    // 🔗 检查设备绑定状态
+    if (this.data.blockOtherDevices && this.isDeviceBound()) {
+      const boundDevice = this.getBoundDevice();
+      if (boundDevice && boundDevice.deviceId !== deviceId) {
+        wx.showModal({
+          title: '设备已绑定',
+          content: `您已绑定设备 ${boundDevice.deviceName}，需要先解绑才能连接其他设备`,
+          confirmText: '解除绑定',
+          cancelText: '取消',
+          success: (res) => {
+            if (res.confirm) {
+              this.performUnbind();
+            }
+          }
+        });
+        return;
+      }
+    }
     
     console.log('🔗 [连接] 用户点击连接设备:', deviceId);
     

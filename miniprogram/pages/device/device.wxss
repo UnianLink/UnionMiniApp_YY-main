@@ -1356,3 +1356,219 @@ page {
 .other-devices-title:active {
   background-color: rgba(255, 255, 255, 0.1);
 }
+
+/* ===== 单设备绑定UI样式 ===== */
+
+/* 状态指示器区域 */
+.status-indicator-area {
+  padding: 40rpx 0 20rpx;
+  text-align: center;
+}
+
+.status-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32rpx;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 24rpx;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.status-indicator.searching-my {
+  background: rgba(103, 126, 234, 0.1);
+  border-color: rgba(103, 126, 234, 0.3);
+}
+
+.status-indicator.searching-all {
+  background: rgba(255, 193, 7, 0.1);
+  border-color: rgba(255, 193, 7, 0.3);
+}
+
+.status-message {
+  font-size: 32rpx;
+  color: #fff;
+  margin-top: 16rpx;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* 区域标题样式 */
+.section-title {
+  margin: 32rpx 0 16rpx;
+}
+
+.title-text {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #fff;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 我的设备区域 */
+.my-device-section {
+  margin-top: 24rpx;
+}
+
+.bound-device-card {
+  background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+  border: 2px solid #667eea30;
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin: 16rpx 0;
+  display: flex;
+  align-items: center;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.bound-device-card.connected {
+  border-color: #00d4aa;
+  background: linear-gradient(135deg, #00d4aa15 0%, #667eea15 100%);
+  box-shadow: 0 0 30rpx rgba(0, 212, 170, 0.3);
+}
+
+.bound-device-card.searching {
+  border-color: #667eea;
+  animation: searching-pulse 2s ease-in-out infinite;
+}
+
+.bound-device-card.offline {
+  border-color: #8b949e;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+@keyframes searching-pulse {
+  0%, 100% { 
+    border-color: #667eea; 
+    box-shadow: 0 0 0 rgba(103, 126, 234, 0.3);
+  }
+  50% { 
+    border-color: #764ba2; 
+    box-shadow: 0 0 20rpx rgba(103, 126, 234, 0.5);
+  }
+}
+
+.bound-device-card .device-icon {
+  width: 120rpx;
+  height: 120rpx;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 24rpx;
+  flex-shrink: 0;
+}
+
+.bound-device-card .necklace-icon {
+  font-size: 48rpx;
+}
+
+.bound-device-card .device-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.bound-device-card .device-name {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #fff;
+  margin-bottom: 8rpx;
+  word-break: break-all;
+}
+
+.bound-device-card .device-status {
+  font-size: 28rpx;
+  color: #8b949e;
+  margin-bottom: 8rpx;
+}
+
+.bound-device-card.connected .device-status {
+  color: #00d4aa;
+}
+
+.bound-device-card.searching .device-status {
+  color: #667eea;
+}
+
+.connect-stats {
+  font-size: 24rpx;
+  color: #6c757d;
+}
+
+.device-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-left: 16rpx;
+}
+
+.action-btn {
+  padding: 16rpx 24rpx;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  border: none;
+  min-width: 120rpx;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.action-btn.primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+
+.action-btn.secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #8b949e;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.action-btn.danger {
+  background: rgba(220, 53, 69, 0.2);
+  color: #ff6b6b;
+  border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+.action-btn:active {
+  transform: scale(0.95);
+  opacity: 0.8;
+}
+
+/* 阻止其他设备区域 */
+.blocked-section {
+  margin-top: 48rpx;
+}
+
+.block-notice {
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 16rpx;
+  padding: 32rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.block-icon {
+  font-size: 32rpx;
+  margin-right: 12rpx;
+}
+
+.block-message {
+  font-size: 28rpx;
+  color: #ffc107;
+  line-height: 1.4;
+}
+
+/* 可用设备区域 */
+.available-devices-section {
+  margin-top: 24rpx;
+}
