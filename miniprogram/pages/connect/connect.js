@@ -116,8 +116,8 @@ Page({
     
     // 初始化设置向上偏移量
     this.setData({
-      cardPositionOffset: -200, // 向上偏移200rpx，使用负值
-      scrollOffset: -200 // 设置初始滚动位置，与偏移量保持一致
+      cardPositionOffset: -100, // 减少向上偏移量，从200rpx调整为100rpx
+      scrollOffset: -100 // 设置初始滚动位置，与偏移量保持一致
     });
     
     // 优先从数据库加载朋友列表
@@ -137,7 +137,7 @@ Page({
   onReady() {
     // 添加向上偏移量，使选中的卡片位置更靠上
     this.setData({
-      cardPositionOffset: -200 // 向上偏移200rpx
+      cardPositionOffset: -100 // 减少向上偏移量，调整为100rpx
     });
   },
 
@@ -428,7 +428,7 @@ Page({
     const itemCount = this.data.userCards.length;
     if (itemCount > 0) {
       // 添加向上偏移量
-      const cardPositionOffset = this.data.cardPositionOffset || -200; // 默认值为-200rpx
+      const cardPositionOffset = this.data.cardPositionOffset || -100; // 默认值为-100rpx
       
       // 添加边界限制，防止无限滚动
       const maxOffset = 0 + cardPositionOffset; // 顶部边界(加上偏移量)
@@ -544,7 +544,7 @@ Page({
     let velocity = initialVelocity * 15; // 进一步降低初始速度系数
     let scrollOffset = this.data.scrollOffset;
     const itemCount = this.data.userCards.length;
-    const cardPositionOffset = this.data.cardPositionOffset || -200; // 默认值为-200rpx
+    const cardPositionOffset = this.data.cardPositionOffset || -100; // 默认值为-100rpx
     
     // 记录上一个索引，用于检测变化
     let lastIndex = this.data.currentTrackIndex;
@@ -648,7 +648,7 @@ Page({
     
     // 计算最接近的项目索引
     const currentOffset = this.data.scrollOffset;
-    const cardPositionOffset = this.data.cardPositionOffset || -200; // 默认值为-200rpx
+    const cardPositionOffset = this.data.cardPositionOffset || -100; // 默认值为-100rpx
     const rawIndex = Math.round(-(currentOffset - cardPositionOffset) / this.data.itemHeight);
     
     // 确保索引在有效范围内

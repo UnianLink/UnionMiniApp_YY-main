@@ -5,9 +5,10 @@
   font-size: 14px;
   color: #fff; /* 文字颜色改为白色 */
   position: relative;
-  height: 100vh;
+  min-height: 100vh; /* 改为min-height确保可以显示更多内容 */
   background-color: #000; /* 背景改为黑色 */
-  overflow: hidden;
+  display: flex; /* 添加flex布局 */
+  flex-direction: column; /* 垂直排列 */
 }
 
 /* 主题背景图片 */
@@ -88,12 +89,13 @@
 
 .content {
   width: 100%;
-  height: 100%;
+  min-height: 100%; /* 改为min-height确保内容能完整显示 */
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   position: relative;
   padding-top: 88rpx; /* 为顶部导航栏留出空间 */
+  flex: 1; /* 允许容器自适应扩展 */
 }
 
 
@@ -564,7 +566,9 @@
 /* 歌单式名片列表 - 更改为黑色背景 */
 .music-playlist {
   width: 100%;
-  height: calc(100vh - 760rpx);
+  height: calc(100vh - 200rpx); /* 优化高度计算，给导航栏和缓冲区留出合理空间 */
+  min-height: 600rpx; /* 设置最小高度确保基本显示 */
+  max-height: calc(100vh - 150rpx); /* 设置最大高度避免内容溢出屏幕 */
   background-color: #000; /* 改为黑色背景 */
   border-radius: 40rpx 40rpx 0 0;
   box-shadow: none;
@@ -583,7 +587,7 @@
   align-items: center;
   padding: 0;
   height: 100%;
-  overflow: hidden; /* 确保不会出现滚动条 */
+  /* 移除overflow:hidden限制，允许内容完整显示 */
 }
 
 /* 新增滚动轨道样式 */
@@ -601,7 +605,7 @@
 /* 列表顶部和底部填充 */
 .list-padding {
   width: 100%;
-  height: 450rpx; /* 减少顶部填充高度，使选中区域往上移 */
+  height: 200rpx; /* 进一步减少填充高度，增加可显示内容区域 */
   flex-shrink: 0;
 }
 
@@ -618,14 +622,14 @@
 
 .music-playlist::before {
   top: 0;
-  height: 150rpx; 
+  height: 100rpx; /* 减少顶部渐变高度 */
   background: linear-gradient(to bottom, #000, rgba(0, 0, 0, 0)); /* 黑色渐变 */
   border-radius: 40rpx 40rpx 0 0;
 }
 
 .music-playlist::after {
   bottom: 0;
-  height: 200rpx;
+  height: 120rpx; /* 减少底部渐变高度 */
   background: linear-gradient(to top, #000, rgba(0, 0, 0, 0)); /* 黑色渐变 */
 }
 
