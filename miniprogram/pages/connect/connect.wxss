@@ -1,5 +1,42 @@
 /* miniprogram/pages/connect/connect.wxss */
 /**connect.wxss**/
+
+/* 公共样式类 */
+.base-black-bg {
+  background-color: #000;
+}
+
+.base-white-border {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.base-transition {
+  transition: all 0.3s ease;
+}
+
+.base-card {
+  background-color: #000;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16rpx;
+  transition: all 0.3s ease;
+}
+
+/* 通用动画效果 */
+@keyframes base-tap-bounce {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 8rpx currentColor, 0 0 16rpx currentColor;
+  }
+  50% {
+    transform: translateY(-4rpx) scale(1.05);
+    box-shadow: 0 0 12rpx currentColor, 0 0 24rpx currentColor, 0 0 36rpx currentColor;
+  }
+}
+
+.base-tap-animation {
+  animation: base-tap-bounce 2.5s infinite ease-in-out;
+}
+
 .container {
   padding: 0;
   font-size: 14px;
@@ -40,11 +77,11 @@
 /* 页面顶部导航栏 */
 .nav-bar {
   position: fixed;
-  top: 0;
+  top: 100rpx;
   left: 0;
   right: 0;
-  height: 88rpx;
-  background-color: rgba(0, 0, 0, 0.8);
+  height: 120rpx;
+  background-color: linear-gradient(135deg, #667eea, #764ba2);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   display: flex;
@@ -68,25 +105,6 @@
   margin-top: 4rpx;
 }
 
-/* 导航栏布局 */
-.nav-bar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 88rpx;
-  background-color: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding-top: env(safe-area-inset-top);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
 .content {
   width: 100%;
   min-height: 100%; /* 改为min-height确保内容能完整显示 */
@@ -97,10 +115,6 @@
   padding-top: 88rpx; /* 为顶部导航栏留出空间 */
   flex: 1; /* 允许容器自适应扩展 */
 }
-
-
-
-
 
 /* 连接文字块 - 现代设计 */
 .connection-text-block {
@@ -153,8 +167,6 @@
   font-size: 22rpx;
   margin-left: 4rpx;
 }
-
-
 
 /* 便签部分 - 毛玻璃效果 */
 .notes-container {
