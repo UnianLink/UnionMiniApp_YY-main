@@ -120,8 +120,8 @@ Page({
       scrollOffset: -200 // 设置初始滚动位置，与偏移量保持一致
     });
     
-    // 加载碰一碰结果
-    this.loadTouchListResult();
+    // 优先从数据库加载朋友列表
+    this.loadFriendsFromDatabase();
     
     this.initUserCards();
     this.generateStars();
@@ -149,9 +149,12 @@ Page({
       this.getTabBar().updateSelected('/pages/connect/connect');
     }
     
-    // 每次显示页面时重新加载碰一碰结果
-    console.log('[ConnectPage] onShow - 重新加载碰一碰数据');
-    this.loadTouchListResult();
+    // 每次显示页面时重新加载朋友数据
+    console.log('[ConnectPage] onShow - 重新加载朋友数据');
+    this.loadFriendsFromDatabase();
+    
+    // 🔥 新增：启动实时数据监听机制
+    this.startRealTimeDataListener();
   },
 
   /**
@@ -159,6 +162,8 @@ Page({
    */
   onHide() {
     this.clearAllTimers();
+    // 🔥 新增：停止实时数据监听
+    this.stopRealTimeDataListener();
   },
 
   /**
@@ -166,6 +171,8 @@ Page({
    */
   onUnload() {
     this.clearAllTimers();
+    // 🔥 新增：停止实时数据监听
+    this.stopRealTimeDataListener();
   },
 
   /**
@@ -244,6 +251,102 @@ Page({
     if (this.scrollAnimationTimer) {
       clearTimeout(this.scrollAnimationTimer);
       this.scrollAnimationTimer = null;
+    }
+    
+    // 清理实时数据监听定时器
+    if (this.dataListenerTimer) {
+      clearInterval(this.dataListenerTimer);
+      this.dataListenerTimer = null;
+    }
+  },
+
+  /**
+   * 🔥 实时数据监听机制 - 监听本地存储中的碰一碰数据变化
+   */
+  startRealTimeDataListener: function() {
+    console.log('[ConnectPage] 启动实时数据监听机制');
+    
+    // 记录上次检查的数据更新时间
+    this.lastDataUpdateTime = wx.getStorageSync('touchListResult')?.updateTime || 0;
+    
+    // 每2秒检查一次数据是否有更新
+    this.dataListenerTimer = setInterval(() => {
+      try {
+        const currentResult = wx.getStorageSync('touchListResult');
+        
+        if (currentResult && currentResult.updateTime) {
+          // 检查数据是否有更新
+          if (currentResult.updateTime > this.lastDataUpdateTime) {
+            console.log('[ConnectPage] 检测到新的碰一碰数据，立即更新界面');
+            console.log('[ConnectPage] 上次更新时间:', new Date(this.lastDataUpdateTime).toLocaleString());
+            console.log('[ConnectPage] 新数据时间:', new Date(currentResult.updateTime).toLocaleString());
+            
+            // 更新记录的时间戳
+            this.lastDataUpdateTime = currentResult.updateTime;
+            
+            // 立即刷新朋友列表显示
+            this.refreshFriendsData();
+            
+            // 显示友好的更新提示
+            wx.showToast({
+              title: '发现新朋友！',
+              icon: 'success',
+              duration: 2000
+            });
+          }
+        }
+      } catch (error) {
+        console.error('[ConnectPage] 实时数据监听出错:', error);
+      }
+    }, 2000); // 每2秒检查一次
+    
+    console.log('[ConnectPage] 实时数据监听已启动，每2秒检查一次数据更新');
+  },
+
+  /**
+   * 停止实时数据监听
+   */
+  stopRealTimeDataListener: function() {
+    if (this.dataListenerTimer) {
+      clearInterval(this.dataListenerTimer);
+      this.dataListenerTimer = null;
+      console.log('[ConnectPage] 实时数据监听已停止');
+    }
+  },
+
+  /**
+   * 刷新朋友数据（快速版本，优先使用本地存储）
+   */
+  refreshFriendsData: function() {
+    console.log('[ConnectPage] 快速刷新朋友数据');
+    
+    try {
+      // 优先从本地存储快速加载
+      const result = wx.getStorageSync('touchListResult');
+      if (result && (result.matchedUsers || result.unmatchedDevices)) {
+        console.log('[ConnectPage] 从本地存储快速更新朋友列表');
+        
+        this.setData({
+          touchListResult: result,
+          matchedFriends: result.matchedUsers || [],
+          unmatchedDevices: result.unmatchedDevices || []
+        });
+        
+        // 立即刷新显示
+        this.initUserCards();
+        
+        console.log('[ConnectPage] 快速刷新完成，显示',  
+          (result.matchedUsers || []).length, '个匹配朋友，',
+          (result.unmatchedDevices || []).length, '个未匹配设备');
+      } else {
+        // 本地存储无数据，降级到数据库加载
+        console.log('[ConnectPage] 本地存储无数据，降级到数据库加载');
+        this.loadFriendsFromDatabase();
+      }
+    } catch (error) {
+      console.error('[ConnectPage] 快速刷新朋友数据失败:', error);
+      // 出错时降级到数据库加载
+      this.loadFriendsFromDatabase();
     }
   },
 
@@ -1476,6 +1579,229 @@ Page({
   /**
    * 加载碰一碰匹配结果
    */
+  /**
+   * 从数据库加载朋友列表（新方法）
+   */
+  loadFriendsFromDatabase: async function() {
+    try {
+      console.log('🌩️ [ConnectPage] 开始从云端数据库加载朋友列表');
+      
+      // 显示加载状态
+      wx.showLoading({
+        title: '从云端加载朋友...',
+        mask: true
+      });
+      
+      // 获取当前用户openid - 修复获取逻辑
+      let currentUserOpenId = wx.getStorageSync('openid') || 
+                              getApp().globalData.openid;
+      
+      console.log('📋 [ConnectPage] 尝试获取openid:', {
+        localStorage: wx.getStorageSync('openid'),
+        globalData: getApp().globalData.openid
+      });
+      
+      // 如果还是没有openid，尝试通过云函数登录获取
+      if (!currentUserOpenId) {
+        console.log('[ConnectPage] 未找到本地openid，尝试云函数登录');
+        try {
+          const loginRes = await wx.cloud.callFunction({
+            name: 'login'
+          });
+          console.log('[ConnectPage] 登录云函数响应:', loginRes);
+          
+          if (loginRes.result && loginRes.result.openid) {
+            currentUserOpenId = loginRes.result.openid;
+            wx.setStorageSync('openid', currentUserOpenId);
+            getApp().globalData.openid = currentUserOpenId;
+            console.log('[ConnectPage] 通过云函数获取openid成功:', currentUserOpenId);
+          } else if (loginRes.result && loginRes.result.data && loginRes.result.data._openid) {
+            // 兼容不同的返回格式
+            currentUserOpenId = loginRes.result.data._openid;
+            wx.setStorageSync('openid', currentUserOpenId);
+            getApp().globalData.openid = currentUserOpenId;
+            console.log('[ConnectPage] 通过云函数获取openid成功(备用格式):', currentUserOpenId);
+          }
+        } catch (loginError) {
+          console.error('[ConnectPage] 云函数登录失败:', loginError);
+        }
+      }
+      
+      if (!currentUserOpenId) {
+        console.error('[ConnectPage] 仍然无法获取用户openid，降级到本地存储方式');
+        // 显示友好的错误信息
+        wx.showToast({
+          title: '获取用户信息失败',
+          icon: 'none',
+          duration: 2000
+        });
+        // 降级到本地存储方式
+        this.loadTouchListResult();
+        return;
+      }
+      
+      console.log('✅ [ConnectPage] 成功获取openid，开始加载朋友列表:', currentUserOpenId);
+      
+      // 📞 调用云函数获取用户的朋友列表
+      console.log('📞 开始调用 getUserData 云函数...');
+      const startTime = Date.now();
+      
+      const res = await Promise.race([
+        wx.cloud.callFunction({
+          name: 'getUserData',
+          data: {
+            openid: currentUserOpenId,
+            type: 'advanced',
+            includeFriends: true
+          }
+        }),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('云函数调用超时 (10秒)')), 10000);
+        })
+      ]);
+      
+      const endTime = Date.now();
+      console.log(`📞 getUserData 调用完成，耗时 ${endTime - startTime}ms`);
+      console.log('📞 getUserData 返回结果:', JSON.stringify(res.result, null, 2));
+      
+      // 隐藏加载状态
+      wx.hideLoading();
+      
+      // 增强错误处理
+      if (!res || !res.result) {
+        console.error('❌ [ConnectPage] 云函数返回结果格式异常:', res);
+        throw new Error('云函数返回格式错误');
+      }
+      
+      if (!res.result.success) {
+        console.error('❌ [ConnectPage] 云函数执行失败:', res.result.message || '未知错误');
+        throw new Error(res.result.message || '获取用户数据失败');
+      }
+      
+      if (!res.result.userData) {
+        console.log('[ConnectPage] 用户数据不存在，可能是新用户');
+        // 显示空状态，不算错误
+        this.setData({
+          matchedFriends: [],
+          unmatchedDevices: [],
+          touchListResult: {
+            success: true,
+            matchedUsers: [],
+            unmatchedDevices: [],
+            fromDatabase: true,
+            isEmpty: true
+          }
+        });
+        return;
+      }
+      
+      const userData = res.result.userData;
+      const friends = userData.friends || [];
+      
+      console.log('✅ [ConnectPage] 从云端数据库加载到朋友数量:', friends.length);
+      console.log('✅ 朋友详情:', friends.map(f => ({ name: f.friendDeviceName, openid: f.friendOpenid })));
+        
+        // 将朋友数据转换为匹配用户格式，保持UI兼容性
+        const matchedFriends = friends.map(friend => {
+          // 判断是否为未注册设备
+          const isUnregistered = friend.isUnregistered || friend.deviceOnly || !friend.friendOpenid;
+          
+          return {
+            openid: friend.friendOpenid || 'unregistered',
+            displayName: isUnregistered ? 
+              `${friend.friendDeviceName} (未注册)` : 
+              (friend.friendUserInfo?.displayName || friend.friendUserInfo?.nickName || '未知用户'),
+            deviceName: friend.friendDeviceName,
+            avatarUrl: isUnregistered ? 
+              '/images/default-unregistered.png' : 
+              (friend.friendUserInfo?.avatarUrl || ''),
+            matchScore: friend.matchScore || 0,
+            matchedTags: friend.matchedTags || [],
+            firstTouchTime: friend.firstMeetTime || friend.lastMeetTime,
+            meetCount: friend.meetCount || 1,
+            isFromDatabase: true, // 标识这是从数据库加载的
+            isRegistered: !isUnregistered, // 标识注册状态
+            isUnregistered: isUnregistered, // 标识是否为未注册设备
+            friendType: isUnregistered ? 'device' : 'user' // 朋友类型：设备或用户
+          };
+        });
+        
+        // 计算注册用户和未注册设备数量
+        const registeredCount = matchedFriends.filter(f => f.isRegistered).length;
+        const unregisteredCount = matchedFriends.filter(f => f.isUnregistered).length;
+        
+        this.setData({
+          matchedFriends: matchedFriends,
+          unmatchedDevices: [], // 数据库中的都是已匹配用户
+          registeredFriendsCount: registeredCount,
+          unregisteredDevicesCount: unregisteredCount,
+          totalFriendsCount: matchedFriends.length,
+          touchListResult: {
+            success: true,
+            matchedUsers: matchedFriends,
+            unmatchedDevices: [],
+            fromDatabase: true
+          }
+        });
+        
+        // 立即刷新显示
+        this.initUserCards();
+        
+        console.log('✅ [ConnectPage] 云端朋友列表加载完成');
+        
+        // 显示成功提示
+        wx.showToast({
+          title: `云端同步成功！找到${friends.length}个朋友`,
+          icon: 'success',
+          duration: 2000
+        });
+        
+    } catch (error) {
+      console.error('❌ [ConnectPage] 从数据库加载朋友列表失败:', error);
+      console.error('❌ 错误详情:', {
+        message: error.message,
+        errMsg: error.errMsg,
+        stack: error.stack
+      });
+      
+      // 隐藏加载状态
+      wx.hideLoading();
+      
+      // 显示用户友好的错误信息
+      wx.showToast({
+        title: `云端加载失败: ${error.message || '网络异常'}`,
+        icon: 'none',
+        duration: 3000
+      });
+      
+      // 降级到本地存储方式
+      console.log('⬇️ [ConnectPage] 尝试降级到本地存储方式');
+      this.loadTouchListResult();
+      
+      // 如果本地存储也没有数据，显示空状态
+      setTimeout(() => {
+        if ((!this.data.matchedFriends || this.data.matchedFriends.length === 0) &&
+            (!this.data.unmatchedDevices || this.data.unmatchedDevices.length === 0)) {
+          console.log('[ConnectPage] 本地存储也无数据，显示空状态');
+          this.setData({
+            matchedFriends: [],
+            unmatchedDevices: [],
+            touchListResult: {
+              success: false,
+              error: '加载朋友列表失败',
+              isEmpty: true
+            }
+          });
+          // 触发UI更新
+          this.initUserCards();
+        }
+      }, 1000);
+    }
+  },
+
+  /**
+   * 加载碰一碰结果（兼容旧方法）
+   */
   loadTouchListResult: function() {
     try {
       const result = wx.getStorageSync('touchListResult');
@@ -1519,53 +1845,73 @@ Page({
       if (matchedFriends.length > 0 || unmatchedDevices.length > 0) {
         console.log('[ConnectPage] 使用碰一碰数据创建卡片');
         
-        // 先添加已匹配的朋友
-        displayUsers = matchedFriends.map((friend, index) => ({
-          id: `matched_${index}`,
-          openid: friend.openid,
-          name: friend.displayName || '未知用户',
-          subtitle: `${friend.matchScore}个共同标签`,
-          description: friend.matchedTags ? friend.matchedTags.slice(0, 3).join(' · ') : '暂无标签',
-          theme: '碰一碰朋友',
-          color: this.getUserThemeColor(index),
-          avatarUrl: friend.avatarUrl || '/images/default-avatar.jpg',
-          userData: friend,
-          isMatched: true,
-          matchScore: friend.matchScore,
-          matchedTags: friend.matchedTags,
-          totalTags: friend.totalTags || 0,
-          firstTouchTime: friend.firstTouchTime,
-          details: {
-            concept: `匹配度: ${friend.matchScore}个共同标签`,
-            features: friend.matchedTags || [],
-            philosophy: '通过碰一碰认识的朋友'
-          }
-        }));
+        // 先添加已匹配的朋友（包括注册用户和未注册设备）
+        displayUsers = matchedFriends.map((friend, index) => {
+          // 判断是否为未注册设备
+          const isUnregistered = friend.isUnregistered || friend.friendType === 'device';
+          
+          return {
+            id: `matched_${index}`,
+            openid: friend.openid,
+            name: friend.displayName || '未知用户',
+            subtitle: isUnregistered ? 
+              '未注册设备' : 
+              `${friend.matchScore}个共同标签`,
+            description: isUnregistered ? 
+              '该设备用户尚未注册小程序' : 
+              (friend.matchedTags ? friend.matchedTags.slice(0, 3).join(' · ') : '暂无标签'),
+            theme: isUnregistered ? '未注册设备' : '碰一碰朋友',
+            color: this.getUserThemeColor(index),
+            avatarUrl: friend.avatarUrl || '/images/default-avatar.jpg',
+            userData: friend,
+            isMatched: !isUnregistered,
+            isUnregistered: isUnregistered,
+            matchScore: friend.matchScore,
+            matchedTags: friend.matchedTags,
+            totalTags: friend.totalTags || 0,
+            firstTouchTime: friend.firstTouchTime,
+            deviceName: friend.deviceName, // 保留设备名信息
+            details: {
+              concept: isUnregistered ? 
+                '未注册的碰一碰设备' : 
+                `匹配度: ${friend.matchScore}个共同标签`,
+              features: isUnregistered ? 
+                [`设备ID: ${friend.deviceName}`] : 
+                (friend.matchedTags || []),
+              philosophy: isUnregistered ? 
+                '通过碰一碰发现的设备，用户尚未注册' : 
+                '通过碰一碰认识的朋友'
+            }
+          };
+        });
         
-        // 再添加未匹配的设备 - 优化显示逻辑
+        // 注意：由于云函数现在会将未注册设备也添加到friends列表，
+        // 这里的unmatchedDevices应该为空，保留作为兜底处理
         const unmatchedCards = unmatchedDevices.map((device, index) => {
+          console.log('[ConnectPage] 处理兜底的未匹配设备:', device.deviceName);
           const deviceInfo = this.analyzeUnmatchedDevice(device);
           
           return {
             id: `unmatched_${index}`,
-            openid: null,
-            name: deviceInfo.displayName,
-            subtitle: deviceInfo.subtitle,
-            description: deviceInfo.description,
-            theme: deviceInfo.theme,
-            color: deviceInfo.color,
-            avatarUrl: '/images/default-device.jpg',
+            openid: 'unregistered',
+            name: `${device.deviceName} (未注册)`,
+            subtitle: '未注册设备',
+            description: '该设备用户尚未注册小程序',
+            theme: '未注册设备',
+            color: '#999999', // 灰色表示未注册
+            avatarUrl: '/images/default-unregistered.png',
             userData: null,
             isMatched: false,
+            isUnregistered: true,
             deviceName: device.deviceName,
             firstTouchTime: device.firstTouchTime,
-            matchScore: deviceInfo.matchScore,
-            matchedTags: deviceInfo.matchedTags,
-            totalTags: deviceInfo.totalTags,
+            matchScore: 0,
+            matchedTags: [],
+            totalTags: 0,
             details: {
-              concept: deviceInfo.concept,
-              features: deviceInfo.features,
-              philosophy: deviceInfo.philosophy
+              concept: '未注册的碰一碰设备',
+              features: [`设备ID: ${device.deviceName}`],
+              philosophy: '通过碰一碰发现的设备，用户尚未注册'
             }
           };
         });

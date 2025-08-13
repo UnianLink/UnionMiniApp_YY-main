@@ -11,24 +11,37 @@ App({
   },
   
   onLaunch: function() {
+    console.log('[App] 小程序启动，开始初始化云开发环境');
+    
+    // 🔥 全局错误处理
+    this.initGlobalErrorHandling();
+    
     // 初始化云开发环境
     if (!wx.cloud) {
-      console.error('请使用 2.2.3 或以上的基础库以使用云能力')
+      console.error('❌ 请使用 2.2.3 或以上的基础库以使用云能力')
     } else {
-      wx.cloud.init({
-        env: 'unionlink-4gkmzbm1babe86a7',
-        traceUser: true,
-      })
-      
-      console.log('云开发环境初始化成功');
-      
-      // 检查是否支持AI+能力
-      if (wx.cloud.extend && wx.cloud.extend.AI) {
-        console.log('微信AI+能力支持检查通过');
-        // 获取Agent信息，确认连接正常
-        this.checkAgentStatus();
-      } else {
-        console.error('当前基础库版本过低，请升级到3.7.1或以上版本以支持AI+能力');
+      try {
+        wx.cloud.init({
+          env: 'unionlink-4gkmzbm1babe86a7',
+          traceUser: true,
+        })
+        
+        console.log('✅ 云开发环境初始化成功');
+        console.log('🌩️ 云环境ID: unionlink-4gkmzbm1babe86a7');
+        
+        // 测试云开发连接
+        this.testCloudConnection();
+        
+        // 检查是否支持AI+能力
+        if (wx.cloud.extend && wx.cloud.extend.AI) {
+          console.log('✅ 微信AI+能力支持检查通过');
+          // 获取Agent信息，确认连接正常
+          this.checkAgentStatus();
+        } else {
+          console.warn('⚠️ 当前基础库版本过低，请升级到3.7.1或以上版本以支持AI+能力');
+        }
+      } catch (error) {
+        console.error('❌ 云开发环境初始化失败:', error);
       }
     }
 
@@ -150,6 +163,52 @@ App({
     if (currentPage && currentPage.getTabBar) {
       const tabBar = currentPage.getTabBar();
       tabBar && tabBar.setData({ selected: index });
+    }
+  },
+
+  // 🔥 新增：全局错误处理
+  initGlobalErrorHandling: function() {
+    // 监听小程序错误
+    wx.onError((error) => {
+      console.error('🚨 小程序全局错误:', error);
+    });
+
+    // 监听未处理的Promise rejection
+    wx.onUnhandledRejection((event) => {
+      console.error('🚨 未处理的Promise rejection:', event);
+    });
+
+    console.log('✅ 全局错误处理机制已启动');
+  },
+
+  // 🔥 新增：测试云开发连接
+  testCloudConnection: async function() {
+    try {
+      console.log('🧪 开始测试云开发连接...');
+      
+      // 测试数据库连接
+      const db = wx.cloud.database();
+      const testResult = await db.collection('users_adv').limit(1).get();
+      console.log('✅ 数据库连接测试成功，找到', testResult.data.length, '条记录');
+      
+      // 测试云函数连接
+      try {
+        const funcResult = await wx.cloud.callFunction({
+          name: 'login',
+          data: { test: true }
+        });
+        console.log('✅ 云函数连接测试成功');
+      } catch (funcError) {
+        console.warn('⚠️ 云函数连接测试失败:', funcError.message);
+      }
+      
+    } catch (error) {
+      console.error('❌ 云开发连接测试失败:', error);
+      console.error('❌ 错误详情:', {
+        message: error.message,
+        errMsg: error.errMsg,
+        code: error.code
+      });
     }
   }
 }) 

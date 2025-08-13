@@ -33,25 +33,28 @@ exports.main = async (event, context) => {
   }
 
   try {
-    // 检查请求的数据类型
-    const { dataType } = event;
+    // 检查请求的数据类型和是否包含朋友数据
+    const { dataType, type, includeFriends } = event;
+    const finalDataType = dataType || type || 'advanced';
     
-    if (dataType === 'advanced' || !dataType) {
+    console.log('[getUserData] 请求参数:', { finalDataType, includeFriends });
+    
+    if (finalDataType === 'advanced' || !finalDataType) {
       // 获取高级标签数据（默认）
-      return await getAdvancedTagsData(openid);
-    } else if (dataType === 'original') {
+      return await getAdvancedTagsData(openid, includeFriends);
+    } else if (finalDataType === 'original') {
       // 获取原有问卷数据
-      return await getOriginalQuestionnaireData(openid);
+      return await getOriginalQuestionnaireData(openid, includeFriends);
     } else {
       // 获取两种数据
-      const advancedResult = await getAdvancedTagsData(openid);
-      const originalResult = await getOriginalQuestionnaireData(openid);
+      const advancedResult = await getAdvancedTagsData(openid, includeFriends);
+      const originalResult = await getOriginalQuestionnaireData(openid, includeFriends);
       
       return {
         success: true,
-        data: {
-          advanced: advancedResult.success ? advancedResult.data : null,
-          original: originalResult.success ? originalResult.data : null
+        userData: {
+          advanced: advancedResult.success ? advancedResult.userData : null,
+          original: originalResult.success ? originalResult.userData : null
         }
       };
     }
@@ -68,8 +71,8 @@ exports.main = async (event, context) => {
 /**
  * 获取高级标签数据
  */
-async function getAdvancedTagsData(openid) {
-  console.log('[getUserData] 获取高级标签数据');
+async function getAdvancedTagsData(openid, includeFriends = false) {
+  console.log('[getUserData] 获取高级标签数据, includeFriends:', includeFriends);
   
   try {
     const result = await db.collection('users_adv')
@@ -102,10 +105,31 @@ async function getAdvancedTagsData(openid) {
         }
       }
       
+      // 🔥 新增：如果请求包含朋友数据，则添加朋友信息
+      if (includeFriends) {
+        console.log('[getUserData] 包含朋友数据，当前朋友数量:', userData.friends ? userData.friends.length : 0);
+        
+        // 确保朋友字段存在，即使为空
+        if (!userData.friends) {
+          userData.friends = [];
+          console.log('[getUserData] 用户暂无朋友数据，返回空数组');
+        } else {
+          console.log('[getUserData] 返回朋友数据，数量:', userData.friends.length);
+          userData.friends.forEach((friend, index) => {
+            console.log(`[getUserData] 朋友${index + 1}:`, {
+              deviceName: friend.friendDeviceName,
+              displayName: friend.friendUserInfo?.displayName,
+              isRegistered: !friend.isUnregistered,
+              meetCount: friend.meetCount
+            });
+          });
+        }
+      }
+      
       console.log('[getUserData] 高级标签数据获取成功');
       return {
         success: true,
-        data: userData
+        userData: userData // 🔥 修复：返回 userData 字段保持与小程序端一致
       };
     } else {
       console.log('[getUserData] 用户尚未填写高级标签数据');
@@ -123,8 +147,8 @@ async function getAdvancedTagsData(openid) {
 /**
  * 获取原有问卷数据（兼容）
  */
-async function getOriginalQuestionnaireData(openid) {
-  console.log('[getUserData] 获取原有问卷数据');
+async function getOriginalQuestionnaireData(openid, includeFriends = false) {
+  console.log('[getUserData] 获取原有问卷数据, includeFriends:', includeFriends);
   
   try {
     const result = await db.collection('users_bar')
@@ -149,18 +173,31 @@ async function getOriginalQuestionnaireData(openid) {
             const fileInfo = tempUrlResult.fileList[0];
             if (fileInfo.status === 0) {
               userData.userInfo.avatarUrl = fileInfo.tempFileURL;
-        }
-      }
+            }
+          }
         } catch (urlError) {
           console.warn('[getUserData] 获取头像URL失败:', urlError);
           // 继续使用原有的头像URL
         }
       }
       
+      // 🔥 新增：如果请求包含朋友数据，则添加朋友信息
+      if (includeFriends) {
+        console.log('[getUserData] 包含朋友数据（users_bar），当前朋友数量:', userData.friends ? userData.friends.length : 0);
+        
+        // 确保朋友字段存在，即使为空
+        if (!userData.friends) {
+          userData.friends = [];
+          console.log('[getUserData] users_bar用户暂无朋友数据，返回空数组');
+        } else {
+          console.log('[getUserData] users_bar返回朋友数据，数量:', userData.friends.length);
+        }
+      }
+      
       console.log('[getUserData] 原有问卷数据获取成功');
       return {
         success: true,
-        data: userData
+        userData: userData // 🔥 修复：统一返回 userData 字段保持与小程序端一致
       };
     } else {
       console.log('[getUserData] 用户尚未填写问卷数据');

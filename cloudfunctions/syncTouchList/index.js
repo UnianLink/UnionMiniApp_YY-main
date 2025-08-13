@@ -112,6 +112,14 @@ exports.main = async (event, context) => {
     // 7. 记录碰一碰事件（可选，用于数据分析）
     await recordTouchEvents(openid, touchList, deviceToUserMap);
     
+    // 8. 建立双向朋友关系（核心功能）
+    console.log('[syncTouchList] 📞 开始建立双向朋友关系，匹配用户数:', matchedUsers.length);
+    await establishMutualFriendships(currentUser, matchedUsers);
+    
+    // 9. 处理未注册设备，添加到当前用户的朋友列表（单向关系）
+    console.log('[syncTouchList] 📞 开始处理未注册设备，未注册设备数:', unmatchedDevices.length);
+    await addUnmatchedDevicesAsFriends(currentUser, unmatchedDevices);
+    
     console.log('[syncTouchList] 处理完成 - 匹配用户:', matchedUsers.length, '未匹配设备:', unmatchedDevices.length);
     
     return {
@@ -245,5 +253,215 @@ async function recordTouchEvents(openid, devices, userMap) {
   } catch (error) {
     console.error('[recordTouchEvents] 记录失败:', error);
     // 不影响主流程
+  }
+}
+
+/**
+ * 建立双向朋友关系（核心功能）
+ * 一方上传，双方成友
+ */
+async function establishMutualFriendships(currentUser, matchedUsers) {
+  try {
+    console.log('[establishMutualFriendships] 开始建立双向朋友关系，匹配用户数:', matchedUsers.length);
+    
+    for (const matchedUser of matchedUsers) {
+      // 获取对方的完整用户信息
+      const friendRes = await db.collection('users_adv')
+        .where({ bluetoothName: matchedUser.deviceName })
+        .limit(1)
+        .get();
+      
+      if (friendRes.data.length === 0) {
+        console.log('[establishMutualFriendships] 未找到设备对应用户:', matchedUser.deviceName);
+        continue;
+      }
+      
+      const friendUser = friendRes.data[0];
+      
+      // 1. 在当前用户的朋友列表中添加对方
+      await addToFriendsList(currentUser._id, currentUser.openid, {
+        friendOpenid: friendUser.openid,
+        friendDeviceName: friendUser.bluetoothName || friendUser.encodedTags,
+        friendUserInfo: {
+          displayName: friendUser.advancedTags?.displayName || '未设置昵称',
+          avatarUrl: friendUser.userInfo?.avatarUrl || '',
+          nickName: friendUser.userInfo?.nickName || ''
+        },
+        firstMeetTime: new Date(matchedUser.firstTouchTime),
+        matchScore: matchedUser.matchScore,
+        matchedTags: matchedUser.matchedTags || []
+      });
+      
+      // 2. 在对方的朋友列表中添加当前用户
+      await addToFriendsList(friendUser._id, friendUser.openid, {
+        friendOpenid: currentUser.openid,
+        friendDeviceName: currentUser.bluetoothName || currentUser.encodedTags,
+        friendUserInfo: {
+          displayName: currentUser.advancedTags?.displayName || '未设置昵称',
+          avatarUrl: currentUser.userInfo?.avatarUrl || '',
+          nickName: currentUser.userInfo?.nickName || ''
+        },
+        firstMeetTime: new Date(matchedUser.firstTouchTime),
+        matchScore: matchedUser.matchScore,
+        matchedTags: matchedUser.matchedTags || []
+      });
+      
+      console.log('[establishMutualFriendships] 成功建立双向朋友关系:', 
+        currentUser.advancedTags?.displayName, '<->', friendUser.advancedTags?.displayName);
+    }
+    
+    console.log('[establishMutualFriendships] 双向朋友关系建立完成');
+    
+  } catch (error) {
+    console.error('[establishMutualFriendships] 建立双向朋友关系失败:', error);
+  }
+}
+
+/**
+ * 添加朋友到用户的朋友列表
+ * 支持防重复和更新逻辑
+ */
+async function addToFriendsList(userId, userOpenid, friendInfo) {
+  try {
+    console.log('[addToFriendsList] 🔥 开始添加朋友到列表');
+    console.log('[addToFriendsList] 🔥 用户ID:', userId);
+    console.log('[addToFriendsList] 🔥 用户OpenID:', userOpenid);
+    console.log('[addToFriendsList] 🔥 朋友信息:', JSON.stringify(friendInfo, null, 2));
+    
+    // 获取用户当前的朋友列表
+    const userRes = await db.collection('users_adv')
+      .doc(userId)
+      .get();
+    
+    if (!userRes.data) {
+      console.error('[addToFriendsList] ❌ 用户不存在:', userOpenid);
+      throw new Error(`用户不存在: ${userOpenid}`);
+    }
+    
+    const user = userRes.data;
+    const currentFriends = user.friends || [];
+    
+    console.log('[addToFriendsList] 🔥 当前朋友数量:', currentFriends.length);
+    
+    // 检查朋友是否已存在（对于未注册设备，用设备名称比较）
+    let existingFriendIndex = -1;
+    if (friendInfo.friendOpenid) {
+      // 注册用户，用openid比较
+      existingFriendIndex = currentFriends.findIndex(
+        friend => friend.friendOpenid === friendInfo.friendOpenid
+      );
+    } else {
+      // 未注册设备，用设备名称比较
+      existingFriendIndex = currentFriends.findIndex(
+        friend => friend.friendDeviceName === friendInfo.friendDeviceName
+      );
+    }
+    
+    if (existingFriendIndex >= 0) {
+      // 朋友已存在，更新见面次数和最后见面时间
+      const existingFriend = currentFriends[existingFriendIndex];
+      currentFriends[existingFriendIndex] = {
+        ...existingFriend,
+        meetCount: (existingFriend.meetCount || 1) + 1,
+        lastMeetTime: friendInfo.firstMeetTime,
+        // 更新用户信息以防有变化
+        friendUserInfo: friendInfo.friendUserInfo,
+        matchScore: Math.max(existingFriend.matchScore || 0, friendInfo.matchScore || 0)
+      };
+      
+      console.log('[addToFriendsList] ✅ 更新现有朋友关系，见面次数:', currentFriends[existingFriendIndex].meetCount);
+    } else {
+      // 新朋友，添加到列表
+      const newFriend = {
+        ...friendInfo,
+        meetCount: 1,
+        lastMeetTime: friendInfo.firstMeetTime,
+        addTime: new Date()
+      };
+      
+      currentFriends.push(newFriend);
+      console.log('[addToFriendsList] ✅ 添加新朋友:', friendInfo.friendUserInfo.displayName);
+    }
+    
+    // 限制朋友列表大小，保留最近的500个朋友
+    const finalFriendsList = currentFriends.slice(-500);
+    
+    console.log('[addToFriendsList] 🔥 准备更新数据库，最终朋友数量:', finalFriendsList.length);
+    
+    // 更新数据库
+    const updateResult = await db.collection('users_adv')
+      .doc(userId)
+      .update({
+        data: {
+          friends: finalFriendsList,
+          friendsUpdateTime: new Date()
+        }
+      });
+    
+    console.log('[addToFriendsList] ✅ 数据库更新结果:', updateResult);
+    console.log('[addToFriendsList] ✅ 更新朋友列表成功，当前朋友数:', finalFriendsList.length);
+    
+  } catch (error) {
+    console.error('[addToFriendsList] ❌ 添加朋友失败:', error);
+    console.error('[addToFriendsList] ❌ 错误详情:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code
+    });
+    throw error; // 重新抛出错误
+  }
+}
+
+/**
+ * 处理未注册设备，添加到当前用户的朋友列表
+ * 保持原有产品逻辑：只建立单向关系
+ */
+async function addUnmatchedDevicesAsFriends(currentUser, unmatchedDevices) {
+  try {
+    console.log('[addUnmatchedDevicesAsFriends] 🔥 开始处理未注册设备，数量:', unmatchedDevices.length);
+    console.log('[addUnmatchedDevicesAsFriends] 🔥 当前用户:', {
+      _id: currentUser._id,
+      openid: currentUser.openid,
+      displayName: currentUser.advancedTags?.displayName
+    });
+    
+    if (!unmatchedDevices || unmatchedDevices.length === 0) {
+      console.log('[addUnmatchedDevicesAsFriends] ⚠️ 无未注册设备需要处理');
+      return;
+    }
+    
+    for (const device of unmatchedDevices) {
+      console.log('[addUnmatchedDevicesAsFriends] 🔥 处理未注册设备:', device.deviceName);
+      
+      // 只在当前用户的朋友列表中添加未注册设备（单向关系）
+      const friendInfo = {
+        friendOpenid: null, // 未注册设备没有openid
+        friendDeviceName: device.deviceName,
+        friendUserInfo: {
+          displayName: device.deviceName, // 直接使用Un字符串作为显示名
+          nickName: `${device.deviceName} (未注册)`, // 添加未注册标记
+          avatarUrl: '/images/default-unregistered.png', // 未注册设备专用头像
+          isRegistered: false // 明确标记为未注册
+        },
+        firstMeetTime: new Date(device.firstTouchTime),
+        matchScore: 0, // 未注册设备无匹配度
+        matchedTags: [], // 未注册设备无匹配标签
+        isUnregistered: true, // 标记为未注册设备
+        deviceOnly: true // 标记这是纯设备关系，不是用户关系
+      };
+      
+      console.log('[addUnmatchedDevicesAsFriends] 🔥 准备添加朋友信息:', JSON.stringify(friendInfo, null, 2));
+      
+      await addToFriendsList(currentUser._id, currentUser.openid, friendInfo);
+      
+      console.log('[addUnmatchedDevicesAsFriends] ✅ 成功添加未注册设备到朋友列表:', device.deviceName);
+    }
+    
+    console.log('[addUnmatchedDevicesAsFriends] ✅ 未注册设备处理完成');
+    
+  } catch (error) {
+    console.error('[addUnmatchedDevicesAsFriends] ❌ 处理未注册设备失败:', error);
+    console.error('[addUnmatchedDevicesAsFriends] ❌ 错误堆栈:', error.stack);
+    throw error; // 重新抛出错误，让调用方知道失败了
   }
 }

@@ -833,18 +833,44 @@ class BleHandshakeClient {
   startConnectionHealthMonitoring() {
     console.log('💓 启动连接健康监控');
     
-    // 启动心跳检测
-    this.lastHeartbeatTime = Date.now();
-    this.heartbeatTimer = setInterval(() => {
-      this.sendHeartbeat();
-    }, BLE_CONFIG.HEARTBEAT_INTERVAL_MS);
-    
-    // 启动健康检查
-    this.healthCheckTimer = setInterval(() => {
-      this.checkConnectionHealth();
-    }, BLE_CONFIG.CONNECTION_HEALTH_CHECK_MS);
-    
-    this.connectionHealthy = true;
+    try {
+      // 先停止现有监控（防止重复启动）
+      this.stopConnectionHealthMonitoring();
+      
+      // 确保必要的方法存在
+      if (typeof this.sendHeartbeat !== 'function') {
+        console.error('❌ sendHeartbeat 方法不存在');
+        return;
+      }
+      
+      if (typeof this.checkConnectionHealth !== 'function') {
+        console.error('❌ checkConnectionHealth 方法不存在');
+        return;
+      }
+      
+      // 启动心跳检测
+      this.lastHeartbeatTime = Date.now();
+      this.heartbeatTimer = setInterval(() => {
+        try {
+          this.sendHeartbeat();
+        } catch (error) {
+          console.warn('⚠️ 心跳发送出错:', error);
+        }
+      }, BLE_CONFIG.HEARTBEAT_INTERVAL_MS);
+      
+      // 启动健康检查
+      this.healthCheckTimer = setInterval(() => {
+        try {
+          this.checkConnectionHealth();
+        } catch (error) {
+          console.warn('⚠️ 健康检查出错:', error);
+        }
+      }, BLE_CONFIG.CONNECTION_HEALTH_CHECK_MS);
+      
+      this.connectionHealthy = true;
+    } catch (error) {
+      console.error('❌ 启动连接健康监控失败:', error);
+    }
   }
   
   /**
@@ -884,19 +910,28 @@ class BleHandshakeClient {
    * 检查连接健康状态
    */
   checkConnectionHealth() {
-    if (!this.deviceReady) return;
-    
-    const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeatTime;
-    const isHealthy = timeSinceLastHeartbeat < BLE_CONFIG.HEARTBEAT_INTERVAL_MS * 2;
-    
-    if (!isHealthy && this.connectionHealthy) {
-      console.error('❌ 检测到连接异常，准备自动重连');
-      this.connectionHealthy = false;
-      this.handleConnectionLoss();
-    } else if (isHealthy && !this.connectionHealthy) {
-      console.log('✅ 连接恢复正常');
-      this.connectionHealthy = true;
-      this.autoReconnectAttempts = 0; // 重置重连计数
+    try {
+      if (!this.deviceReady) return;
+      
+      const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeatTime;
+      const isHealthy = timeSinceLastHeartbeat < BLE_CONFIG.HEARTBEAT_INTERVAL_MS * 2;
+      
+      if (!isHealthy && this.connectionHealthy) {
+        console.error('❌ 检测到连接异常，准备自动重连');
+        this.connectionHealthy = false;
+        // 确保 handleConnectionLoss 是函数后再调用
+        if (typeof this.handleConnectionLoss === 'function') {
+          this.handleConnectionLoss();
+        } else {
+          console.error('❌ handleConnectionLoss 不是一个函数');
+        }
+      } else if (isHealthy && !this.connectionHealthy) {
+        console.log('✅ 连接恢复正常');
+        this.connectionHealthy = true;
+        this.autoReconnectAttempts = 0; // 重置重连计数
+      }
+    } catch (error) {
+      console.error('❌ 连接健康检查出错:', error);
     }
   }
   
@@ -922,6 +957,12 @@ class BleHandshakeClient {
     
     this.autoReconnectTimer = setTimeout(async () => {
       try {
+        // 检查 this 上下文是否仍然有效
+        if (!this || typeof this.disconnect !== 'function') {
+          console.error('❌ 自动重连时 this 上下文已失效');
+          return;
+        }
+        
         console.log('🔄 执行自动重连...');
         
         // 先尝试断开现有连接
@@ -931,7 +972,11 @@ class BleHandshakeClient {
         await this.sleep(1000);
         
         // 重新连接
-        await this.connectWithRetry(this.deviceId, this.deviceName);
+        if (typeof this.connectWithRetry === 'function') {
+          await this.connectWithRetry(this.deviceId, this.deviceName);
+        } else {
+          throw new Error('connectWithRetry 方法不可用');
+        }
         
         console.log('✅ 自动重连成功');
         this.autoReconnectAttempts = 0;
@@ -939,11 +984,15 @@ class BleHandshakeClient {
       } catch (error) {
         console.error(`❌ 第${this.autoReconnectAttempts}次自动重连失败:`, error.message);
         
-        if (this.autoReconnectAttempts < BLE_CONFIG.AUTO_RECONNECT_MAX_ATTEMPTS) {
+        if (this && this.autoReconnectAttempts < BLE_CONFIG.AUTO_RECONNECT_MAX_ATTEMPTS) {
           // 继续尝试下一次重连
-          this.handleConnectionLoss();
+          if (typeof this.handleConnectionLoss === 'function') {
+            this.handleConnectionLoss();
+          }
         } else {
-          this.notifyConnectionLoss('自动重连失败');
+          if (this && typeof this.notifyConnectionLoss === 'function') {
+            this.notifyConnectionLoss('自动重连失败');
+          }
         }
       }
     }, retryDelay);
@@ -955,11 +1004,17 @@ class BleHandshakeClient {
   notifyConnectionLoss(reason) {
     console.error('🔴 连接永久丢失:', reason);
     
-    if (typeof this.onConnectionLoss === 'function') {
-      this.onConnectionLoss({
-        reason: reason,
-        autoReconnectAttempts: this.autoReconnectAttempts
-      });
+    try {
+      if (this.onConnectionLoss && typeof this.onConnectionLoss === 'function') {
+        this.onConnectionLoss({
+          reason: reason,
+          autoReconnectAttempts: this.autoReconnectAttempts
+        });
+      } else {
+        console.warn('⚠️ onConnectionLoss 回调函数不可用');
+      }
+    } catch (error) {
+      console.error('❌ 通知连接丢失出错:', error);
     }
     
     // 停止所有监控
@@ -970,22 +1025,30 @@ class BleHandshakeClient {
    * 停止连接健康监控
    */
   stopConnectionHealthMonitoring() {
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = null;
+    try {
+      // 确保定时器变量存在且类型正确
+      if (this.heartbeatTimer && typeof clearInterval === 'function') {
+        clearInterval(this.heartbeatTimer);
+        this.heartbeatTimer = null;
+      }
+      
+      if (this.healthCheckTimer && typeof clearInterval === 'function') {
+        clearInterval(this.healthCheckTimer);
+        this.healthCheckTimer = null;
+      }
+      
+      if (this.autoReconnectTimer && typeof clearTimeout === 'function') {
+        clearTimeout(this.autoReconnectTimer);
+        this.autoReconnectTimer = null;
+      }
+      
+      // 重置连接状态标志
+      this.connectionHealthy = false;
+      
+      console.log('🛑 连接健康监控已停止');
+    } catch (error) {
+      console.warn('⚠️ 停止连接健康监控时出错:', error);
     }
-    
-    if (this.healthCheckTimer) {
-      clearInterval(this.healthCheckTimer);
-      this.healthCheckTimer = null;
-    }
-    
-    if (this.autoReconnectTimer) {
-      clearTimeout(this.autoReconnectTimer);
-      this.autoReconnectTimer = null;
-    }
-    
-    console.log('🛑 连接健康监控已停止');
   }
 
   /**

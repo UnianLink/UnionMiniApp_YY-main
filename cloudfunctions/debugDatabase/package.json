@@ -1,0 +1,9 @@
+{
+  "name": "debugDatabase",
+  "version": "1.0.0",
+  "description": "调试数据库中的碰一碰数据存储",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

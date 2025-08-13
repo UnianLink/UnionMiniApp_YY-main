@@ -56,7 +56,13 @@ Page({
     lastStableCheck: 0, // 上次稳定性检查时间
     
     // ===== Un设备列表相关 =====
-    unDevices: [] // Un开头的设备列表
+    unDevices: [], // Un开头的设备列表
+    
+    // ===== 云同步状态 =====
+    isCloudSyncing: false, // 是否正在云同步
+    lastCloudSyncTime: '', // 最后一次云同步时间
+    lastCloudSyncError: '', // 最后一次同步错误信息
+    cloudSyncStatus: 'idle' // idle, syncing, success, error
   },
   
   // 页面加载时的处理
@@ -967,16 +973,37 @@ Page({
           this.waitingForUnStringResponse = false;
           
           // 🔥 修复：检查连接状态，避免误导性超时提示
-          const bleClient = this.bleHandshakeClient;
-          const isHealthy = bleClient && bleClient.connectionHealthy;
-          
-          if (isHealthy) {
-            console.log('💡 连接健康，可能是消息丢失，不显示超时提示');
-            // 连接正常时不显示超时，可能只是消息丢失
-          } else {
-            console.warn('💔 连接不健康，显示超时提示');
+          try {
+            // 安全获取握手客户端和连接状态
+            const bleClient = this.handshakeClient || this.bleHandshakeClient;
+            let isHealthy = false;
+            
+            if (bleClient && typeof bleClient === 'object') {
+              // 检查连接健康状态
+              isHealthy = bleClient.connectionHealthy === true;
+              
+              // 额外检查设备是否仍然连接
+              if (bleClient.deviceReady === true && this.data.connected === true) {
+                isHealthy = true;
+              }
+            }
+            
+            if (isHealthy) {
+              console.log('💡 连接健康，可能是消息丢失，不显示超时提示');
+              // 连接正常时不显示超时，可能只是消息丢失
+            } else {
+              console.warn('💔 连接不健康，显示超时提示');
+              wx.showToast({
+                title: '请检查设备连接',
+                icon: 'none',
+                duration: 2000
+              });
+            }
+          } catch (error) {
+            console.error('❌ 连接健康检查出错:', error);
+            // 出错时保守处理，显示连接提示
             wx.showToast({
-              title: '请检查设备连接',
+              title: '设备连接状态检查失败',
               icon: 'none',
               duration: 2000
             });
@@ -1193,10 +1220,10 @@ Page({
           id: `unmatched_${index}`,
           openid: null,  // 未注册用户没有openid
           name: `Un用户 (${tags.length}个标签)`,
-          bluetooth_name: device.name,
+          deviceName: device.name,  // 🔧 修复字段名：bluetooth_name -> deviceName
           subtitle: '无共同标签',
           description: tags.length > 0 ? `TA的兴趣: ${tags.slice(0, 3).join(' · ')}` : '暂无标签信息',
-          timestamp: device.first_touch || Date.now(),
+          firstTouchTime: device.first_touch || Date.now(),  // 🔧 修复字段名：timestamp -> firstTouchTime
           isUnmatched: true,
           tags: tags
         };
@@ -1254,25 +1281,57 @@ Page({
     try {
       console.log('☁️ 开始同步碰一碰列表到云端...');
       console.log('☁️ 设备列表:', devices);
+      console.log('☁️ 设备数量:', devices.length);
       
       // 检查云开发是否可用
       if (!wx.cloud || typeof wx.cloud.callFunction !== 'function') {
         console.warn('⚠️ 云开发不可用，跳过云端同步');
+        this.addNotification('⚠️ 云开发不可用，使用本地模式');
         return;
       }
       
-      // 获取当前用户的openid - 修正获取方式
-      const userInfo = wx.getStorageSync('userInfo');
-      const openid = userInfo?.openid || this.data.userOpenId || wx.getStorageSync('openid');
+      console.log('☁️ 云开发环境可用，准备调用云函数');
       
-      console.log('☁️ 用户信息:', userInfo);
-      console.log('☁️ 用户openid:', openid);
+      // 获取当前用户的openid - 修复获取逻辑
+      let openid = wx.getStorageSync('openid') || 
+                   getApp().globalData.openid ||
+                   this.data.userOpenId;
+      
+      console.log('☁️ 尝试获取openid:', {
+        localStorage: wx.getStorageSync('openid'),
+        globalData: getApp().globalData.openid,
+        pageData: this.data.userOpenId
+      });
+      
+      // 如果还是没有openid，尝试通过云函数登录获取
+      if (!openid) {
+        console.log('☁️ 未找到本地openid，尝试云函数登录获取');
+        try {
+          const loginRes = await wx.cloud.callFunction({
+            name: 'login'
+          });
+          if (loginRes.result && loginRes.result.openid) {
+            openid = loginRes.result.openid;
+            wx.setStorageSync('openid', openid);
+            getApp().globalData.openid = openid;
+            console.log('☁️ 通过云函数获取openid成功:', openid);
+          } else if (loginRes.result && loginRes.result.data && loginRes.result.data._openid) {
+            openid = loginRes.result.data._openid;
+            wx.setStorageSync('openid', openid);
+            getApp().globalData.openid = openid;
+            console.log('☁️ 通过云函数获取openid成功(备用格式):', openid);
+          }
+        } catch (loginError) {
+          console.error('☁️ 云函数登录失败:', loginError);
+        }
+      }
       
       if (!openid) {
-        console.warn('⚠️ 无法获取用户openid，跳过云端同步');
-        // 不要显示错误提示，因为这不是关键功能
+        console.warn('⚠️ 仍然无法获取用户openid，跳过云端同步');
         return;
       }
+      
+      console.log('☁️ 成功获取openid，开始云端同步:', openid);
       
       // 调用云函数（添加超时和重试机制）
       const res = await Promise.race([
@@ -1335,6 +1394,209 @@ Page({
       }
       
       // 不显示错误提示给用户，因为这不是关键功能
+    }
+  },
+  
+  // 🔧 新增：安全的云函数同步，不覆盖本地数据
+  async syncTouchListToCloudSafely(devices) {
+    // 🔥 新增：显示同步状态给用户
+    this.setData({ 
+      isCloudSyncing: true,
+      cloudSyncStatus: 'syncing',
+      lastCloudSyncError: ''
+    });
+    
+    try {
+      console.log('📡 开始安全同步碰一碰列表到云端（不覆盖本地数据）...');
+      console.log('📡 设备列表:', JSON.stringify(devices, null, 2));
+      console.log('📡 设备数量:', devices.length);
+      
+      // 检查云开发是否可用
+      if (!wx.cloud || typeof wx.cloud.callFunction !== 'function') {
+        console.error('❌ 云开发不可用，跳过云端同步');
+        this.addNotification('⚠️ 云开发不可用，仅本地保存');
+        this.setData({ isCloudSyncing: false });
+        return;
+      }
+      
+      console.log('✅ 云开发环境可用，准备调用云函数');
+      
+      // 获取当前用户的openid - 修复获取逻辑
+      let openid = wx.getStorageSync('openid') || 
+                   getApp().globalData.openid ||
+                   this.data.userOpenId;
+      
+      console.log('☁️ 尝试获取openid进行云端同步:', {
+        localStorage: wx.getStorageSync('openid'),
+        globalData: getApp().globalData.openid,
+        pageData: this.data.userOpenId
+      });
+      
+      // 如果还是没有openid，尝试通过云函数登录获取
+      if (!openid) {
+        console.log('☁️ 未找到本地openid，尝试云函数登录获取');
+        try {
+          const loginRes = await wx.cloud.callFunction({
+            name: 'login'
+          });
+          console.log('☁️ 登录云函数响应:', loginRes);
+          
+          if (loginRes.result && loginRes.result.openid) {
+            openid = loginRes.result.openid;
+            wx.setStorageSync('openid', openid);
+            getApp().globalData.openid = openid;
+            console.log('☁️ 通过云函数获取openid成功:', openid);
+          } else if (loginRes.result && loginRes.result.data && loginRes.result.data._openid) {
+            // 兼容不同的返回格式
+            openid = loginRes.result.data._openid;
+            wx.setStorageSync('openid', openid);
+            getApp().globalData.openid = openid;
+            console.log('☁️ 通过云函数获取openid成功(备用格式):', openid);
+          }
+        } catch (loginError) {
+          console.error('☁️ 云函数登录失败:', loginError);
+        }
+      }
+      
+      if (!openid) {
+        console.error('❌ 仍然无法获取用户openid，跳过云端同步');
+        this.addNotification('❌ 用户身份验证失败');
+        this.setData({ isCloudSyncing: false });
+        return;
+      }
+      
+      console.log('✅ 成功获取openid，开始云端同步');
+      console.log('📡 调用参数:', {
+        openid: openid,
+        touchListLength: devices.length,
+        firstDevice: devices[0] || null
+      });
+      
+      // 调用云函数（添加超时和重试机制）
+      console.log('📞 开始调用 syncTouchList 云函数...');
+      const startTime = Date.now();
+      
+      const res = await Promise.race([
+        wx.cloud.callFunction({
+          name: 'syncTouchList',
+          data: {
+            openid: openid,
+            touchList: devices
+          }
+        }),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('云函数调用超时 (10秒)')), 10000);
+        })
+      ]);
+      
+      const endTime = Date.now();
+      console.log(`📞 云函数调用完成，耗时 ${endTime - startTime}ms`);
+      console.log('📞 云函数返回结果:', JSON.stringify(res.result, null, 2));
+      
+      // 增强错误处理
+      if (!res || !res.result) {
+        console.error('❌ syncTouchListToCloudSafely - 云函数返回结果格式异常:', res);
+        this.addNotification('❌ 云函数返回格式错误');
+        throw new Error('云函数返回格式错误');
+      }
+      
+      if (!res.result.success) {
+        console.error('❌ syncTouchListToCloudSafely - 云函数执行失败:', res.result.message || '未知错误');
+        this.addNotification(`❌ 云同步失败: ${res.result.message || '未知错误'}`);
+        throw new Error(res.result.message || '同步朋友关系失败');
+      }
+      
+      if (res.result.success) {
+        const { matchedUsers, unmatchedDevices, summary } = res.result;
+        console.log('✅ 云函数执行成功');
+        console.log('✅ 匹配用户数:', matchedUsers?.length || 0);
+        console.log('✅ 未匹配设备数:', unmatchedDevices?.length || 0);
+        
+        // 🔧 关键修复：不直接覆盖本地存储，而是智能合并数据
+        const existingData = wx.getStorageSync('touchListResult');
+        if (existingData) {
+          // 如果本地已有数据，只更新匹配的用户部分，保留本地的未匹配设备
+          const updatedResult = {
+            matchedUsers: matchedUsers || [], // 使用云函数返回的匹配用户
+            unmatchedDevices: existingData.unmatchedDevices || [], // 保留本地的未匹配设备
+            summary: {
+              total: (matchedUsers?.length || 0) + (existingData.unmatchedDevices?.length || 0),
+              matched: matchedUsers?.length || 0,
+              unmatched: existingData.unmatchedDevices?.length || 0
+            },
+            isLocalMode: false, // 标记为云端同步成功
+            updateTime: Date.now(),
+            cloudSyncTime: new Date().toISOString() // 记录云同步时间
+          };
+          
+          wx.setStorageSync('touchListResult', updatedResult);
+          console.log('✅ 智能合并后的数据已保存:', updatedResult);
+        }
+        
+        // 显示同步结果
+        const message = `云同步成功！${summary?.matched || 0}个朋友，${summary?.unmatched || 0}个未注册设备`;
+        wx.showToast({
+          title: message,
+          icon: 'success',
+          duration: 3000
+        });
+        
+        this.addNotification(`☁️ ${message}`);
+        
+        // 如果有匹配的朋友，显示简要信息
+        if (matchedUsers && matchedUsers.length > 0) {
+          const topMatch = matchedUsers[0];
+          this.addNotification(`🎯 最佳匹配：${topMatch.displayName || topMatch.name} (${topMatch.matchScore}个共同标签)`);
+        }
+        
+        // 标记同步完成
+        this.setData({ 
+          isCloudSyncing: false, 
+          cloudSyncStatus: 'success',
+          lastCloudSyncTime: new Date().toLocaleTimeString()
+        });
+      } else {
+        console.error('❌ 云端同步失败:', res.result.message);
+        this.addNotification(`❌ 云同步失败: ${res.result.message}`);
+        this.setData({ 
+          isCloudSyncing: false,
+          cloudSyncStatus: 'error',
+          lastCloudSyncError: res.result.message,
+          lastCloudSyncTime: new Date().toLocaleTimeString() + ' (失败)'
+        });
+      }
+      
+    } catch (error) {
+      console.error('❌ 云函数调用失败:', error.message || error.errMsg || error);
+      
+      // 详细错误日志用于调试
+      console.error('❌ syncTouchListToCloudSafely 详细错误:', {
+        error: error,
+        message: error.message,
+        errMsg: error.errMsg,
+        stack: error.stack,
+        type: typeof error,
+        timestamp: new Date().toISOString()
+      });
+      
+      // 显示具体错误信息给用户
+      const errorMessage = error.message || error.errMsg || '未知错误';
+      this.addNotification(`❌ 云同步失败: ${errorMessage}`);
+      
+      // 显示Toast提示
+      wx.showToast({
+        title: `云同步失败: ${errorMessage}`,
+        icon: 'none',
+        duration: 4000
+      });
+      
+      // 标记同步失败
+      this.setData({ 
+        isCloudSyncing: false, 
+        cloudSyncStatus: 'error',
+        lastCloudSyncError: errorMessage,
+        lastCloudSyncTime: new Date().toLocaleTimeString() + ' (失败)'
+      });
     }
   },
   
@@ -2091,11 +2353,11 @@ Page({
         this.sendTouchListAck();
       }, 500); // 短暂延迟确保UI更新完成
       
-      // 🚨 新增：调用云函数同步碰一碰列表到后端
-      this.syncTouchListToCloud(jsonData.devices);
-      
       // 🔥 关键修复：保存碰一碰结果到本地存储，供朋友页面使用
       this.saveTouchListToStorage(jsonData.devices);
+      
+      // 🚨 新增：异步调用云函数同步碰一碰列表到后端，但不覆盖本地数据
+      this.syncTouchListToCloudSafely(jsonData.devices);
       
       // 添加通知
       this.addNotification(`📋 自动接收碰一碰设备列表 (${deviceCount}个设备)`);

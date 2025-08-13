@@ -43,6 +43,9 @@
   
   "lazyCodeLoading": "requiredComponents",
   "sitemapLocation": "sitemap.json",
+  
+  "backgroundFetch": "disable",
+  
   "permission": {
     "scope.userLocation": {
       "desc": "您的位置信息将用于显示您的当前位置"

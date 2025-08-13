@@ -3,7 +3,13 @@
   <!-- 页面顶部导航栏标题 -->
   <view class="nav-bar">
     <view class="nav-title">朋友</view>
-    <view class="nav-subtitle" wx:if="{{matchedFriends.length > 0}}">碰一碰好友 {{matchedFriends.length}} 人</view>
+    <view class="nav-subtitle" wx:if="{{totalFriendsCount > 0}}">
+      碰一碰记录 {{totalFriendsCount}} 个
+      <text wx:if="{{registeredFriendsCount > 0}}" style="color: #4CAF50;">（{{registeredFriendsCount}}位朋友</text>
+      <text wx:if="{{unregisteredDevicesCount > 0 && registeredFriendsCount > 0}}" style="color: #999;">，</text>
+      <text wx:if="{{unregisteredDevicesCount > 0}}" style="color: #999;">{{unregisteredDevicesCount}}台未注册设备</text>
+      <text wx:if="{{registeredFriendsCount > 0}}" style="color: #4CAF50;">）</text>
+    </view>
   </view>
 
   <!-- 用户背景图片 -->
