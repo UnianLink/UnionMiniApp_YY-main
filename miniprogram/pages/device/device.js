@@ -58,6 +58,15 @@ Page({
     // ===== Un设备列表相关 =====
     unDevices: [], // Un开头的设备列表
     
+    // ===== 分页碰一碰列表相关 =====
+    touchListBatchState: {
+      sessionId: null,      // 当前会话ID
+      totalBatches: 0,      // 总批次数
+      receivedBatches: 0,   // 已接收批次数
+      allDevices: [],       // 累积的所有设备
+      isReceiving: false    // 是否正在接收分页数据
+    },
+    
     // ===== 云同步状态 =====
     isCloudSyncing: false, // 是否正在云同步
     lastCloudSyncTime: '', // 最后一次云同步时间
@@ -2977,8 +2986,19 @@ Page({
             }
             return;
             
+          case 'touch_list_batch':
+            // 🚀 处理分页碰一碰设备列表
+            console.log('📋 收到分页touch_list_batch消息:');
+            console.log('📋 - 会话ID:', jsonData.session_id);
+            console.log('📋 - 批次:', jsonData.batch_index + '/' + jsonData.total_batches);
+            console.log('📋 - 设备数量:', jsonData.count);
+            console.log('📋 - 是否最后一批:', jsonData.is_final);
+            
+            this.handleTouchListBatch(jsonData);
+            return;
+
           case 'touch_list':
-            // 处理碰一碰设备列表
+            // 处理碰一碰设备列表（兼容旧格式）
             console.log('📋 收到touch_list消息，设备数量:', jsonData.count);
             console.log('📋 设备列表:', jsonData.devices);
             
@@ -2990,11 +3010,18 @@ Page({
               this.setData({
                 unDevices: []
               });
+              
+              // 🔧 【关键修复】空列表时也要发送确认消息给硬件
+              console.log('🚀 [空列表修复] 发送确认消息给硬件，确保延迟执行的名称变更能被触发');
+              this.sendTouchListAck();
+              
             } else {
               console.log('📋 收到碰一碰设备列表:', jsonData.devices);
               console.log('📋 准备调用updateUnDevicesListFromJSON...');
               this.updateUnDevicesListFromJSON(jsonData);
               console.log('📋 updateUnDevicesListFromJSON调用完成');
+              
+              // 🔄 非空列表在updateUnDevicesListFromJSON中已有确认逻辑，无需重复
             }
             return;
             
@@ -3133,6 +3160,96 @@ Page({
     } catch (error) {
       console.error('解析Un设备信息失败:', error);
     }
+  },
+
+  // 🚀 处理分页碰一碰设备列表
+  handleTouchListBatch(jsonData) {
+    console.log('🚀 开始处理分页碰一碰数据...');
+    
+    const { session_id, batch_index, total_batches, count, devices, is_final } = jsonData;
+    
+    // 检查会话ID是否匹配
+    if (this.data.touchListBatchState.sessionId && 
+        this.data.touchListBatchState.sessionId !== session_id) {
+      console.log('⚠️ 会话ID不匹配，重置分页状态');
+      this.resetTouchListBatchState();
+    }
+    
+    // 初始化新会话
+    if (!this.data.touchListBatchState.sessionId) {
+      console.log(`🎯 开始新的分页会话: ${session_id}, 总批次: ${total_batches}`);
+      this.setData({
+        'touchListBatchState.sessionId': session_id,
+        'touchListBatchState.totalBatches': total_batches,
+        'touchListBatchState.receivedBatches': 0,
+        'touchListBatchState.allDevices': [],
+        'touchListBatchState.isReceiving': true
+      });
+      
+      // 显示开始接收提示
+      this.addNotification(`📥 开始接收碰一碰列表 (共 ${total_batches} 批)`);
+    }
+    
+    // 累积当前批次的设备数据
+    const currentDevices = [...this.data.touchListBatchState.allDevices];
+    if (devices && Array.isArray(devices)) {
+      currentDevices.push(...devices);
+      console.log(`📋 批次 ${batch_index} 添加了 ${devices.length} 个设备，累计 ${currentDevices.length} 个`);
+    }
+    
+    // 更新状态
+    const newReceivedBatches = this.data.touchListBatchState.receivedBatches + 1;
+    this.setData({
+      'touchListBatchState.receivedBatches': newReceivedBatches,
+      'touchListBatchState.allDevices': currentDevices
+    });
+    
+    // 显示进度
+    this.addNotification(`📥 接收批次 ${batch_index}/${total_batches} (${devices.length}个设备)`);
+    
+    // 检查是否接收完成
+    if (is_final || newReceivedBatches >= total_batches) {
+      console.log('✅ 分页接收完成，开始处理合并数据...');
+      this.finalizeTouchListBatch();
+    }
+  },
+
+  // 完成分页接收，处理合并数据
+  finalizeTouchListBatch() {
+    const allDevices = this.data.touchListBatchState.allDevices;
+    const totalCount = allDevices.length;
+    
+    console.log(`✅ 分页接收完成，总计 ${totalCount} 个设备`);
+    
+    // 构造兼容的JSON数据格式
+    const mergedJsonData = {
+      type: 'touch_list',
+      count: totalCount,
+      devices: allDevices
+    };
+    
+    // 使用现有的更新函数处理合并后的数据
+    this.updateUnDevicesListFromJSON(mergedJsonData);
+    
+    // 显示完成提示
+    this.addNotification(`✅ 碰一碰列表接收完成 (${totalCount}个设备)`);
+    
+    // 重置分页状态
+    this.resetTouchListBatchState();
+    
+    // 发送确认消息给硬件
+    this.sendTouchListAck();
+  },
+
+  // 重置分页状态
+  resetTouchListBatchState() {
+    this.setData({
+      'touchListBatchState.sessionId': null,
+      'touchListBatchState.totalBatches': 0,
+      'touchListBatchState.receivedBatches': 0,
+      'touchListBatchState.allDevices': [],
+      'touchListBatchState.isReceiving': false
+    });
   },
 
   // 从JSON格式更新Un设备列表
