@@ -1209,6 +1209,9 @@ Page({
             success: () => {
               // 切换到个人名片视图
               this.switchToProfileView();
+              
+              // 🔄 新增：问卷提交成功后自动同步到BLE设备
+              this.autoSyncToBleDevice();
             }
           });
         } else {
@@ -1547,6 +1550,81 @@ Page({
     
     // 保存状态到本地
     wx.setStorageSync('viewMode', 'profile');
+  },
+  
+  // 🔄 新增：问卷完成后自动同步到BLE设备
+  async autoSyncToBleDevice() {
+    try {
+      console.log('🔄 检查BLE设备连接状态，准备自动同步...');
+      
+      // 检查设备页面是否存在且已连接
+      const pages = getCurrentPages();
+      let devicePage = null;
+      
+      // 查找设备页面实例
+      for (let page of pages) {
+        if (page.route === 'pages/device/device') {
+          devicePage = page;
+          break;
+        }
+      }
+      
+      if (!devicePage) {
+        console.log('ℹ️ 设备页面未打开，跳过自动同步');
+        return;
+      }
+      
+      if (!devicePage.data.connected) {
+        console.log('ℹ️ 设备未连接，跳过自动同步');
+        return;
+      }
+      
+      console.log('✅ 设备页面已打开且已连接，开始自动同步...');
+      
+      // 调用设备页面的Un字符串同步函数
+      const syncResult = await devicePage.syncUnStringToBle();
+      
+      if (syncResult) {
+        console.log('✅ 问卷更新后自动同步成功');
+        
+        // 显示成功提示
+        wx.showToast({
+          title: '已同步到设备',
+          icon: 'success',
+          duration: 2000
+        });
+        
+        // 在设备页面添加成功记录
+        if (devicePage.addNotification) {
+          devicePage.addNotification('✅ 问卷更新，蓝牙名称已自动同步');
+        }
+        
+      } else {
+        console.log('⚠️ 问卷更新后自动同步失败');
+        
+        // 显示失败提示
+        wx.showToast({
+          title: '设备同步失败',
+          icon: 'none',
+          duration: 2000
+        });
+        
+        // 在设备页面添加失败记录
+        if (devicePage.addNotification) {
+          devicePage.addNotification('⚠️ 问卷更新，但蓝牙同步失败，请手动刷新');
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ 自动同步过程中发生异常:', error);
+      
+      // 显示异常提示
+      wx.showToast({
+        title: '同步异常',
+        icon: 'none',
+        duration: 2000
+      });
+    }
   },
 
   // 切换到问卷编辑视图

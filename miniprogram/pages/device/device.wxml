@@ -262,6 +262,15 @@
       </view>
     </view>
 
+    <!-- 刷新数据按钮 -->
+    <view class="sync-actions" wx:if="{{connected}}">
+      <button class="refresh-button" bindtap="refreshData" loading="{{isRefreshingData}}">
+        <text wx:if="{{!isRefreshingData}}">🔄 刷新数据</text>
+        <text wx:else>⏳ 同步中...</text>
+      </button>
+      <text class="refresh-tip">同步最新的蓝牙名称和碰一碰列表</text>
+    </view>
+
     <!-- 断开连接按钮 -->
     <view class="bottom-actions">
       <button class="disconnect-button" bindtap="disconnect" type="warn">断开连接</button>

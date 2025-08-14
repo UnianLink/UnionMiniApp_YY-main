@@ -1133,6 +1133,53 @@ page {
   box-shadow: none;
 }
 
+/* 同步数据操作区域 */
+.sync-actions {
+  margin-top: 30rpx;
+  padding: 20rpx 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.refresh-button {
+  background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+  color: white;
+  border: none;
+  border-radius: 12rpx;
+  padding: 18rpx 35rpx;
+  font-size: 28rpx;
+  font-weight: 500;
+  min-height: 75rpx;
+  line-height: 40rpx;
+  width: 100%;
+  white-space: nowrap;
+  letter-spacing: 0.5rpx;
+  box-shadow: 0 3rpx 10rpx rgba(52, 152, 219, 0.3);
+  transition: all 0.3s ease;
+  margin-bottom: 16rpx;
+}
+
+.refresh-button:active {
+  transform: scale(0.96);
+  box-shadow: 0 2rpx 6rpx rgba(52, 152, 219, 0.5);
+}
+
+.refresh-button:disabled {
+  background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%);
+  box-shadow: 0 2rpx 6rpx rgba(149, 165, 166, 0.2);
+  transform: none;
+}
+
+.refresh-tip {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  margin-top: 8rpx;
+  line-height: 30rpx;
+}
+
 /* 底部操作区域 */
 .bottom-actions {
   margin-top: 40rpx;

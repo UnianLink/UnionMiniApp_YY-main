@@ -64,6 +64,9 @@ Page({
     lastCloudSyncError: '', // 最后一次同步错误信息
     cloudSyncStatus: 'idle', // idle, syncing, success, error
     
+    // ===== 数据刷新状态 =====
+    isRefreshingData: false, // 是否正在刷新数据
+    
     // ===== 设备绑定相关状态 =====
     boundDevice: null, // 绑定的设备信息
     searchingMyDevice: false, // 是否正在搜索我的设备
@@ -2283,6 +2286,191 @@ Page({
     } catch (fallbackError) {
       console.error('❌ 本地fallback失败:', fallbackError);
       this.addNotification('❌ 本地模式也失败了');
+    }
+  },
+  
+  // 🔄 新增：Un字符串动态同步函数
+  async syncUnStringToBle() {
+    try {
+      console.log('🔄 开始同步Un字符串到硬件...');
+      
+      // 检查BLE连接状态
+      if (!this.data.connected) {
+        console.warn('⚠️ BLE未连接，无法同步Un字符串');
+        this.addNotification('⚠️ 设备未连接，请先连接设备');
+        return false;
+      }
+      
+      // 获取最新的用户编码标签
+      const userEncodedTags = await this.getUserEncodedTags();
+      if (!userEncodedTags || userEncodedTags.length < 14) {
+        console.error('❌ 获取编码标签失败或长度不足');
+        this.addNotification('❌ 获取标签编码失败，请完善个人资料');
+        return false;
+      }
+      
+      // 生成16字符Un字符串: "Un" + 14字符编码
+      const unString = `Un${userEncodedTags.substring(0, 14)}`;
+      console.log('🎯 准备发送Un字符串:', unString);
+      
+      // 构建设置Un字符串的命令
+      const command = {
+        type: 'set_un_string',
+        un_string: unString,
+        timestamp: Date.now()
+      };
+      
+      const commandStr = JSON.stringify(command);
+      console.log('📤 发送Un字符串命令:', commandStr);
+      
+      // 检查特征值是否就绪
+      const { rxServiceId, rxCharId } = this.data;
+      if (!rxServiceId || !rxCharId) {
+        console.error('❌ BLE特征值未就绪，无法发送命令');
+        this.addNotification('❌ BLE服务未就绪，请重新连接');
+        return false;
+      }
+      
+      // 发送给硬件
+      await this.writeToBle(commandStr);
+      
+      console.log('✅ Un字符串同步命令发送成功');
+      
+      // 添加通信日志
+      this.addNotification(`📤 已发送新的蓝牙名称: ${unString}`);
+      
+      return true;
+      
+    } catch (error) {
+      console.error('❌ Un字符串同步失败:', error);
+      this.addNotification(`❌ 蓝牙名称同步失败: ${error.message || '未知错误'}`);
+      return false;
+    }
+  },
+  
+  // 🔄 新增：碰一碰数据刷新函数
+  async requestTouchListFromBle() {
+    try {
+      console.log('🔄 请求硬件发送最新碰一碰列表...');
+      
+      // 检查BLE连接状态
+      if (!this.data.connected) {
+        console.warn('⚠️ BLE未连接，无法请求碰一碰列表');
+        this.addNotification('⚠️ 设备未连接，请先连接设备');
+        return false;
+      }
+      
+      // 构建请求碰一碰列表的命令
+      const command = {
+        type: 'request_touch_list',
+        timestamp: Date.now()
+      };
+      
+      const commandStr = JSON.stringify(command);
+      console.log('📤 发送碰一碰列表请求命令:', commandStr);
+      
+      // 检查特征值是否就绪
+      const { rxServiceId, rxCharId } = this.data;
+      if (!rxServiceId || !rxCharId) {
+        console.error('❌ BLE特征值未就绪，无法发送命令');
+        this.addNotification('❌ BLE服务未就绪，请重新连接');
+        return false;
+      }
+      
+      // 发送请求给硬件
+      await this.writeToBle(commandStr);
+      
+      console.log('✅ 碰一碰列表请求发送成功');
+      
+      // 添加通信日志
+      this.addNotification('📤 已请求硬件发送最新碰一碰列表');
+      
+      return true;
+      
+    } catch (error) {
+      console.error('❌ 请求碰一碰列表失败:', error);
+      this.addNotification(`❌ 请求碰一碰列表失败: ${error.message || '未知错误'}`);
+      return false;
+    }
+  },
+  
+  // 🔄 新增：刷新数据按钮点击处理函数
+  async refreshData() {
+    try {
+      console.log('🔄 开始刷新设备数据...');
+      
+      // 设置刷新状态
+      this.setData({ isRefreshingData: true });
+      
+      // 显示开始刷新的提示
+      this.addNotification('🔄 开始刷新数据...');
+      
+      let successCount = 0;
+      let totalOperations = 2;
+      
+      // 1. 同步Un字符串到硬件
+      console.log('🔄 [1/2] 同步Un字符串到硬件...');
+      const unSyncResult = await this.syncUnStringToBle();
+      if (unSyncResult) {
+        successCount++;
+        console.log('✅ [1/2] Un字符串同步成功');
+      } else {
+        console.log('❌ [1/2] Un字符串同步失败');
+      }
+      
+      // 短暂延迟，确保硬件处理完成
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 2. 请求硬件发送最新碰一碰列表
+      console.log('🔄 [2/2] 请求最新碰一碰列表...');
+      const touchListResult = await this.requestTouchListFromBle();
+      if (touchListResult) {
+        successCount++;
+        console.log('✅ [2/2] 碰一碰列表请求成功');
+      } else {
+        console.log('❌ [2/2] 碰一碰列表请求失败');
+      }
+      
+      // 显示刷新结果
+      if (successCount === totalOperations) {
+        console.log('✅ 数据刷新完全成功');
+        this.addNotification(`✅ 数据刷新完成 (${successCount}/${totalOperations})`);
+        wx.showToast({
+          title: '刷新成功',
+          icon: 'success',
+          duration: 2000
+        });
+      } else if (successCount > 0) {
+        console.log(`⚠️ 数据刷新部分成功: ${successCount}/${totalOperations}`);
+        this.addNotification(`⚠️ 部分刷新成功 (${successCount}/${totalOperations})`);
+        wx.showToast({
+          title: `部分成功 ${successCount}/${totalOperations}`,
+          icon: 'none',
+          duration: 3000
+        });
+      } else {
+        console.log('❌ 数据刷新完全失败');
+        this.addNotification('❌ 数据刷新失败');
+        wx.showToast({
+          title: '刷新失败',
+          icon: 'error',
+          duration: 2000
+        });
+      }
+      
+    } catch (error) {
+      console.error('❌ 数据刷新过程中发生异常:', error);
+      this.addNotification(`❌ 刷新异常: ${error.message || '未知错误'}`);
+      
+      wx.showToast({
+        title: '刷新异常',
+        icon: 'error',
+        duration: 2000
+      });
+    } finally {
+      // 恢复刷新状态
+      this.setData({ isRefreshingData: false });
+      console.log('🔄 数据刷新过程结束');
     }
   },
   
