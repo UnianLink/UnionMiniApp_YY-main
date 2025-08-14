@@ -2,6 +2,10 @@
 const { BleHandshakeClient, BLE_CONFIG, BLE_HANDSHAKE_STATE } = require('../../utils/ble-handshake-client.js');
 // 导入智能设备选择配置
 const DeviceSelectionConfig = require('../../config/device-selection-config.js');
+// 导入全局BLE连接管理器
+const { globalBleManager, GLOBAL_BLE_STATE, GLOBAL_BLE_EVENTS, SYNC_TYPE } = require('../../utils/global-ble-manager.js');
+// 导入全局状态管理器
+const { globalState } = require('../../utils/global-state.js');
 
 Page({
   data: {
@@ -70,6 +74,214 @@ Page({
     searchingAllDevices: false, // 是否正在搜索所有设备
     statusMessage: '正在初始化...', // 当前状态提示信息
     blockOtherDevices: false, // 是否阻止连接其他设备
+  },
+
+  // ===== 全局BLE管理器集成 =====
+  
+  /**
+   * 初始化全局BLE管理器事件监听
+   */
+  initGlobalBleListeners() {
+    console.log('🔗 初始化全局BLE事件监听');
+    
+    // 监听连接状态变化
+    this.bleStateListener = globalBleManager.on(GLOBAL_BLE_EVENTS.CONNECTION_STATE_CHANGED, (data) => {
+      console.log('📡 BLE连接状态变化:', data);
+      this.handleGlobalConnectionStateChange(data);
+    });
+    
+    // 监听设备数据接收
+    this.deviceDataListener = globalBleManager.on(GLOBAL_BLE_EVENTS.DEVICE_DATA_RECEIVED, (data) => {
+      console.log('📥 收到设备数据:', data);
+      this.handleGlobalDeviceData(data);
+    });
+    
+    // 监听同步进度更新
+    this.syncProgressListener = globalBleManager.on(GLOBAL_BLE_EVENTS.SYNC_PROGRESS_UPDATED, (data) => {
+      console.log('🔄 同步进度更新:', data);
+      this.handleSyncProgressUpdate(data);
+    });
+    
+    // 监听错误事件
+    this.errorListener = globalBleManager.on(GLOBAL_BLE_EVENTS.ERROR_OCCURRED, (data) => {
+      console.error('❌ BLE错误事件:', data);
+      this.handleGlobalBleError(data);
+    });
+    
+    // 监听全局状态变化
+    this.globalStateListener = globalState.watch('ble.*', (newValue, oldValue, path) => {
+      this.handleGlobalStateChange(path, newValue, oldValue);
+    });
+  },
+  
+  /**
+   * 处理全局连接状态变化
+   */
+  handleGlobalConnectionStateChange(data) {
+    const { newState, oldState } = data;
+    
+    // 更新页面状态
+    this.setData({
+      connected: newState === GLOBAL_BLE_STATE.CONNECTED,
+      connecting: newState === GLOBAL_BLE_STATE.CONNECTING || newState === GLOBAL_BLE_STATE.RECONNECTING
+    });
+    
+    // 根据状态更新UI提示
+    switch (newState) {
+      case GLOBAL_BLE_STATE.CONNECTED:
+        this.setData({ statusMessage: '设备已连接' });
+        break;
+      case GLOBAL_BLE_STATE.CONNECTING:
+        this.setData({ statusMessage: '正在连接设备...' });
+        break;
+      case GLOBAL_BLE_STATE.RECONNECTING:
+        this.setData({ statusMessage: '正在重连设备...' });
+        break;
+      case GLOBAL_BLE_STATE.BACKGROUND:
+        this.setData({ statusMessage: '后台保持连接' });
+        break;
+      case GLOBAL_BLE_STATE.ERROR:
+        this.setData({ statusMessage: '连接错误' });
+        break;
+      case GLOBAL_BLE_STATE.DISCONNECTED:
+        this.setData({ statusMessage: '设备未连接' });
+        break;
+    }
+  },
+  
+  /**
+   * 处理全局设备数据
+   */
+  handleGlobalDeviceData(data) {
+    switch (data.type) {
+      case SYNC_TYPE.TOUCH_EVENT:
+        this.handleTouchEventData(data);
+        break;
+      case SYNC_TYPE.HEARTBEAT:
+        this.handleHeartbeatData(data);
+        break;
+      default:
+        console.log('📦 处理未知设备数据类型:', data.type);
+        break;
+    }
+  },
+  
+  /**
+   * 处理碰一碰事件数据
+   */
+  handleTouchEventData(data) {
+    console.log('👆 处理碰一碰事件数据:', data);
+    
+    // 更新碰一碰设备列表
+    const currentUnDevices = this.data.unDevices || [];
+    const existingIndex = currentUnDevices.findIndex(device => device.deviceId === data.deviceId);
+    
+    const touchDevice = {
+      deviceId: data.deviceId,
+      name: data.deviceName || `设备-${data.deviceId.slice(-4)}`,
+      status: '已碰触',
+      distance: data.distance || '近距离',
+      firstTouch: Date.now(),
+      lastTouch: Date.now(),
+      touchCount: 1
+    };
+    
+    if (existingIndex >= 0) {
+      // 更新现有设备
+      currentUnDevices[existingIndex] = {
+        ...currentUnDevices[existingIndex],
+        ...touchDevice,
+        touchCount: (currentUnDevices[existingIndex].touchCount || 0) + 1
+      };
+    } else {
+      // 添加新设备
+      currentUnDevices.unshift(touchDevice);
+    }
+    
+    this.setData({ 
+      unDevices: currentUnDevices.slice(0, 20) // 最多保留20个设备
+    });
+    
+    // 触发页面刷新
+    this.updateTouchListUI();
+  },
+  
+  /**
+   * 处理心跳数据
+   */
+  handleHeartbeatData(data) {
+    // 更新最后心跳时间显示
+    const lastHeartbeat = new Date().toLocaleTimeString();
+    console.log('💓 更新心跳时间:', lastHeartbeat);
+  },
+  
+  /**
+   * 处理同步进度更新
+   */
+  handleSyncProgressUpdate(data) {
+    console.log('🔄 同步进度:', data);
+    
+    // 更新同步状态显示
+    this.setData({
+      isCloudSyncing: data.isSyncing || false,
+      cloudSyncStatus: data.isSyncing ? 'syncing' : 'idle'
+    });
+  },
+  
+  /**
+   * 处理全局BLE错误
+   */
+  handleGlobalBleError(data) {
+    console.error('❌ 全局BLE错误:', data);
+    
+    // 显示错误提示
+    let errorMessage = '连接异常';
+    switch (data.type) {
+      case 'max_reconnection_attempts':
+        errorMessage = '设备重连失败，请检查设备状态';
+        break;
+      case 'connection_timeout':
+        errorMessage = '设备连接超时';
+        break;
+      case 'heartbeat_timeout':
+        errorMessage = '设备心跳超时';
+        break;
+      default:
+        errorMessage = data.message || '未知连接错误';
+        break;
+    }
+    
+    this.setData({ 
+      statusMessage: errorMessage,
+      lastCloudSyncError: errorMessage
+    });
+  },
+  
+  /**
+   * 处理全局状态变化
+   */
+  handleGlobalStateChange(path, newValue, oldValue) {
+    console.log(`🔄 全局状态变化: ${path}`, newValue);
+    
+    // 根据状态路径更新相应的页面数据
+    if (path === 'ble.connected') {
+      this.setData({ connected: newValue });
+    } else if (path === 'ble.connecting') {
+      this.setData({ connecting: newValue });
+    } else if (path === 'ble.deviceName') {
+      this.setData({ deviceName: newValue });
+    }
+  },
+  
+  /**
+   * 更新触摸列表UI
+   */
+  updateTouchListUI() {
+    // 触发UI更新动画或其他视觉反馈
+    console.log('🎨 更新触摸列表UI');
+    
+    // 如果需要，可以添加视觉反馈
+    // 例如：闪烁效果、声音提示等
   },
 
   // ===== 设备绑定管理工具函数 =====
@@ -677,11 +889,17 @@ Page({
     // 🔬 初始化设备历史记录（不能放在data中，因为Map不可序列化）
     this.deviceHistory = new Map();
     
+    // 初始化全局BLE管理器事件监听
+    this.initGlobalBleListeners();
+    
     // 初始化设备绑定状态
     this.initDeviceBinding();
     
     // 初始化BLE握手协议客户端
     this.initHandshakeClient();
+    
+    // 更新页面状态
+    globalState.setCurrentPage('device');
     
     // 更新tabBar选中状态
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
@@ -734,6 +952,9 @@ Page({
   
   // 页面卸载时
   onUnload() {
+    // 清理全局BLE事件监听器
+    this.cleanupGlobalBleListeners();
+    
     // 清理所有定时器和监听器
     this.stopContinuousScan();
     
@@ -752,6 +973,32 @@ Page({
     // 断开握手协议连接
     if (this.handshakeClient) {
       this.handshakeClient.disconnect();
+    }
+  },
+  
+  /**
+   * 清理全局BLE事件监听器
+   */
+  cleanupGlobalBleListeners() {
+    console.log('🧹 清理全局BLE事件监听器');
+    
+    // 移除BLE管理器事件监听器
+    if (this.bleStateListener) {
+      globalBleManager.off(GLOBAL_BLE_EVENTS.CONNECTION_STATE_CHANGED, this.bleStateListener);
+    }
+    if (this.deviceDataListener) {
+      globalBleManager.off(GLOBAL_BLE_EVENTS.DEVICE_DATA_RECEIVED, this.deviceDataListener);
+    }
+    if (this.syncProgressListener) {
+      globalBleManager.off(GLOBAL_BLE_EVENTS.SYNC_PROGRESS_UPDATED, this.syncProgressListener);
+    }
+    if (this.errorListener) {
+      globalBleManager.off(GLOBAL_BLE_EVENTS.ERROR_OCCURRED, this.errorListener);
+    }
+    
+    // 移除全局状态监听器
+    if (this.globalStateListener) {
+      this.globalStateListener(); // 调用返回的取消函数
     }
     
     if (this.data.connected) {

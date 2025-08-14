@@ -2,17 +2,36 @@
 <view class="container">
   <!-- 主内容区域 -->
   <view class="content">
-    <!-- 未登录状态 -->
-    <block wx:if="{{!hasUserInfo}}">
-      <view class="login-section">
+    
+    <!-- 欢迎页面 -->
+    <view wx:if="{{viewMode === 'welcome'}}" class="welcome-view">
+      <view class="welcome-section">
         <view class="welcome-title">{{texts.welcomeTitle}}</view>
         <view class="welcome-desc">{{texts.welcomeDesc}}</view>
-        <button class="login-btn" bindtap="login">{{texts.loginButton}}</button>
+        
+        <!-- 体验方式选择 -->
+        <view class="experience-options">
+          <button class="experience-btn guest-btn" bindtap="startGuestMode">
+            <view class="btn-icon">👤</view>
+            <view class="btn-text">开始体验</view>
+            <view class="btn-desc">无需登录，快速体验</view>
+          </button>
+          
+          <button class="experience-btn login-btn" bindtap="startFullMode">
+            <view class="btn-icon">🔗</view>
+            <view class="btn-text">微信登录</view>
+            <view class="btn-desc">保存资料，完整功能</view>
+          </button>
+        </view>
+        
+        <view class="privacy-notice">
+          <text>点击"开始体验"即表示您同意我们的服务条款</text>
+        </view>
       </view>
-    </block>
+    </view>
 
-    <!-- 已登录状态 -->
-    <block wx:else>
+    <!-- 游客模式或登录后的问卷/名片视图 -->
+    <view wx:elif="{{viewMode !== 'welcome'}}" class="main-view">
       
       <!-- 个人名片视图 -->
       <view wx:if="{{viewMode === 'profile'}}" class="profile-card-view">
@@ -139,7 +158,7 @@
       </view>
 
       <!-- 问卷编辑视图 -->
-      <view wx:else class="questionnaire-view">
+      <view wx:elif="{{viewMode === 'questionnaire'}}" class="questionnaire-view">
         <!-- 顶部用户信息 -->
         <view class="user-header">
           <view class="avatar-container" bindtap="uploadAvatar">
@@ -475,7 +494,8 @@
           </button>
         </view>
       </view>
-    </block>
+    
+    </view>
   </view>
   
   <!-- 浮动编辑按钮 (仅在个人名片视图显示) -->

@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "蓝牙设备管理"
+  "navigationBarTitleText": "蓝牙设备管理",
+  "usingComponents": {
+    "connection-indicator": "/components/connection-indicator/connection-indicator"
+  }
 }

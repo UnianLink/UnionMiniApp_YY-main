@@ -19,7 +19,118 @@ page {
   width: 100%;
 }
 
-/* 登录区域 */
+/* 欢迎页面 */
+.welcome-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 80vh;
+  text-align: center;
+  padding: 40rpx 20rpx;
+}
+
+.welcome-section {
+  width: 100%;
+  max-width: 600rpx;
+}
+
+.welcome-title {
+  font-size: 52rpx;
+  font-weight: bold;
+  margin-bottom: 24rpx;
+  color: #fff;
+}
+
+.welcome-desc {
+  font-size: 28rpx;
+  color: #aaa;
+  margin-bottom: 80rpx;
+  line-height: 1.6;
+  max-width: 90%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* 体验方式选择 */
+.experience-options {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+  margin-bottom: 40rpx;
+}
+
+.experience-btn {
+  background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+  border: 2rpx solid #333;
+  border-radius: 24rpx;
+  padding: 40rpx 24rpx;
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.experience-btn::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent);
+  transform: rotate(45deg);
+  transition: all 0.5s;
+  opacity: 0;
+}
+
+.experience-btn:hover::after {
+  opacity: 1;
+  transform: translate(100%, 100%) rotate(45deg);
+}
+
+.guest-btn {
+  border-color: #4CAF50;
+}
+
+.guest-btn:hover {
+  border-color: #66BB6A;
+  box-shadow: 0 0 20rpx rgba(76, 175, 80, 0.3);
+}
+
+.login-btn {
+  border-color: #007aff;
+}
+
+.login-btn:hover {
+  border-color: #339DFF;
+  box-shadow: 0 0 20rpx rgba(0, 122, 255, 0.3);
+}
+
+.btn-icon {
+  font-size: 48rpx;
+  margin-bottom: 16rpx;
+}
+
+.btn-text {
+  font-size: 32rpx;
+  font-weight: bold;
+  margin-bottom: 8rpx;
+}
+
+.btn-desc {
+  font-size: 24rpx;
+  color: #aaa;
+}
+
+.privacy-notice {
+  font-size: 24rpx;
+  color: #666;
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* 登录区域（保留兼容性） */
 .login-section {
   display: flex;
   flex-direction: column;
@@ -27,31 +138,6 @@ page {
   justify-content: center;
   height: 80vh;
   text-align: center;
-}
-
-.welcome-title {
-  font-size: 48rpx;
-  font-weight: bold;
-  margin-bottom: 24rpx;
-}
-
-.welcome-desc {
-  font-size: 28rpx;
-  color: #aaa;
-  margin-bottom: 60rpx;
-  max-width: 80%;
-}
-
-.login-btn {
-  background-color: #007aff;
-  color: #fff;
-  border-radius: 50rpx;
-  padding: 20rpx 60rpx;
-  font-size: 32rpx;
-  border: none;
-}
-.login-btn:active {
-  background-color: #0056b3;
 }
 
 /* 用户头部信息 */

@@ -1,0 +1,131 @@
+<!--
+  全局连接状态指示器组件模板
+  
+  功能：
+  1. 显示BLE连接状态图标
+  2. 可选显示文本标签
+  3. 同步进度显示
+  4. 点击展开详情面板
+-->
+
+<view class="connection-indicator position-{{position}} theme-{{theme}}"
+      wx:if="{{connectionState}}">
+      
+  <!-- 主指示器 -->
+  <view class="indicator-main {{clickable ? 'clickable' : ''}} {{animating ? 'animating' : ''}}"
+        style="background-color: {{getCurrentStatusConfig().bgColor}}"
+        bindtap="onIndicatorTap">
+        
+    <!-- 状态图标 -->
+    <view class="status-icon icon-{{getCurrentStatusConfig().icon}}"
+          style="background-color: {{getCurrentStatusConfig().color}}">
+    </view>
+    
+    <!-- 可选文本标签 -->
+    <text class="status-label" 
+          wx:if="{{showLabel}}"
+          style="color: {{getCurrentStatusConfig().color}}">
+      {{getCurrentStatusConfig().text}}
+    </text>
+    
+    <!-- 同步进度条 -->
+    <view class="sync-progress" wx:if="{{isSyncing}}">
+      <view class="sync-progress-fill" style="width: {{syncProgress}}%"></view>
+    </view>
+  </view>
+  
+  <!-- 详情面板 -->
+  <view class="details-panel {{showDetails ? 'show' : ''}}" wx:if="{{clickable}}">
+    
+    <!-- 面板头部 -->
+    <view class="details-header">
+      <text class="details-title">连接状态</text>
+      <view class="close-btn" bindtap="onCloseDetails">✕</view>
+    </view>
+    
+    <!-- 连接状态信息 -->
+    <view class="detail-item">
+      <text class="detail-label">设备状态</text>
+      <text class="detail-value" style="color: {{getCurrentStatusConfig().color}}">
+        {{getCurrentStatusConfig().text}}
+      </text>
+    </view>
+    
+    <!-- 设备名称 -->
+    <view class="detail-item" wx:if="{{deviceName}}">
+      <text class="detail-label">设备名称</text>
+      <text class="detail-value">{{deviceName}}</text>
+    </view>
+    
+    <!-- 信号强度 -->
+    <view class="detail-item" wx:if="{{connected}}">
+      <text class="detail-label">信号强度</text>
+      <view class="detail-value">
+        <view class="signal-bars">
+          <view class="signal-bar bar-1 {{getSignalLevel() >= 1 ? 'active' : ''}}"></view>
+          <view class="signal-bar bar-2 {{getSignalLevel() >= 2 ? 'active' : ''}}"></view>
+          <view class="signal-bar bar-3 {{getSignalLevel() >= 3 ? 'active' : ''}}"></view>
+          <view class="signal-bar bar-4 {{getSignalLevel() >= 4 ? 'active' : ''}}"></view>
+        </view>
+        <text style="margin-left: 8rpx; font-size: 24rpx; color: #999;">
+          {{signalStrength}}dBm
+        </text>
+      </view>
+    </view>
+    
+    <!-- 最后心跳时间 -->
+    <view class="detail-item" wx:if="{{connected}}">
+      <text class="detail-label">最后心跳</text>
+      <text class="detail-value">{{getLastHeartbeatText()}}</text>
+    </view>
+    
+    <!-- 同步状态 -->
+    <view class="detail-item" wx:if="{{isSyncing}}">
+      <text class="detail-label">同步进度</text>
+      <text class="detail-value">{{syncProgress}}%</text>
+    </view>
+    
+    <!-- 待同步项目数 -->
+    <view class="detail-item" wx:if="{{pendingSyncsCount > 0}}">
+      <text class="detail-label">待同步</text>
+      <text class="detail-value">{{pendingSyncsCount}} 项</text>
+    </view>
+    
+    <!-- 刷新连接按钮 -->
+    <button class="refresh-btn" 
+            wx:if="{{!connected}}"
+            bindtap="onRefreshConnection">
+      重新连接
+    </button>
+    
+  </view>
+  
+  <!-- 同步反馈浮层 -->
+  <view class="sync-feedback {{syncFeedback.show ? 'show' : ''}}" 
+        wx:if="{{syncFeedback.show}}"
+        style="background: {{getSyncFeedbackStyle().bgColor}}; border-color: {{getSyncFeedbackStyle().color}};">
+    
+    <view class="feedback-icon" style="color: {{getSyncFeedbackStyle().color}}">
+      {{getSyncFeedbackStyle().icon}}
+    </view>
+    
+    <text class="feedback-message" style="color: {{getSyncFeedbackStyle().color}}">
+      {{syncFeedback.message}}
+    </text>
+    
+    <view class="feedback-close" 
+          wx:if="{{!syncFeedback.autoHide}}"
+          bindtap="onCloseSyncFeedback"
+          style="color: {{getSyncFeedbackStyle().color}}">
+      ✕
+    </view>
+    
+    <!-- 进度条 -->
+    <view class="feedback-progress" 
+          wx:if="{{isSyncing}}"
+          style="background: {{getSyncFeedbackStyle().color}};">
+      <view class="feedback-progress-fill" 
+            style="width: {{syncProgress}}%; background: {{getSyncFeedbackStyle().color}};"></view>
+    </view>
+  </view>
+</view>

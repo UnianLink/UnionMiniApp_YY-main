@@ -32,7 +32,7 @@ const BLE_CONFIG = {
   
   // 新增：通信优化配置
   PACKET_RETRY_DELAY_MS: 50,        // 分包重试延迟：减少到50ms提升速度
-  HEARTBEAT_INTERVAL_MS: 45000,     // 心跳间隔：45秒（减少不必要的心跳）
+  HEARTBEAT_INTERVAL_MS: 15000,     // 心跳间隔：15秒（优化为更频繁的心跳保持连接）
   CONNECTION_HEALTH_CHECK_MS: 8000, // 连接健康检查间隔：8秒
   AUTO_RECONNECT_ENABLED: true,     // 启用自动重连
   AUTO_RECONNECT_MAX_ATTEMPTS: 3,   // 自动重连最大尝试次数

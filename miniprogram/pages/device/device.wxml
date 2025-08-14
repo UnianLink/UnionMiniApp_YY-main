@@ -1,4 +1,12 @@
 <view class="container">
+  <!-- ===== 全局连接状态指示器 ===== -->
+  <connection-indicator 
+    position="top-right"
+    show-label="{{false}}"
+    clickable="{{true}}"
+    theme="auto">
+  </connection-indicator>
+  
   <!-- ===== 扫描界面 ===== -->
   <view wx:if="{{showScanView}}" class="scan-container">
     <!-- 顶部标题区域 -->

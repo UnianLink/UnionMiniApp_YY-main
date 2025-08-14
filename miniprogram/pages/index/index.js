@@ -2,6 +2,10 @@
 const Config = require('../../utils/config.js');
 // 引入标签主题配置
 const tagThemes = require('../../config/tagThemes.js');
+// 引入全局BLE连接管理器
+const { globalBleManager, SYNC_TYPE } = require('../../utils/global-ble-manager.js');
+// 引入全局状态管理器
+const { globalState } = require('../../utils/global-state.js');
 
 Page({
   data: {
@@ -11,7 +15,8 @@ Page({
     isSubmitting: false,
     
     // 页面状态
-    viewMode: 'questionnaire', // 'questionnaire' | 'profile'
+    viewMode: 'welcome', // 'welcome' | 'questionnaire' | 'profile'
+    isGuest: false, // 是否为游客模式
     
     // 高级标签数据
     advancedTags: {
@@ -493,7 +498,7 @@ Page({
     });
   },
 
-  // 检查登录状态
+  // 检查登录状态（非强制）
   checkLoginStatus() {
     // 首先加载本地数据
     this.loadAdvancedTags();
@@ -515,13 +520,11 @@ Page({
         this.initStepCategory(this.data.currentStep);
       }, 500); // 等待数据加载完成
     } else {
-      console.log('[Index] 用户未登录');
-      // 确保在未登录状态下显示问卷视图
+      console.log('[Index] 用户未登录，显示欢迎页面');
+      // 保持在欢迎页面，让用户选择体验方式
       this.setData({
-        viewMode: 'questionnaire'
+        viewMode: 'welcome'
       });
-      // 初始化当前步骤的分类
-      this.initStepCategory(this.data.currentStep);
     }
   },
 
@@ -1122,6 +1125,26 @@ Page({
       return;
     }
     
+    // 如果是游客模式，询问是否登录保存
+    if (!this.data.hasUserInfo && this.data.isGuest) {
+      wx.showModal({
+        title: '保存资料',
+        content: '是否登录微信账号保存您的问卷资料？\n\n选择"确定"：登录并保存到云端\n选择"取消"：仅在本地预览',
+        confirmText: '登录保存',
+        cancelText: '本地预览',
+        success: (res) => {
+          if (res.confirm) {
+            // 用户选择登录保存
+            this.loginAndSubmit();
+          } else {
+            // 用户选择本地预览
+            this.submitAsGuest();
+          }
+        }
+      });
+      return;
+    }
+    
     if (!this.data.hasUserInfo) {
       wx.showToast({
         title: this.data.texts.loginRequired || '请先登录',
@@ -1194,6 +1217,9 @@ Page({
         this.setData({ isSubmitting: false });
         
         if (res.result && res.result.success) {
+          // 同步更新数据到设备
+          this.syncUserDataToDevice(submitData, tagEncoding);
+          
           // 显示编码结果并切换到个人名片视图
           wx.showModal({
             title: '提交成功！🎉',
@@ -1203,7 +1229,8 @@ Page({
                     `• 编码长度: ${tagEncoding.encoded.length} 字符\n\n` +
                     `🔐 你的标签编码:\n${tagEncoding.encoded}\n\n` +
                     `💡 即将切换到个人名片视图！\n` +
-                    `📝 注意：第5页彩蛋标签不参与编码`,
+                    `📝 注意：第5页彩蛋标签不参与编码\n\n` +
+                    `🔗 ${globalBleManager.getState().connected ? '已同步到设备' : '设备未连接，稍后同步'}`,
             showCancel: false,
             confirmText: '查看名片',
             success: () => {
@@ -1230,6 +1257,220 @@ Page({
         });
       }
     });
+  },
+
+  // 游客模式提交（仅本地预览）
+  submitAsGuest() {
+    console.log('[submitAsGuest] 游客模式提交');
+    
+    // 生成标签编码用于预览
+    const tagEncoding = this.generateTagsEncoding();
+    
+    // 显示编码结果并切换到个人名片视图
+    wx.showModal({
+      title: '本地预览生成！📱',
+      content: `📊 编码统计（前3页）:\n` +
+              `• 前3页标签数: ${tagEncoding.allTagsList.length}\n` +
+              `• 已选标签: ${tagEncoding.selectedTags.length}\n` +
+              `• 编码长度: ${tagEncoding.encoded.length} 字符\n\n` +
+              `🔐 你的标签编码:\n${tagEncoding.encoded}\n\n` +
+              `💡 即将切换到个人名片视图！\n` +
+              `📝 注意：数据仅保存在本地，未同步到云端`,
+      showCancel: false,
+      confirmText: '查看名片',
+      success: () => {
+        // 切换到个人名片视图
+        this.switchToProfileView();
+      }
+    });
+  },
+
+  // 登录后提交
+  loginAndSubmit() {
+    console.log('[loginAndSubmit] 登录后提交');
+    
+    wx.getUserProfile({
+      desc: '用于保存您的问卷资料',
+      success: (res) => {
+        console.log('[loginAndSubmit] 用户授权成功', res);
+        const userInfo = res.userInfo;
+        
+        // 调用登录云函数获取openid
+        wx.cloud.callFunction({
+          name: 'login',
+          success: (loginRes) => {
+            console.log('[loginAndSubmit] 登录成功', loginRes);
+            if (loginRes.result && loginRes.result.openid) {
+              userInfo.openid = loginRes.result.openid;
+            
+              // 生成默认头像
+              if (!userInfo.avatarUrl || userInfo.avatarUrl.indexOf('132.232.99.205') > -1) {
+                userInfo.avatarUrl = `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${encodeURIComponent(userInfo.nickName || 'default')}`;
+                userInfo.customAvatar = false;
+              }
+              
+              // 设置默认显示名称
+              if (!this.data.advancedTags.displayName) {
+                this.setData({
+                  'advancedTags.displayName': userInfo.nickName
+                });
+              }
+              
+              // 保存用户信息
+              wx.setStorageSync('userInfo', userInfo);
+              this.setData({
+                hasUserInfo: true,
+                userInfo: userInfo,
+                isGuest: false
+              });
+              
+              this.saveAdvancedTags();
+              
+              // 登录成功后立即提交
+              this.submitForm();
+            }
+          },
+          fail: (error) => {
+            console.error('[loginAndSubmit] 登录失败', error);
+            wx.showToast({
+              title: '登录失败，请重试',
+              icon: 'none'
+            });
+          }
+        });
+      },
+      fail: (error) => {
+        console.log('[loginAndSubmit] 用户取消授权', error);
+        wx.showToast({
+          title: '取消授权，数据仅保存在本地',
+          icon: 'none'
+        });
+        // 用户取消授权，切换到本地预览
+        this.submitAsGuest();
+      }
+    });
+  },
+  
+  /**
+   * 同步用户数据到设备
+   */
+  async syncUserDataToDevice(userData, tagEncoding) {
+    console.log('🔄 开始同步用户数据到设备');
+    
+    try {
+      // 更新全局状态中的用户信息
+      globalState.updateUserProfile(userData);
+      
+      // 生成新的蓝牙广播名称
+      const bluetoothName = this.generateBluetoothName(userData, tagEncoding);
+      console.log('📡 生成新的蓝牙名称:', bluetoothName);
+      
+      // 更新全局状态中的蓝牙名称
+      globalState.updateBluetoothName(bluetoothName);
+      
+      // 准备同步到设备的数据
+      const syncData = {
+        bluetoothName: bluetoothName,
+        displayName: userData.advancedTags.displayName,
+        tags: {
+          encoded: tagEncoding.encoded,
+          selectedTags: tagEncoding.selectedTags,
+          totalCount: tagEncoding.selectedTags.length
+        },
+        userInfo: {
+          openid: userData.openid,
+          nickName: userData.userInfo.nickName,
+          avatarUrl: userData.userInfo.avatarUrl
+        },
+        updateTime: Date.now()
+      };
+      
+      // 如果设备已连接，立即同步
+      if (globalBleManager.getState().connected) {
+        console.log('🔗 设备已连接，立即同步数据');
+        
+        // 同步蓝牙名称
+        const bluetoothNameSynced = await globalBleManager.syncBluetoothNameToDevice(bluetoothName);
+        
+        // 同步标签数据
+        const tagDataSynced = await globalBleManager.syncTagUpdateToDevice(syncData);
+        
+        if (bluetoothNameSynced && tagDataSynced) {
+          console.log('✅ 数据同步到设备成功');
+          wx.showToast({
+            title: '数据已同步到设备',
+            icon: 'success',
+            duration: 2000
+          });
+        } else {
+          console.warn('⚠️ 部分数据同步失败，已加入待同步队列');
+          wx.showToast({
+            title: '同步中，请稍候',
+            icon: 'loading',
+            duration: 2000
+          });
+        }
+      } else {
+        console.log('📱 设备未连接，数据已加入待同步队列');
+        
+        // 设备未连接时，数据会自动加入待同步队列
+        // 当设备连接后会自动同步
+        wx.showToast({
+          title: '设备未连接，数据待同步',
+          icon: 'none',
+          duration: 2000
+        });
+      }
+      
+    } catch (error) {
+      console.error('❌ 同步用户数据到设备失败:', error);
+      wx.showToast({
+        title: '数据同步失败',
+        icon: 'none',
+        duration: 2000
+      });
+    }
+  },
+  
+  /**
+   * 生成蓝牙广播名称
+   */
+  generateBluetoothName(userData, tagEncoding) {
+    // 使用显示名称的前8个字符 + 标签编码的前4位
+    const displayName = userData.advancedTags.displayName || userData.userInfo.nickName || 'User';
+    const namePrefix = displayName.slice(0, 8);
+    const tagSuffix = tagEncoding.encoded.slice(0, 4);
+    
+    // 格式：Un_名称_标签前缀
+    const bluetoothName = `Un_${namePrefix}_${tagSuffix}`;
+    
+    // 确保名称长度不超过蓝牙设备名称限制（通常是20个字符）
+    return bluetoothName.slice(0, 20);
+  },
+
+  // 开始游客体验
+  startGuestMode() {
+    console.log('[Index] 开始游客体验模式');
+    this.setData({
+      viewMode: 'questionnaire',
+      isGuest: true,
+      hasUserInfo: false
+    });
+    
+    // 初始化当前步骤的分类
+    this.initStepCategory(this.data.currentStep);
+    
+    wx.showToast({
+      title: '开始体验',
+      icon: 'success',
+      duration: 1500
+    });
+  },
+
+  // 开始完整体验（需要登录）
+  startFullMode() {
+    console.log('[Index] 开始完整体验模式');
+    this.login();
   },
 
   // 登录功能

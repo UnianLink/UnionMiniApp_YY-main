@@ -18,9 +18,9 @@ const Config = {
 
       // 登录页面
       login: {
-        welcomeTitle: 'Union 问卷调查',
-        welcomeDesc: '了解您的数字生活偏好，为您推荐更精准的展会内容',
-        loginButton: '微信快速登录',
+        welcomeTitle: 'Union 数字身份问卷',
+        welcomeDesc: '创建您的专属数字名片，体验智能社交匹配功能。您可以选择免登录体验或登录保存资料。',
+        loginButton: '微信登录',
         avatar: {
           uploadTip: '点击更换头像',
           uploadSuccess: '头像上传成功',

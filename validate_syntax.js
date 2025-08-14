@@ -38,7 +38,7 @@ function validateCSS(filePath) {
 function validateWXML(filePath) {
   const content = fs.readFileSync(filePath, 'utf-8');
   const tagStack = [];
-  const selfClosingTags = ['image', 'input', 'button'];
+  const selfClosingTags = ['input'];
   
   // 简单的标签匹配检查
   const openTags = content.match(/<(\w+)[^>]*>/g) || [];
