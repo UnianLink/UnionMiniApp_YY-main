@@ -1452,8 +1452,9 @@ Page({
       const commandStr = JSON.stringify(command);
       console.log('🎯 [阈值设置] 发送的JSON命令:', commandStr);
       
-      // 记录发送的命令到消息列表
-      const sendMessage = `📤 设置闪光阈值: ${threshold}`;
+      // 记录发送的命令到消息列表 - 添加时间戳
+      const timestamp = new Date().toLocaleString();
+      const sendMessage = `📤 设置闪光阈值: ${threshold} [${timestamp}]`;
       this.setData({ 
         messages: this.data.messages.concat(sendMessage)
       });
@@ -1594,8 +1595,9 @@ Page({
       const commandStr = JSON.stringify(command);
       console.log('🔍 [调试] 发送的JSON命令:', commandStr, '长度:', commandStr.length);
       
-      // 记录发送的命令到消息列表
-      const sendMessage = `📤 发送16字节Un字符串: ${unString}`;
+      // 记录发送的命令到消息列表 - 用户友好的标签更新提示
+      const timestamp = new Date().toLocaleString();
+      const sendMessage = `📤 [更新个人标签到硬件] ${timestamp}`;
       this.setData({ 
         messages: this.data.messages.concat(sendMessage)
       });
@@ -2336,8 +2338,9 @@ Page({
       
       console.log('✅ Un字符串同步命令发送成功');
       
-      // 添加通信日志
-      this.addNotification(`📤 已发送新的蓝牙名称: ${unString}`);
+      // 添加通信日志 - 用户友好的标签更新提示
+      const timestamp = new Date().toLocaleString();
+      this.addNotification(`📤 [更新个人标签到硬件] ${timestamp}`);
       
       return true;
       
