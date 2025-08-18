@@ -71,7 +71,7 @@ function generateUser() {
     constellation: Math.random() > (1 - probs.constellationFillRate) ? randomChoice(opts.constellations) : '', // 配置概率填写星座
     constellationDate: { month: '', day: '' },
     mbtiKnown: randomChoice(opts.mbtiKnown),
-    mbtiType: Math.random() > (1 - probs.mbtiTypeFillRate) ? randomChoice(opts.mbtiTypes) : '', // 配置概率有MBTI类型
+    : Math.random() > (1 - probs.mbtiTypeFillRate) ? randomChoice(opts.mbtiTypes) : '', // 配置概率有MBTI类型
     interestTags: randomChoices(opts.interests, ranges.interests.min, ranges.interests.max),
     interestOther: '',
     techTrends: randomChoices(opts.techTrends, ranges.techTrends.min, ranges.techTrends.max),

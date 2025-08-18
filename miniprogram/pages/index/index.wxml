@@ -124,6 +124,15 @@
             <view class="info-content">{{advancedTags.threshold}} 个标签相同即闪光</view>
           </view>
 
+          <!-- MBTI常亮灯颜色 -->
+          <view wx:if="{{advancedTags.mbtiType}}" class="info-item">
+            <view class="info-label">🎨 常亮灯颜色</view>
+            <view class="info-content idle-light-display">
+              <text class="mbti-type-text">{{advancedTags.mbtiType}}</text>
+              <view class="color-preview-circle" style="background-color: {{mbtiSelectedColor || '#66ccff'}}"></view>
+            </view>
+          </view>
+
         </view>
 
         <!-- 操作按钮区域 -->
@@ -164,6 +173,40 @@
 
         <!-- 问卷内容 -->
         <form class="questionnaire-form">
+          
+          <!-- 第0步：MBTI性格类型选择 -->
+          <view wx:if="{{currentStep === 0 && currentStepConfig}}" class="step-content mbti-step">
+            <view class="step-header">
+              <view class="step-title">{{currentStepConfig.title}}</view>
+              <view class="step-subtitle">{{currentStepConfig.subtitle}}</view>
+              <view class="step-description">{{currentStepConfig.description}}</view>
+            </view>
+            
+            <!-- MBTI选择器内容 -->
+            <view class="mbti-step-content">
+              <!-- MBTI性格类型选择 - 作为独立步骤 -->
+              <view class="form-item mbti-setting">
+                <view class="form-label">选择你的性格类型</view>
+                <view class="form-desc">这将决定你设备的常亮灯颜色</view>
+                <view class="mbti-selector">
+                  <view wx:if="{{!advancedTags.mbtiType}}" class="mbti-placeholder" bindtap="showMBTISelector">
+                    <text class="mbti-placeholder-text">点击选择你的MBTI类型</text>
+                    <text class="mbti-placeholder-icon">👈</text>
+                  </view>
+                  <view wx:else class="mbti-selected" bindtap="showMBTISelector">
+                    <view class="mbti-selected-type">{{advancedTags.mbtiType}}</view>
+                    <view class="mbti-color-preview" style="background-color: {{mbtiSelectedColor || '#66ccff'}}"></view>
+                    <view class="mbti-change-text">点击更换</view>
+                  </view>
+                </view>
+              </view>
+              
+              <!-- 跳过提示 -->
+              <view class="mbti-skip-hint">
+                <text class="skip-text">💡 稍后可在设置中更改</text>
+              </view>
+            </view>
+          </view>
           
           <!-- 第1步：专业领域标签 -->
           <view wx:if="{{currentStep === 1 && currentStepConfig}}" class="step-content">
@@ -396,6 +439,7 @@
                   </view>
                 </view>
               </view>
+
             </view>
           </view>
 
@@ -453,7 +497,7 @@
 
         <!-- 底部导航按钮 -->
         <view class="nav-buttons">
-          <button wx:if="{{currentStep > 1}}" 
+          <button wx:if="{{currentStep > 0}}" 
                   class="prev-btn" 
                   bindtap="prevStep">
             {{texts.prevButton}}
@@ -482,5 +526,34 @@
   <view wx:if="{{hasUserInfo && viewMode === 'profile'}}" class="floating-edit-btn" bindtap="switchToQuestionnaireView">
     <view class="edit-icon">✏️</view>
     <view class="edit-hint">编辑</view>
+  </view>
+</view>
+
+<!-- MBTI选择器弹窗 -->
+<view wx:if="{{showMBTISelectorModal}}" class="mbti-selector-modal">
+  <view class="modal-mask" bindtap="closeMBTISelector"></view>
+  <view class="modal-content">
+    <view class="modal-header">
+      <view class="modal-title">选择你的MBTI性格类型</view>
+      <view class="modal-subtitle">将决定设备常亮灯颜色</view>
+      <view class="modal-close" bindtap="closeMBTISelector">×</view>
+    </view>
+    <view class="modal-body">
+      <view class="mbti-options">
+        <view wx:for="{{mbtiOptions}}" wx:key="name" 
+              class="mbti-option {{advancedTags.mbtiType === item.name ? 'selected' : ''}}"
+              bindtap="selectMBTI"
+              data-mbti="{{item.name}}"
+              data-color="{{item.color}}">
+          <view class="mbti-option-name">{{item.name}}</view>
+          <view class="mbti-option-desc">{{item.description}}</view>
+          <view class="mbti-option-color" style="background-color: {{item.color}}"></view>
+        </view>
+      </view>
+    </view>
+    <view class="modal-footer">
+      <button class="modal-cancel-btn" bindtap="closeMBTISelector">取消</button>
+      <button class="modal-confirm-btn" bindtap="confirmMBTISelection">确认选择</button>
+    </view>
   </view>
 </view> 

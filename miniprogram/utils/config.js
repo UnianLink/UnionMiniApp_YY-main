@@ -681,19 +681,37 @@ const Config = {
     }
   },
 
-  // 高级标签问卷配置
+  // 高级标签问卷配置（已迁移到 tagThemes.js，此处仅保留编码功能）
+  // ⚠️ 重要：问卷配置已统一使用 tagThemes.js，请勿在此处修改标签和步骤配置
   advancedTagsConfig: {
-    meta: {
-      theme: 'union-advanced-tags',
-      totalSteps: 5,
-      minTotalTags: 4, // 至少选择4个标签
-      maxTotalTags: -1 // 无上限
-    },
-
-    // 标签编码配置
+    // 标签编码配置（核心功能，保留）
     encoding: {
+      // 配置源选择器：'embedded'使用内置配置 | 'external'使用tagThemes.js
+      configSource: 'external', // 默认使用tagThemes.js
+      
       // 字符映射表：6-bit (0-63) -> 字符
       charMap: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-',
+      
+      // 扁平化外部配置函数
+      flattenExternalConfig: function(themeConfig) {
+        const allTags = [];
+        if (themeConfig && themeConfig.categories) {
+          console.log('[flattenExternalConfig] 🔍 处理外部主题配置:', themeConfig.name);
+          console.log('[flattenExternalConfig] 📊 分类数量:', themeConfig.categories.length);
+          
+          themeConfig.categories.forEach(category => {
+            console.log(`[flattenExternalConfig] 📂 处理分类 "${category.name}": ${category.tags.length}个标签`);
+            category.tags.forEach(tag => {
+              // 🎯 关键修改：直接推入标签字符串，不是对象
+              allTags.push(tag);
+            });
+          });
+        }
+        
+        console.log(`[flattenExternalConfig] ✅ 扁平化完成，总标签数: ${allTags.length}`);
+        console.log('[flattenExternalConfig] 🏷️ 前5个标签:', allTags.slice(0, 5));
+        return allTags;
+      },
       
       // 编码函数：将所有用户选择的标签转换为编码字符串
       encode: function(allSelectedTags) {
@@ -743,23 +761,91 @@ const Config = {
       
       // 获取所有标签的扁平化列表（用于编码映射）
       getAllTagsList: function(stepsConfig) {
-        const allTags = [];
+        // 🎯 智能配置源选择
+        console.log(`[getAllTagsList] 🔍 配置源选择: ${this.configSource}`);
         
-        // 遍历所有步骤和分类，收集所有标签
-        stepsConfig.forEach(step => {
+        if (this.configSource === 'external') {
+          try {
+            console.log('[getAllTagsList] 🚀 开始使用外部配置（tagThemes.js）');
+            // 动态加载tagThemes.js配置
+            const tagThemes = require('../config/tagThemes.js');
+            
+            // 验证tagThemes模块
+            if (!tagThemes || typeof tagThemes.getCurrentTheme !== 'function') {
+              throw new Error('tagThemes.js模块无效或缺少getCurrentTheme方法');
+            }
+            
+            const currentTheme = tagThemes.getCurrentTheme();
+            console.log('[getAllTagsList] 📋 获取到当前主题:', currentTheme?.name || '未知主题');
+            
+            // 验证主题结构
+            if (!currentTheme || !currentTheme.categories || !Array.isArray(currentTheme.categories)) {
+              throw new Error('主题配置结构无效：缺少categories数组');
+            }
+            
+            const externalTags = this.flattenExternalConfig(currentTheme);
+            
+            if (!externalTags || externalTags.length === 0) {
+              throw new Error('外部配置返回空标签列表');
+            }
+            
+            console.log(`[getAllTagsList] ✅ 外部配置加载成功，共${externalTags.length}个标签`);
+            console.log('[getAllTagsList] 🏷️ 外部标签前5个:', externalTags.slice(0, 5));
+            
+            // 确保不超过60个标签
+            if (externalTags.length > 60) {
+              console.warn(`[getAllTagsList] ⚠️ 外部标签数量${externalTags.length}超过60个限制，已截取前60个`);
+              return externalTags.slice(0, 60);
+            }
+            
+            console.log(`[getAllTagsList] 🎉 外部配置使用成功，返回${externalTags.length}个标签`);
+            return externalTags;
+            
+          } catch (error) {
+            console.error('[getAllTagsList] ❌ 外部配置加载失败，启用降级机制:', error);
+            console.error('[getAllTagsList] 🔧 错误详情:', error.message);
+            console.error('[getAllTagsList] 📍 错误堆栈:', error.stack);
+            console.log('[getAllTagsList] 🔄 开始使用内置配置作为降级方案');
+            // 继续执行内置配置逻辑
+          }
+        } else {
+          console.log('[getAllTagsList] 📦 配置源为内置配置，直接使用steps数据');
+        }
+        
+        // 🎯 内置配置逻辑（降级方案）
+        console.log('[getAllTagsList] 📦 使用内置配置（降级方案）');
+        const allTags = [];
+        const steps = stepsConfig || [];
+        
+        console.log(`[getAllTagsList] 🔢 内置配置步骤数量: ${steps.length}`);
+        
+        steps.forEach((step, stepIndex) => {
           if (step.categories) {
-            step.categories.forEach(category => {
-              category.tags.forEach(tag => {
-                allTags.push({
-                  tag: tag,
-                  category: category.name,
-                  step: step.id
+            console.log(`[getAllTagsList] 📝 处理第${stepIndex + 1}步: "${step.title}" (${step.categories.length}个分类)`);
+            
+            step.categories.forEach((category, categoryIndex) => {
+              if (category.tags && Array.isArray(category.tags)) {
+                console.log(`[getAllTagsList] 📂 处理分类"${category.name}": ${category.tags.length}个标签`);
+                category.tags.forEach((tag, tagIndex) => {
+                  // 🎯 关键修改：直接推入标签字符串，与外部配置保持一致
+                  allTags.push(tag);
                 });
-              });
+              }
             });
           }
         });
         
+        console.log(`[getAllTagsList] ✅ 内置配置处理完成，总标签数: ${allTags.length}`);
+        console.log('[getAllTagsList] 🏷️ 内置标签前5个:', allTags.slice(0, 5));
+        
+        // 🚨 验证内置配置标签数量
+        if (allTags.length > 60) {
+          console.error(`[getAllTagsList] ❌ 内置配置标签数量${allTags.length}超过60限制！这是系统配置错误！`);
+          console.error('[getAllTagsList] 🛑 将截取前60个标签以避免编码错误');
+          return allTags.slice(0, 60);
+        }
+        
+        console.log(`[getAllTagsList] 🎉 内置配置使用成功，返回${allTags.length}个标签`);
         return allTags;
       },
       
@@ -769,258 +855,230 @@ const Config = {
         const encodingSteps = stepsConfig.slice(0, 3);
         const totalTags = this.getAllTagsList(encodingSteps).length;
         return Math.ceil(totalTags / 6);
+      },
+      
+      // 新格式编码：Un + 10字节标签 + 1字节阈值 + 2字节唯一ID + 1字节固定'0'
+      encodeNewFormat: function(allSelectedTags, threshold, uniqueId = 0) {
+        // 如果未提供threshold，使用硬件同步的默认值
+        if (threshold === undefined || threshold === null) {
+          try {
+            const sharedConfig = require('./shared-config-loader.js');
+            threshold = sharedConfig.getDefaultTagThreshold();
+            console.log(`[encodeNewFormat] 🔧 使用硬件同步的默认阈值: ${threshold}`);
+          } catch (error) {
+            threshold = 2; // 🔧 降级默认值改为与硬件同步的2
+            console.warn('[encodeNewFormat] ⚠️ 无法获取硬件配置，使用降级阈值: 2');
+          }
+        }
+        console.log('[encodeNewFormat] 🚀 开始编码新格式Un字符串');
+        console.log('[encodeNewFormat] 📊 输入参数:', {
+          tagsLength: allSelectedTags.length,
+          threshold: threshold,
+          thresholdType: typeof threshold,
+          uniqueId: uniqueId,
+          uniqueIdType: typeof uniqueId,
+          固定状态位: '0'
+        });
+        
+        // 限制标签到前60个（10字节 = 60位）
+        const limitedTags = allSelectedTags.slice(0, 60);
+        while (limitedTags.length < 60) {
+          limitedTags.push(false); // 补齐到60位
+        }
+        
+        // 复用现有encode函数，但只编码前60个标签
+        const tagEncoding = this.encode(limitedTags);
+        console.log('[encodeNewFormat] 🏷️ 标签编码结果:', tagEncoding, '长度:', tagEncoding.length);
+        
+        // 🚨 关键修复：确保标签编码正好是10字节，但避免全A问题
+        const targetTagLength = 10;
+        let finalTagEncoding = '';
+        
+        if (tagEncoding.length >= targetTagLength) {
+          // 如果编码长度足够，直接截取第2～12字节
+          finalTagEncoding = tagEncoding.substring(0, targetTagLength);
+        } else if (tagEncoding.length > 0) {
+          // 如果编码长度不足但不为空，用'A'补齐
+          finalTagEncoding = tagEncoding;
+          while (finalTagEncoding.length < targetTagLength) {
+            finalTagEncoding += this.charMap[0]; // 用'A'补齐
+          }
+        } else {
+          // 🚨 特殊处理：如果编码为空（所有标签都未选中），生成默认编码而不是全A
+          console.warn('[encodeNewFormat] ⚠️ 标签编码为空，可能是所有标签都未选中');
+          console.warn('[encodeNewFormat] 🔧 将生成默认的最小编码，避免全A问题');
+          // 生成一个有意义的默认编码：第一位设为true，其余为false
+          const defaultBinary = new Array(60).fill(false);
+          defaultBinary[0] = true; // 设置第一位为true，避免全零
+          finalTagEncoding = this.encode(defaultBinary).substring(0, targetTagLength);
+          // 如果还是不足10字节，继续补齐
+          while (finalTagEncoding.length < targetTagLength) {
+            finalTagEncoding += this.charMap[1]; // 用'B'补齐，避免与'A'混淆
+          }
+        }
+        
+        console.log('[encodeNewFormat] 🎯 最终标签编码:', finalTagEncoding, '长度:', finalTagEncoding.length);
+        console.log('[encodeNewFormat] 🔍 编码来源:', {
+          原始编码长度: tagEncoding.length,
+          原始编码: tagEncoding,
+          是否为空编码: tagEncoding.length === 0,
+          处理方式: tagEncoding.length >= targetTagLength ? '截取' : 
+                   tagEncoding.length > 0 ? '补齐' : '默认编码'
+        });
+        
+        // 编码阈值（0-63映射到64进制字符）
+        const normalizedThreshold = Math.min(Math.max(threshold, 0), 63);
+        const thresholdChar = this.charMap[normalizedThreshold];
+        console.log('[encodeNewFormat] 🔥 阈值编码:', {
+          原始阈值: threshold,
+          标准化阈值: normalizedThreshold,
+          字符索引: normalizedThreshold,
+          映射字符: thresholdChar,
+          期望字符_阈值4: this.charMap[4]
+        });
+        
+        // 编码2字节唯一ID（0-4095）
+        const clampedId = Math.min(Math.max(uniqueId, 0), 4095);
+        const id1 = Math.floor(clampedId / 64);
+        const id2 = clampedId % 64;
+        const uniqueIdChars = this.charMap[id1] + this.charMap[id2];
+        console.log('[encodeNewFormat] 🆔 唯一ID编码:', {
+          原始ID: uniqueId,
+          标准化ID: clampedId,
+          高位: id1,
+          低位: id2,
+          高位字符: this.charMap[id1],
+          低位字符: this.charMap[id2],
+          最终字符: uniqueIdChars
+        });
+        
+        // 🚨 修复：状态位固定为字符'0'，不使用charMap映射
+        const statusChar = '0';
+        console.log('[encodeNewFormat] 📡 状态编码:', {
+          固定状态位: statusChar,
+          说明: '状态位恒定为字符0，不再使用动态状态'
+        });
+        
+        // 组装最终Un字符串
+        const result = `Un${finalTagEncoding}${thresholdChar}${uniqueIdChars}${statusChar}`;
+        console.log('[encodeNewFormat] 🎉 最终Un字符串组装:', {
+          前缀: 'Un',
+          标签部分: finalTagEncoding,
+          阈值部分: thresholdChar,
+          ID部分: uniqueIdChars,
+          状态部分: statusChar,
+          完整结果: result,
+          长度: result.length
+        });
+        
+        // 验证长度
+        if (result.length !== 16) {
+          console.error(`[encodeNewFormat] ❌ 编码长度异常: ${result.length}, 期望16字符`);
+          console.error(`[encodeNewFormat] 🔧 组成分析: Un(2) + 标签(${finalTagEncoding.length}) + 阈值(1) + ID(2) + 状态(1)`);
+        } else {
+          console.log('[encodeNewFormat] ✅ 编码长度正确: 16字符');
+        }
+        
+        // 状态位固定为字符'0'，这是设计决定，不是错误
+        
+        return result;
+      },
+      
+      // 新格式解码：解析Un字符串为各个组件
+      decodeNewFormat: function(unString) {
+        if (!unString || unString.length !== 16 || !unString.startsWith('Un')) {
+          throw new Error('无效的Un字符串格式');
+        }
+        
+        try {
+          // 提取各部分
+          const tagPart = unString.substring(2, 12);        // 10字节标签编码
+          const thresholdChar = unString.charAt(12);        // 1字节阈值
+          const uniqueIdChars = unString.substring(13, 15); // 2字节唯一ID
+          const statusChar = unString.charAt(15);           // 1字节状态
+          
+          // 解码标签（返回60位二进制数组）
+          const tagsBinary = this.decode(tagPart);
+          
+          // 解码阈值
+          const threshold = this.charMap.indexOf(thresholdChar);
+          if (threshold === -1) {
+            throw new Error(`无效的阈值字符: ${thresholdChar}`);
+          }
+          
+          // 解码唯一ID
+          const id1 = this.charMap.indexOf(uniqueIdChars[0]);
+          const id2 = this.charMap.indexOf(uniqueIdChars[1]);
+          if (id1 === -1 || id2 === -1) {
+            throw new Error(`无效的唯一ID字符: ${uniqueIdChars}`);
+          }
+          const uniqueId = id1 * 64 + id2;
+          
+          // 🚨 修复：状态位固定验证，必须是字符'0'
+          if (statusChar !== '0') {
+            throw new Error(`无效的状态字符: ${statusChar}，期望固定字符'0'`);
+          }
+          
+          return {
+            tags: tagsBinary,
+            threshold: threshold,
+            uniqueId: uniqueId,
+            isNewFormat: true
+          };
+        } catch (error) {
+          throw new Error(`解码失败: ${error.message}`);
+        }
       }
     },
+    
+    // ✅ 【配置迁移完成】steps配置已迁移至tagThemes.js
+    // 
+    // 📊 迁移状态: 已完成 ✅
+    // 🎯 新配置位置: /config/tagThemes.js
+    // 🔄 访问方式: tagThemes.getAllStepsConfig()
+    //
+    // 🎉 迁移完成记录:
+    //    ✅ 已替换 device.js 中的 4处直接引用
+    //    ✅ 已替换 index.js 中的 3处直接引用  
+    //    ✅ 已补全 tagThemes.js 中的步骤4-5配置
+    //    ✅ 已删除 steps 重复配置
+    //
+    // 📚 开发指南: 
+    //    - 新代码请使用: const tagThemes = require('../../config/tagThemes.js')
+    //    - 获取步骤配置: tagThemes.getAllStepsConfig()
+    //    - 获取单步配置: tagThemes.getStepConfig(stepId)
+    //
+    // 🔗 相关文档: /docs/config-migration-guide.md
+    
+    // steps配置已迁移到tagThemes.js，此处仅保留注释作为迁移记录
+    // 原steps配置已迁移到tagThemes.js
 
-    steps: [
-      {
-        id: 1,
-        title: '专业领域 Tags',
-        subtitle: '你熟悉或工作的方向',
-        description: '选择你擅长或正在从事的专业领域',
-        minTags: 1,
-        maxTags: -1,
-        categories: [
-          {
-            name: '软件与算法',
-            tags: [
-              '前端开发', '后端开发', '移动端开发', 'Web3 / 区块链',
-              '人工智能', '数据科学', '算法竞赛', '大模型 / AIGC', '网络安全 / 渗透'
-            ]
-          },
-          {
-            name: '硬件与工程',
-            tags: [
-              '嵌入式开发/单片机', '电路设计', '机器人', '3D建模 / 打印',
-              '工业自动化', '材料工程', '可穿戴设备', '通信 / 射频'
-            ]
-          },
-          {
-            name: '设计与体验',
-            tags: [
-              '平面设计', 'UI/UX设计', '产品/工业设计', '动效设计',
-              '建筑/空间/展陈设计', '交互艺术', '游戏设计', '服务设计'
-            ]
-          },
-          {
-            name: '产品与商业',
-            tags: [
-              '产品经理', '项目管理', '品牌与增长', '用研、市场分析',
-              '公共关系', '一级市场投资', '二级市场投资'
-            ]
-          },
-          {
-            name: '人文与跨界',
-            tags: [
-              '心理学', '教育学', '社会学', '法律 / 知识产权',
-              '艺术策展', '哲学 & 思辨', '科学传播', '创业经验者'
-            ]
-          }
-        ]
-      },
-      {
-        id: 2,
-        title: '兴趣爱好 Tags',
-        subtitle: '你平时喜欢做什么',
-        description: '选择你真正喜欢和享受的活动',
-        minTags: 1,
-        maxTags: -1,
-        categories: [
-          {
-            name: '创作与表达',
-            tags: [
-              '摄影&剪辑', '绘画', '写作', '播客', '乐器与歌唱',
-              '表演&舞台', '模型佬', '脑洞设定狂'
-            ]
-          },
-          {
-            name: '游戏',
-            tags: [
-              '主机游戏', '独立游戏', '二次元', '剧本杀',
-              '桌游 / 卡牌', '音游'
-            ]
-          },
-          {
-            name: '身体与生活',
-            tags: [
-              '烹饪 / 美食', '宠物控', '植物 / 园艺', '跑步', '徒步',
-              '健身', '瑜伽 / 冥想', '手工 / DIY', '穿搭 / 美学', '收纳 / 整理'
-            ]
-          }
-        ]
-      },
-      {
-        id: 3,
-        title: '性格 / MBTI Tags',
-        subtitle: '你是什么样的人',
-        description: '选择最符合你性格特征的MBTI类型',
-        minTags: 1,
-        maxTags: 1, // 单选
-        categories: [
-          {
-            name: 'MBTI 维度',
-            note: '请选择一个最符合你的MBTI类型',
-            tags: [
-              'INTJ：战略家', 'INTP：逻辑学者', 'INFJ：提灯者', 'INFP：理想主义者',
-              'ISTJ：检察官', 'ISTP：工匠', 'ISFJ：守护者', 'ISFP：艺术家',
-              'ENTJ：指挥官', 'ENTP：辩论者', 'ENFJ：主人公', 'ENFP：竞选者',
-              'ESTJ：执行者', 'ESTP：挑战者', 'ESFJ：照料者', 'ESFP：表演者'
-            ]
-          }
-        ]
-      },
-      {
-        id: 4,
-        title: '个人信息设置',
-        subtitle: '让朋友更好地认识你',
-        description: '设置你的联系方式和个人介绍',
-        minTags: 0,
-        maxTags: 0,
-        fields: [
-          {
-            name: 'qrCode',
-            label: '微信二维码',
-            type: 'image',
-            required: false,
-            placeholder: '上传微信二维码图片'
-          },
-          {
-            name: 'contactInfo',
-            label: '联系方式',
-            type: 'input',
-            required: false,
-            placeholder: '微信号、电话号码等'
-          },
-          {
-            name: 'displayName',
-            label: '你希望线下和你互换了信息的朋友怎么称呼你',
-            type: 'input',
-            required: true,
-            defaultValue: '微信昵称',
-            placeholder: '默认是微信昵称'
-          },
-          {
-            name: 'personalTags',
-            label: '个性tag',
-            type: 'textarea',
-            required: false,
-            placeholder: '如：不喝咖啡会死星人'
-          }
-        ]
-      },
-      {
-        id: 5,
-        title: '性格关键词 / 星座 / 彩蛋型标签',
-        subtitle: '你是什么样的人 + 用于灯光联动、彩蛋机制、特殊配对、引发共鸣与惊喜破冰',
-        description: '选择你的性格特征、星座和一些有趣的个人特质',
-        minTags: 0,
-        maxTags: -1,
-        categories: [
-          {
-            name: '性格关键词',
-            note: '请选择一个最符合你的性格特征',
-            tags: [
-              '社牛', '社恐', '情绪稳定', '情绪起伏大', '安静细腻', '热情外放',
-              '控制欲强', '佛系随缘', '思辨型', '行动力强', '拖延症', '爱爆改计划',
-              '话多有点吵', '安静不出声', '自我要求高', '喜欢照顾别人'
-            ]
-          },
-          {
-            name: '星座',
-            note: '请选择你的星座',
-            tags: [
-              '白羊座', '金牛座', '双子座', '巨蟹座', '狮子座', '处女座',
-              '天秤座', '天蝎座', '射手座', '摩羯座', '水瓶座', '双鱼座'
-            ]
-          },
-          {
-            name: '🧠 脑内小宇宙类',
-            note: '选择符合你内心世界的标签',
-            tags: [
-              '睡前一定要脑补一部自己的剧',
-              '经常跟自己对话并觉得对方很懂我',
-              '会突然陷入对某个无解问题的思考（比如：我是谁？）',
-              '曾经认真思考过穿越回古代能靠什么谋生',
-              '看过"象牙塔"之类冷门纪录片并爱上了它'
-            ]
-          },
-          {
-            name: '🍵 怪癖型生活习惯',
-            note: '选择你的独特生活习惯',
-            tags: [
-              '不喝咖啡活不了',
-              '一天不洗头就浑身难受',
-              '手机铃声一定要静音（响铃焦虑）',
-              '一定要带自己专属的水杯/枕头出门',
-              '喜欢把时间精确到分钟：13:47出门才刚刚好'
-            ]
-          },
-          {
-            name: '🧙‍♀️ 神秘力量派',
-            note: '选择你对神秘学的兴趣',
-            tags: [
-              '会算塔罗 / 星盘 / 紫微斗数',
-              '知道自己上升星座并知道这代表什么',
-              '有个命名过的水晶（而且相信它）',
-              '会背周易六十四卦顺序',
-              '曾尝试主动记录梦境，还真有灵感出现'
-            ]
-          },
-          {
-            name: '🍜 生活技能彩蛋',
-            note: '选择你的实用技能',
-            tags: [
-              '擅长做饭 / 泡茶 / 调酒',
-              '会修各种奇奇怪怪的小东西',
-              '会五笔打字 / 会打算盘 / 会写毛笔字',
-              '能徒手换灯泡、解乱码、接wifi',
-              '有自己独门泡面配方'
-            ]
-          },
-          {
-            name: '🎨 感性体验者',
-            note: '选择你的感性特质',
-            tags: [
-              '对颜色特别敏感（#E6A9EC是心头好）',
-              '喜欢孤独，但不拒绝热闹',
-              '写过诗 or 歌词，并偷偷保存了下来',
-              '有收藏配色灵感图的癖好',
-              '看剧只看配角演技，爱上冷门角色'
-            ]
-          },
-          {
-            name: '🌀 社交怪咖系',
-            note: '选择你的社交特点',
-            tags: [
-              '记不住脸，只记气质',
-              '朋友圈从不点赞，但全都认真看完',
-              '能社交，但之后需要恢复能量两天',
-              '明明是INFP但社牛得像ENFJ',
-              '拥有多个小号，只用来观察世界'
-            ]
-          },
-          {
-            name: '🎁 彩蛋型身份',
-            note: '选择你的隐藏身份',
-            tags: [
-              '有豆瓣账号并且认真写过短评',
-              '曾匿名发过爆款帖子 / 作品',
-              '一年总有几天会消失社交网络',
-              '有一首"人生BGM"，在心中反复播放',
-              '是朋友眼中的"万能解决机 / 核心陪跑者 / 情绪回收站"之一'
-            ]
-          }
-        ]
+    // 闪光阈值设置 - 从硬件配置同步
+    threshold: (function() {
+      // 动态加载硬件同步的配置
+      try {
+        const sharedConfig = require('./shared-config-loader.js');
+        const defaultThreshold = sharedConfig.getDefaultTagThreshold();
+        console.log(`[Config] ✅ 使用硬件同步的默认阈值: ${defaultThreshold}`);
+        
+        return {
+          default: defaultThreshold, // 从硬件配置同步
+          min: 1,
+          max: 20,
+          description: '设置多少个标签相同时开始闪光连接',
+          source: 'hardware-synced'
+        };
+      } catch (error) {
+        console.warn('[Config] ⚠️ 无法加载硬件配置，使用降级默认值 4');
+        return {
+          default: 2, // 🔧 降级默认值改为与硬件同步的2
+          min: 1,
+          max: 20,
+          description: '设置多少个标签相同时开始闪光连接',
+          source: 'fallback'
+        };
       }
-    ],
-
-    // 闪光阈值设置
-    threshold: {
-      default: 4, // 默认4个标签相同
-      min: 1,
-      max: 20,
-      description: '设置多少个标签相同时开始闪光连接'
-    }
+    })()
   }
 };
 

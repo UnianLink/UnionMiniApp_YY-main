@@ -1,0 +1,9 @@
+{
+  "name": "allocateUniqueId",
+  "version": "1.0.0",
+  "description": "为具有相同标签配置的用户分配唯一ID",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

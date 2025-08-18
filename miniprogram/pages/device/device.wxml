@@ -11,7 +11,7 @@
     <view wx:if="{{bluetoothAvailable === false}}" class="bluetooth-error-banner">
       <view class="error-icon">⚠️</view>
       <text class="error-message">{{errorMessage || '蓝牙未开启或未授权'}}</text>
-      <text class="error-hint">请在系统设置中开启蓝牙和位置权限</text>
+      <text class="error-hint">请在系统设置中开启蓝牙</text>
     </view>
     
     <!-- 状态指示器区域 -->
@@ -203,77 +203,83 @@
       <button class="back-button" bindtap="backToScan" size="mini">返回扫描</button>
     </view>
     
-    <!-- 简化的连接状态 -->
-    <view class="section">
-      <view class="section-header">
-        <text class="section-title">连接状态</text>
-      </view>
-      <view class="device-info">
-        <text class="info-label">状态：</text>
-        <text class="info-value {{connecting ? 'connecting' : (connected ? 'connected' : 'disconnected')}}">
-          {{connecting ? '🔄 正在连接...' : (connected ? '✅ 已连接' : '❌ 未连接')}}
-        </text>
-      </view>
-      <view wx:if="{{connected && !deviceReady}}" class="connecting-tip">
-        <text>🔄 正在初始化设备...</text>
-      </view>
-      <view wx:if="{{connecting}}" class="connecting-tip">
-        <text>⏳ 正在建立蓝牙连接，请稍候...</text>
-      </view>
-    </view>
-    
-    <!-- 碰一碰设备列表区域 -->
-    <view class="section" wx:if="{{connected}}">
-      <view class="section-header">
-        <text class="section-title">碰一碰设备列表</text>
-        <text class="device-count">{{unDevices.length}} 个设备</text>
-      </view>
-      <view class="touch-devices-list">
-        <view wx:if="{{unDevices.length === 0}}" class="no-devices-found">
-          <text>等待硬件发送碰一碰列表...</text>
-          <text class="no-devices-tip">连接后硬件会自动发送检测到的设备列表</text>
+    <!-- 可滚动内容区域 -->
+    <scroll-view class="scrollable-content" scroll-y="true" enhanced="true" show-scrollbar="false">
+      <!-- 简化的连接状态 -->
+      <view class="section">
+        <view class="section-header">
+          <text class="section-title">连接状态</text>
         </view>
-        <view wx:for="{{unDevices}}" wx:key="index" class="touch-device-item">
-          <view class="device-icon">
-            <text class="device-emoji">💎</text>
-          </view>
-          <view class="device-details">
-            <text class="device-name">{{item.name}}</text>
-            <text class="device-info">{{item.distance}} • {{item.status}}</text>
-            <text wx:if="{{item.firstTouch}}" class="device-time">碰触时间: {{item.firstTouch}}ms</text>
-          </view>
-          <view class="device-status">
-            <text class="status-text {{item.status === '已碰触' ? 'touched' : 'online'}}">{{item.status}}</text>
-          </view>
+        <view class="device-info">
+          <text class="info-label">状态：</text>
+          <text class="info-value {{connecting ? 'connecting' : (connected ? 'connected' : 'disconnected')}}">
+            {{connecting ? '🔄 正在连接...' : (connected ? '✅ 已连接' : '❌ 未连接')}}
+          </text>
+        </view>
+        <view wx:if="{{connected && !deviceReady}}" class="connecting-tip">
+          <text>🔄 正在初始化设备...</text>
+        </view>
+        <view wx:if="{{connecting}}" class="connecting-tip">
+          <text>⏳ 正在建立蓝牙连接，请稍候...</text>
         </view>
       </view>
-    </view>
-    
-    <!-- 简化的通信日志 -->
-    <view class="section" wx:if="{{connected && messages.length > 0}}">
-      <view class="section-header">
-        <text class="section-title">通信日志</text>
-        <button class="clear-button" bindtap="clearMessages" size="mini">清除</button>
-      </view>
-      <view class="msg-list">
-        <view wx:for="{{messages}}" wx:key="index" class="msg-item">
-          <text>{{item}}</text>
+      
+      <!-- 碰一碰设备列表区域 -->
+      <view class="section" wx:if="{{connected}}">
+        <view class="section-header">
+          <text class="section-title">碰一碰设备列表</text>
+          <text class="device-count">{{unDevices.length}} 个设备</text>
+        </view>
+        <view class="touch-devices-list">
+          <view wx:if="{{unDevices.length === 0}}" class="no-devices-found">
+            <text>等待硬件发送碰一碰列表...</text>
+            <text class="no-devices-tip">连接后硬件会自动发送检测到的设备列表</text>
+          </view>
+          <view wx:for="{{unDevices}}" wx:key="index" class="touch-device-item">
+            <view class="device-icon">
+              <text class="device-emoji">💎</text>
+            </view>
+            <view class="device-details">
+              <text class="device-name">{{item.name}}</text>
+              <text class="device-info">{{item.distance}} • {{item.status}}</text>
+              <text wx:if="{{item.firstTouch}}" class="device-time">碰触时间: {{item.firstTouch}}ms</text>
+            </view>
+            <view class="device-status">
+              <text class="status-text {{item.status === '已碰触' ? 'touched' : 'online'}}">{{item.status}}</text>
+            </view>
+          </view>
         </view>
       </view>
-    </view>
+      
+      <!-- 简化的通信日志 -->
+      <view class="section" wx:if="{{connected && messages.length > 0}}">
+        <view class="section-header">
+          <text class="section-title">通信日志</text>
+          <button class="clear-button" bindtap="clearMessages" size="mini">清除</button>
+        </view>
+        <view class="msg-list">
+          <view wx:for="{{messages}}" wx:key="index" class="msg-item">
+            <text>{{item}}</text>
+          </view>
+        </view>
+      </view>
 
-    <!-- 刷新数据按钮 -->
-    <view class="sync-actions" wx:if="{{connected}}">
-      <button class="refresh-button" bindtap="refreshData" loading="{{isRefreshingData}}">
-        <text wx:if="{{!isRefreshingData}}">🔄 刷新数据</text>
-        <text wx:else>⏳ 同步中...</text>
-      </button>
-      <text class="refresh-tip">同步最新的蓝牙名称和碰一碰列表</text>
-    </view>
+      <!-- 刷新数据按钮 -->
+      <view class="sync-actions" wx:if="{{connected}}">
+        <button class="refresh-button" bindtap="refreshData" loading="{{isRefreshingData}}">
+          <text wx:if="{{!isRefreshingData}}">🔄 刷新数据</text>
+          <text wx:else>⏳ 同步中...</text>
+        </button>
+        <text class="refresh-tip">同步最新的蓝牙名称和碰一碰列表</text>
+      </view>
 
-    <!-- 断开连接按钮 -->
-    <view class="bottom-actions">
-      <button class="disconnect-button" bindtap="disconnect" type="warn">断开连接</button>
-    </view>
+      <!-- 断开连接按钮 -->
+      <view class="bottom-actions">
+        <button class="disconnect-button" bindtap="disconnect" type="warn">断开连接</button>
+      </view>
+      
+      <!-- 底部安全区域占位 -->
+      <view class="bottom-safe-area"></view>
+    </scroll-view>
   </view>
 </view>

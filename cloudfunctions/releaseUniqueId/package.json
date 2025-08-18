@@ -1,0 +1,9 @@
+{
+  "name": "releaseUniqueId",
+  "version": "1.0.0",
+  "description": "释放用户的uniqueId位置，供其他用户重用",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "latest"
+  }
+}

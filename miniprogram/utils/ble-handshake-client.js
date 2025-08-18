@@ -10,7 +10,7 @@ const BLE_CONFIG = {
   CRITICAL_TIMEOUT_MS: 4000,        // 关键操作超时：4秒（增加1秒应对弱信号）
   DATA_TIMEOUT_MS: 8000,            // 数据传输超时：8秒（增加3秒应对分包传输）  
   CONNECTION_TIMEOUT_MS: 6000,      // 单次连接超时：6秒（增加1秒应对信号不稳定）
-  CONNECTION_RETRIES: 5,            // 连接重试次数：5次（增加2次应对极端情况）
+  CONNECTION_RETRIES: 1,            // 连接重试次数：1次（取消自动重试，改为手动重试）
   MESSAGE_RETRIES: 4,               // 消息重试次数：4次（增加1次）
   
   // 指数退避配置 - 更智能的退避策略
@@ -205,79 +205,56 @@ class BleHandshakeClient {
   }
   
   /**
-   * 3次重连机制的核心实现
+   * 单次连接机制（已取消自动重试）
    */
   async connectWithRetry(deviceId, deviceName = '') {
     this.deviceId = deviceId;
     this.deviceName = deviceName;
     
-    console.log('🤝 开始BLE握手连接流程，支持3次重试');
+    console.log('🤝 开始BLE握手连接流程（无自动重试）');
     this.setState(BLE_HANDSHAKE_STATE.CONNECTING);
     
-    for (let attempt = 1; attempt <= BLE_CONFIG.CONNECTION_RETRIES; attempt++) {
-      try {
-        console.log(`🔗 连接尝试 ${attempt}/${BLE_CONFIG.CONNECTION_RETRIES}: ${deviceName || deviceId}`);
-        
-        // 更新UI显示重试状态
-        if (typeof this.onStateChange === 'function') {
-          this.onStateChange({
-            state: 'connecting',
-            message: `正在连接... (${attempt}/${BLE_CONFIG.CONNECTION_RETRIES})`,
-            attempt: attempt,
-            maxRetries: BLE_CONFIG.CONNECTION_RETRIES
-          });
-        }
-        
-        // 尝试连接
-        await this.attemptConnection(deviceId);
-        
-        // 连接成功，开始完整BLE初始化流程
-        console.log('✅ BLE物理连接成功，开始完整初始化');
-        this.setState(BLE_HANDSHAKE_STATE.CONNECTED);
-        
-        // 继续完整的BLE初始化：服务发现 → 特征配置 → 通知订阅 → 设备就绪
-        await this.performFullBLEInitialization();
-        return true;
-        
-      } catch (error) {
-        console.log(`❌ 连接失败 (${attempt}/${BLE_CONFIG.CONNECTION_RETRIES}):`, error.message);
-        this.retryCount = attempt;
-        
-        if (attempt === BLE_CONFIG.CONNECTION_RETRIES) {
-          // 所有重试都失败
-          console.error('❌ 连接失败，已达最大重试次数');
-          this.setState(BLE_HANDSHAKE_STATE.FAILED);
-          
-          if (typeof this.onStateChange === 'function') {
-            this.onStateChange({
-              state: 'failed',
-              message: '连接失败，请重试',
-              error: '达到最大重试次数'
-            });
-          }
-          
-          throw new Error('达到最大重试次数');
-        }
-        
-        // 计算重试间隔
-        const retryDelay = this.calculateRetryInterval(attempt);
-        console.log(`⏳ ${retryDelay}ms后进行第${attempt + 1}次重试...`);
-        
-        this.setState(BLE_HANDSHAKE_STATE.RETRYING);
-        
-        if (typeof this.onStateChange === 'function') {
-          this.onStateChange({
-            state: 'retrying',
-            message: `${Math.round(retryDelay/1000)}秒后重试...`,
-            attempt: attempt,
-            nextAttempt: attempt + 1,
-            maxRetries: BLE_CONFIG.CONNECTION_RETRIES
-          });
-        }
-        
-        // 等待重试间隔
-        await this.sleep(retryDelay);
+    try {
+      console.log(`🔗 连接设备: ${deviceName || deviceId}`);
+      
+      // 更新UI显示连接状态
+      if (typeof this.onStateChange === 'function') {
+        this.onStateChange({
+          state: 'connecting',
+          message: '正在连接...',
+          attempt: 1,
+          maxRetries: 1
+        });
       }
+      
+      // 尝试连接
+      await this.attemptConnection(deviceId);
+      
+      // 连接成功，开始完整BLE初始化流程
+      console.log('✅ BLE物理连接成功，开始完整初始化');
+      this.setState(BLE_HANDSHAKE_STATE.CONNECTED);
+      
+      // 继续完整的BLE初始化：服务发现 → 特征配置 → 通知订阅 → 设备就绪
+      await this.performFullBLEInitialization();
+      return true;
+      
+    } catch (error) {
+      console.log(`❌ 连接失败:`, error.message);
+      this.retryCount = 1;
+      
+      // 连接失败，设置状态
+      console.error('❌ 连接失败，需要手动重试');
+      this.setState(BLE_HANDSHAKE_STATE.FAILED);
+      
+      if (typeof this.onStateChange === 'function') {
+        this.onStateChange({
+          state: 'failed',
+          message: '连接失败，请手动重试',
+          error: error.message
+        });
+      }
+      
+      throw error;
     }
   }
   

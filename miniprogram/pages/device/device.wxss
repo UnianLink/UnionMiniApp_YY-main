@@ -578,19 +578,27 @@ page {
 
 /* ===== 设备详情界面样式 ===== */
 .device-detail-container {
-  padding: 32rpx;
   background: linear-gradient(135deg, #1a1a1a 0%, #0d1117 100%);
-  min-height: 100vh;
+  height: 100vh;
   color: #fff;
+  display: flex;
+  flex-direction: column;
 }
 
 .top-nav {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32rpx;
-  padding: 24rpx 0;
+  padding: 32rpx 32rpx 24rpx 32rpx;
   border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+/* 可滚动内容区域 */
+.scrollable-content {
+  flex: 1;
+  height: calc(100vh - 120rpx);
+  padding: 0 32rpx;
 }
 
 .device-title {
@@ -622,11 +630,11 @@ page {
 
 /* 区块间距样式 */
 .section { 
-  margin: 32rpx 0;
+  margin: 24rpx 0;
   background: linear-gradient(135deg, #1a1a1a 0%, #161b22 100%);
   border: 1rpx solid rgba(102, 126, 234, 0.2);
   border-radius: 16rpx;
-  padding: 32rpx;
+  padding: 24rpx;
   box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.4);
 }
 
@@ -1135,8 +1143,8 @@ page {
 
 /* 同步数据操作区域 */
 .sync-actions {
-  margin-top: 30rpx;
-  padding: 20rpx 0;
+  margin-top: 20rpx;
+  padding: 16rpx 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1182,9 +1190,16 @@ page {
 
 /* 底部操作区域 */
 .bottom-actions {
-  margin-top: 40rpx;
-  padding: 24rpx 0;
+  margin-top: 24rpx;
+  padding: 20rpx 0;
   border-top: 1rpx solid rgba(255, 255, 255, 0.1);
+}
+
+/* 底部安全区域占位 */
+.bottom-safe-area {
+  height: calc(env(safe-area-inset-bottom) + 32rpx);
+  min-height: 32rpx;
+  width: 100%;
 }
 
 .disconnect-button {
@@ -1618,4 +1633,116 @@ page {
 /* 可用设备区域 */
 .available-devices-section {
   margin-top: 24rpx;
+}
+
+/* ===== 小屏设备特殊适配 ===== */
+/* 针对小屏手机（高度 < 700rpx）的优化 */
+@media (max-height: 700px) {
+  .scrollable-content {
+    height: calc(100vh - 100rpx);
+  }
+  
+  .section {
+    margin: 16rpx 0;
+    padding: 20rpx;
+  }
+  
+  .sync-actions {
+    margin-top: 16rpx;
+    padding: 12rpx 0;
+  }
+  
+  .bottom-actions {
+    margin-top: 16rpx;
+    padding: 16rpx 0;
+  }
+  
+  .top-nav {
+    padding: 24rpx 32rpx 20rpx 32rpx;
+  }
+}
+
+/* 针对超小屏手机（高度 < 600px）的进一步优化 */
+@media (max-height: 600px) {
+  .scrollable-content {
+    height: calc(100vh - 80rpx);
+  }
+  
+  .section {
+    margin: 12rpx 0;
+    padding: 16rpx;
+  }
+  
+  .section-header {
+    margin-bottom: 16rpx;
+    padding-bottom: 12rpx;
+  }
+  
+  .sync-actions {
+    margin-top: 12rpx;
+    padding: 8rpx 0;
+  }
+  
+  .bottom-actions {
+    margin-top: 12rpx;
+    padding: 12rpx 0;
+  }
+  
+  .refresh-button {
+    min-height: 60rpx;
+    padding: 14rpx 30rpx;
+    font-size: 26rpx;
+  }
+  
+  .disconnect-button {
+    min-height: 70rpx;
+    padding: 18rpx 36rpx;
+    font-size: 28rpx;
+  }
+  
+  .top-nav {
+    padding: 20rpx 32rpx 16rpx 32rpx;
+  }
+  
+  .bottom-safe-area {
+    height: calc(env(safe-area-inset-bottom) + 24rpx);
+    min-height: 24rpx;
+  }
+}
+
+/* 针对iPhone SE等极小屏设备的适配 */
+@media (max-height: 500px) {
+  .scrollable-content {
+    height: calc(100vh - 70rpx);
+    padding: 0 24rpx;
+  }
+  
+  .section {
+    margin: 8rpx 0;
+    padding: 12rpx;
+    border-radius: 12rpx;
+  }
+  
+  .section-title {
+    font-size: 28rpx;
+  }
+  
+  .device-title {
+    font-size: 32rpx;
+  }
+  
+  .back-button {
+    padding: 12rpx 20rpx;
+    font-size: 26rpx;
+    min-height: 56rpx;
+  }
+  
+  .top-nav {
+    padding: 16rpx 24rpx 12rpx 24rpx;
+  }
+  
+  .bottom-safe-area {
+    height: calc(env(safe-area-inset-bottom) + 16rpx);
+    min-height: 16rpx;
+  }
 }

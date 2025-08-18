@@ -2,6 +2,8 @@
 const { BleHandshakeClient, BLE_CONFIG, BLE_HANDSHAKE_STATE } = require('../../utils/ble-handshake-client.js');
 // 导入智能设备选择配置
 const DeviceSelectionConfig = require('../../config/device-selection-config.js');
+// 导入CRC32校验工具
+const { calculateCRC32, generateMessageId, validateUTF8String, sanitizeString } = require('../../utils/crc32.js');
 
 Page({
   data: {
@@ -76,12 +78,31 @@ Page({
     // ===== 数据刷新状态 =====
     isRefreshingData: false, // 是否正在刷新数据
     
+    // ===== 颜色设置确认状态 =====
+    waitingForColorResponse: false, // 是否正在等待颜色设置确认
+    colorResponseTimeout: null, // 颜色确认超时定时器
+    
     // ===== 设备绑定相关状态 =====
     boundDevice: null, // 绑定的设备信息
     searchingMyDevice: false, // 是否正在搜索我的设备
     searchingAllDevices: false, // 是否正在搜索所有设备
     statusMessage: '正在初始化...', // 当前状态提示信息
+    
+    // ===== 蓝牙弹窗状态 =====
+    bluetoothModalVisible: false, // 蓝牙弹窗是否显示
     blockOtherDevices: false, // 是否阻止连接其他设备
+    
+    // ===== BLE数据完整性校验相关状态 =====
+    lastSentMessage: null, // 最后发送的消息（用于重传）
+    retryCount: 0, // 当前重传次数
+    maxRetries: 3, // 最大重传次数
+    retryEnabled: true, // 是否启用重传机制
+    transmissionStats: { // 传输统计
+      totalSent: 0,
+      successCount: 0,
+      retryCount: 0,
+      errorCount: 0
+    }
   },
 
   // ===== 设备绑定管理工具函数 =====
@@ -666,6 +687,11 @@ Page({
     
     // 停止所有搜索活动
     this.stopAllScanning();
+    
+    // 🎨 连接成功后，延迟检查并发送待处理的MBTI颜色设置
+    setTimeout(() => {
+      this.checkAndSendPendingIdleLightColor();
+    }, 1000); // 连接成功后延迟1秒发送，确保设备就绪
   },
 
   /**
@@ -887,25 +913,41 @@ Page({
       
       this.setData({
         connected: false,
-        deviceReady: false,
-        protocolState: `连接丢失: ${lossInfo.reason}`
+        deviceReady: false
       });
       
-      // 显示重连提示
-      wx.showModal({
-        title: '连接中断',
-        content: `设备连接已中断：${lossInfo.reason}\n已尝试${lossInfo.autoReconnectAttempts}次自动重连`,
-        showCancel: true,
-        cancelText: '返回扫描',
-        confirmText: '手动重连',
-        success: (res) => {
-          if (res.confirm) {
-            this.connectWithHandshake();
-          } else {
-            this.backToScan();
+      // 判断是否为最终失败（所有自动重连尝试完毕）
+      if (lossInfo.autoReconnectAttempts >= BLE_CONFIG.AUTO_RECONNECT_MAX_ATTEMPTS) {
+        console.log('❌ 所有自动重连尝试完毕，显示手动重连弹窗');
+        
+        // 设置最终失败状态
+        this.setData({
+          protocolState: `连接丢失: ${lossInfo.reason}`
+        });
+        
+        // 只在彻底失败时才弹窗
+        wx.showModal({
+          title: '连接中断',
+          content: `设备连接已中断：${lossInfo.reason}\n已尝试${lossInfo.autoReconnectAttempts}次自动重连`,
+          showCancel: true,
+          cancelText: '返回扫描',
+          confirmText: '手动重连',
+          success: (res) => {
+            if (res.confirm) {
+              this.connectWithHandshake();
+            } else {
+              this.backToScan();
+            }
           }
-        }
-      });
+        });
+      } else {
+        console.log(`🔄 自动重连进行中 (${lossInfo.autoReconnectAttempts}/${BLE_CONFIG.AUTO_RECONNECT_MAX_ATTEMPTS})，不弹窗`);
+        
+        // 中间失败只显示重连状态，不弹窗
+        this.setData({
+          protocolState: `正在重连... (${lossInfo.autoReconnectAttempts}/${BLE_CONFIG.AUTO_RECONNECT_MAX_ATTEMPTS})`
+        });
+      }
     };
     
     // 覆盖握手客户端的发送方法，直接调用device.js的writeToBle逻辑
@@ -1026,6 +1068,15 @@ Page({
         console.error('🎯 阈值发送失败:', error);
       });
     }, 2000);
+    
+    // 🎨 延迟发送MBTI颜色设置
+    // 等待3秒，确保Un字符串和阈值都发送完成
+    setTimeout(() => {
+      console.log('🎨 检查并发送MBTI颜色设置');
+      this.checkAndSendPendingIdleLightColor().catch(error => {
+        console.error('🎨 颜色发送失败:', error);
+      });
+    }, 3000);
   },
 
   // ===== 蓝牙适配器管理 =====
@@ -1059,12 +1110,16 @@ Page({
           }
         });
         
-        cb && cb();
+        if (typeof cb === 'function') {
+          cb();
+        }
       },
       fail: (e) => {
         if (e.errMsg && e.errMsg.includes('already opened')) {
           // 已打开，直接继续
-          cb && cb();
+          if (typeof cb === 'function') {
+          cb();
+        }
         } else {
           console.error('openBluetoothAdapter fail', e);
           
@@ -1085,13 +1140,22 @@ Page({
           // 如果在真机环境，显示更详细的引导
           if (e.errCode !== 10001) { // 10001是模拟器错误码
             setTimeout(() => {
+              // 标记弹窗显示状态
+              this.setData({ bluetoothModalVisible: true });
+              
+              // 启动蓝牙状态监听器
+              this.setupBluetoothStateListener();
+              
               wx.showModal({
                 title: '蓝牙未开启',
-                content: '请先打开系统蓝牙并授予小程序位置权限',
+                content: '请先打开系统蓝牙',
                 showCancel: true,
                 cancelText: '稍后再试',
                 confirmText: '去设置',
                 success: (res) => {
+                  // 用户手动关闭弹窗时，清除弹窗状态
+                  this.setData({ bluetoothModalVisible: false });
+                  
                   if (res.confirm) {
                     // 尝试打开系统设置
                     wx.openSetting();
@@ -1101,6 +1165,37 @@ Page({
             }, 500);
           }
         }
+      }
+    });
+  },
+
+  // ===== 蓝牙状态监听管理 =====
+  setupBluetoothStateListener() {
+    console.log('🔧 [蓝牙监听] 设置蓝牙状态监听器');
+    
+    // 避免重复设置监听器
+    if (this._bluetoothStateListenerSetup) {
+      return;
+    }
+    this._bluetoothStateListenerSetup = true;
+    
+    // 监听蓝牙适配器状态变化
+    wx.onBluetoothAdapterStateChange((res) => {
+      console.log('🔄 [蓝牙监听] 蓝牙状态变化:', res);
+      
+      // 如果蓝牙已开启且当前有弹窗显示
+      if (res.available && this.data.bluetoothModalVisible) {
+        console.log('✅ [蓝牙监听] 检测到蓝牙开启，自动重新初始化');
+        
+        // 清除弹窗状态
+        this.setData({ bluetoothModalVisible: false });
+        
+        // 重新初始化蓝牙适配器
+        setTimeout(() => {
+          this.ensureAdapter(() => {
+            console.log('🎉 [蓝牙监听] 蓝牙重新初始化成功');
+          });
+        }, 500);
       }
     });
   },
@@ -1447,7 +1542,15 @@ Page({
       
       // 获取用户设置的阈值
       const advancedTags = wx.getStorageSync('advancedTags') || {};
-      const threshold = advancedTags.threshold || 4;
+      const threshold = advancedTags.threshold || (() => {
+        try {
+          const sharedConfig = require('../../utils/shared-config-loader.js');
+          return sharedConfig.getDefaultTagThreshold();
+        } catch (error) {
+          console.warn('[Device] 无法加载配置，使用降级值2:', error.message);
+          return 2;
+        }
+      })();
       
       console.log('🎯 [阈值设置] 当前阈值:', threshold);
       
@@ -1539,15 +1642,14 @@ Page({
       
       console.log('✅ [BLE验证] 连接状态正常，特征值就绪，可以发送数据');
       
-      // 获取当前用户的编码标签
-      console.log('🔍 [调试] 正在调用getUserEncodedTags()...');
-      let userEncodedTags = await this.getUserEncodedTags();
-      console.log('🔍🔍🔍 [重要调试] getUserEncodedTags()结果:', userEncodedTags, '类型:', typeof userEncodedTags, '长度:', userEncodedTags ? userEncodedTags.length : 'null');
-      console.log('🔍🔍🔍 [重要调试] 预期应该与成功页面显示的 iCQCAABqMIgQAA 一致！');
+      // 获取当前用户的编码标签和格式信息
+      console.log('🔍 [调试] 正在调用getUserEncodedString()...');
+      let encodingResult = await this.getUserEncodedString();
+      console.log('🔍🔍🔍 [重要调试] getUserEncodedString()结果:', encodingResult);
       
       let unString;
       
-      if (!userEncodedTags || userEncodedTags.length === 0) {
+      if (!encodingResult || !encodingResult.encodedString || encodingResult.encodedString.length === 0) {
         console.log('⚠️ [调试] 未找到用户编码标签，使用默认Un名称（不会触发其他设备亮灯）');
         
         // 🎯 新的默认格式：Un + 14个星号，确保16字符长度且会被其他设备忽略
@@ -1563,17 +1665,30 @@ Page({
         });
         
       } else {
-        // 🚨 关键修复：生成16字符的Un字符串
-        // 格式："Un" + 14字符编码 = 16字符总长度
-        if (userEncodedTags.length >= 14) {
-          // 如果编码长度>=14，直接使用前14个字符
-          unString = `Un${userEncodedTags.substring(0, 14)}`;
-          console.log('🔍 [调试] 使用用户编码生成Un字符串（取前14字符）:', unString);
-        } else {
-          // 如果编码长度<14，补0到14字符
-          const paddedEncoding = userEncodedTags.padEnd(14, '0');
-          unString = `Un${paddedEncoding}`;
-          console.log('🔍 [调试] 使用用户编码生成Un字符串（补0到14字符）:', unString);
+        // 🔧 [关键修复] 统一使用新格式，调用generateCompleteUnString生成正确的16字节编码
+        console.log('🔍 [调试] 开始生成完整Un字符串（新格式）...');
+        
+        try {
+          // 直接调用generateCompleteUnString来生成正确的16字节新格式
+          const completeUnString = await this.generateCompleteUnString();
+          if (completeUnString && completeUnString.length === 16) {
+            unString = completeUnString;
+            console.log('✅ [调试] 成功生成新格式Un字符串:', unString, '(长度: 16)');
+          } else {
+            console.log('⚠️ [调试] generateCompleteUnString返回格式异常，尝试从encodingResult获取蓝牙名称');
+            // 备用方案：从encodingResult获取蓝牙名称
+            if (encodingResult.bluetoothName && encodingResult.bluetoothName.length === 16) {
+              unString = encodingResult.bluetoothName;
+              console.log('✅ [调试] 使用encodingResult中的蓝牙名称:', unString);
+            } else {
+              throw new Error('无法生成有效的16字节Un字符串');
+            }
+          }
+        } catch (error) {
+          console.error('❌ [调试] 生成完整Un字符串失败:', error);
+          // 最终备用方案：使用星号格式
+          unString = 'Un**************';
+          console.log('🔍 [调试] 使用备用星号格式:', unString);
         }
       }
       
@@ -1591,8 +1706,13 @@ Page({
       }
       
       // 判断是用户编码名称还是默认名称
-      const isUserEncoded = (userEncodedTags && userEncodedTags.length > 0);
+      const isUserEncoded = (encodingResult && encodingResult.encodedString && encodingResult.encodedString.length > 0);
       console.log('🔍 [调试] 名称类型:', isUserEncoded ? '用户编码名称' : '默认Un名称（其他设备会忽略）');
+      console.log('🔍 [调试] 编码结果验证:', {
+        hasResult: !!encodingResult,
+        hasEncodedString: !!(encodingResult && encodingResult.encodedString),
+        encodedLength: encodingResult && encodingResult.encodedString ? encodingResult.encodedString.length : 0
+      });
       
       // 构建发送给硬件的JSON命令
       const command = {
@@ -1618,6 +1738,14 @@ Page({
       await this.writeToBle(commandStr);
       
       console.log('✅ [调试] 16字节Un字符串发送完成，等待硬件确认...');
+      
+      // 🎨 延迟发送MBTI颜色（确保Un字符串处理完成）
+      setTimeout(() => {
+        console.log('🎨 Un字符串发送后，检查并发送MBTI颜色');
+        this.checkAndSendPendingIdleLightColor().catch(error => {
+          console.error('🎨 Un字符串后颜色发送失败:', error);
+        });
+      }, 2000); // 增加延迟到2秒，确保Un字符串完全发送和处理
       
       // ✅ 智能响应等待：只在连接不稳定时显示超时
       this.waitingForUnStringResponse = true;
@@ -1829,9 +1957,10 @@ Page({
       console.log('🔍🔍🔍 [重要调试] BLE发送编码:', bleEncoding);
       
       // 2. 模拟成功页面的编码生成
+      const tagThemes = require('../../config/tagThemes.js');
       const Config = require('../../utils/config.js');
       const encoding = Config.advancedTagsConfig.encoding;
-      const steps = Config.advancedTagsConfig.steps;
+      const steps = tagThemes.getAllStepsConfig();
       const encodingSteps = steps.slice(0, 3);
       const allTagsList = encoding.getAllTagsList(encodingSteps);
       
@@ -2303,7 +2432,7 @@ Page({
   // 🔄 新增：Un字符串动态同步函数
   async syncUnStringToBle() {
     try {
-      console.log('🔄 开始同步Un字符串到硬件...');
+      console.log('🔄 [同步Un字符串] 开始同步Un字符串到硬件...');
       
       // 检查BLE连接状态
       if (!this.data.connected) {
@@ -2312,22 +2441,20 @@ Page({
         return false;
       }
       
-      // 获取最新的用户编码标签
-      const userEncodedTags = await this.getUserEncodedTags();
-      if (!userEncodedTags || userEncodedTags.length < 14) {
-        console.error('❌ 获取编码标签失败或长度不足');
-        this.addNotification('❌ 获取标签编码失败，请完善个人资料');
+      // 🎯 修复：获取完整的新格式Un字符串
+      const completeUnString = await this.generateCompleteUnString();
+      if (!completeUnString || completeUnString.length !== 16) {
+        console.error('❌ 生成完整Un字符串失败或长度不正确');
+        this.addNotification('❌ 生成设备名称失败，请完善个人资料');
         return false;
       }
       
-      // 生成16字符Un字符串: "Un" + 14字符编码
-      const unString = `Un${userEncodedTags.substring(0, 14)}`;
-      console.log('🎯 准备发送Un字符串:', unString);
+      console.log('🎯 准备发送完整Un字符串:', completeUnString);
       
       // 构建设置Un字符串的命令
       const command = {
         type: 'set_un_string',
-        un_string: unString,
+        un_string: completeUnString,
         timestamp: Date.now()
       };
       
@@ -2351,12 +2478,260 @@ Page({
       const timestamp = new Date().toLocaleString();
       this.addNotification(`📤 [更新个人标签到硬件] ${timestamp}`);
       
+      // 🎨 智能发送时机：Un字符串发送成功后，延迟检查并发送MBTI颜色设置
+      setTimeout(() => {
+        this.checkAndSendPendingIdleLightColor();
+      }, 500); // 延迟500ms确保硬件处理完Un字符串
+      
       return true;
       
     } catch (error) {
       console.error('❌ Un字符串同步失败:', error);
       this.addNotification(`❌ 蓝牙名称同步失败: ${error.message || '未知错误'}`);
       return false;
+    }
+  },
+  
+  // 🆕 生成完整的新格式Un字符串（16字符）
+  async generateCompleteUnString() {
+    try {
+      console.log('🚀 [完整Un字符串] 开始生成完整的新格式Un字符串...');
+      
+      // 1. 从云数据库获取用户数据
+      console.log('🔍 [调试] 调用getUserData云函数...');
+      const result = await wx.cloud.callFunction({
+        name: 'getUserData',
+        data: {
+          dataType: 'advanced'
+        }
+      });
+      
+      console.log('🔍 [调试] getUserData云函数原始响应:', JSON.stringify(result, null, 2));
+      console.log('🔍 [调试] 检查响应结构:', {
+        有result: !!result.result,
+        有success: result.result ? !!result.result.success : false,
+        success值: result.result ? result.result.success : undefined,
+        有data: result.result ? !!result.result.data : false,
+        data类型: result.result ? typeof result.result.data : undefined
+      });
+      
+      if (!result.result || !result.result.success || !result.result.data) {
+        console.error('❌ 无法获取用户数据');
+        console.error('❌ [调试] 详细错误信息:', {
+          result: result.result,
+          success: result.result ? result.result.success : '无result',
+          data: result.result ? result.result.data : '无result',
+          message: result.result ? result.result.message : '无result'
+        });
+        return null;
+      }
+      
+      const userData = result.result.data;
+      console.log('📊 [调试] 成功获取用户数据:', {
+        openid: userData.openid,
+        有advancedTags: !!userData.advancedTags,
+        有professionalTags: userData.advancedTags ? !!userData.advancedTags.professionalTags : false,
+        有interestTags: userData.advancedTags ? !!userData.advancedTags.interestTags : false,
+        有personalityTags: userData.advancedTags ? !!userData.advancedTags.personalityTags : false,
+        threshold: userData.advancedTags ? userData.advancedTags.threshold : undefined
+      });
+      
+      // 2. 生成标签编码（复用index页面逻辑）
+      console.log('🔍 [调试] 开始生成标签编码...');
+      const tagEncoding = await this.generateTagsEncodingForDevice(userData);
+      console.log('🔍 [调试] 标签编码生成结果:', tagEncoding);
+      
+      if (!tagEncoding || !tagEncoding.encoded) {
+        console.error('❌ 标签编码生成失败');
+        console.error('❌ [调试] 编码失败详情:', {
+          tagEncoding值: tagEncoding,
+          有encoded字段: tagEncoding ? !!tagEncoding.encoded : false,
+          encoded值: tagEncoding ? tagEncoding.encoded : undefined
+        });
+        return null;
+      }
+      
+      // 3. 获取用户阈值
+      const threshold = userData.advancedTags?.threshold || (() => {
+        try {
+          const sharedConfig = require('../../utils/shared-config-loader.js');
+          return sharedConfig.getDefaultTagThreshold();
+        } catch (error) {
+          console.warn('[Device] 无法加载配置，使用降级值2:', error.message);
+          return 2;
+        }
+      })();
+      console.log('🔥 用户阈值:', threshold);
+      
+      // 4. 生成标签配置哈希用于uniqueId分配
+      const Config = require('../../utils/config.js');
+      const sortedTags = [...tagEncoding.selectedTags].sort();
+      let hash = 0;
+      const jsonString = JSON.stringify(sortedTags);
+      for (let i = 0; i < jsonString.length; i++) {
+        const char = jsonString.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+      }
+      const tagConfigHash = Math.abs(hash).toString(16).substring(0, 16).padStart(16, '0');
+      
+      // 5. 尝试获取uniqueId
+      let uniqueId = 0;
+      try {
+        const allocateResult = await wx.cloud.callFunction({
+          name: 'allocateUniqueId',
+          data: {
+            openid: userData.openid,
+            tagConfigHash: tagConfigHash,
+            selectedTags: tagEncoding.selectedTags,
+            threshold: threshold
+          }
+        });
+        
+        if (allocateResult.result && allocateResult.result.success) {
+          uniqueId = allocateResult.result.uniqueId;
+          console.log('✅ 成功获取uniqueId:', uniqueId);
+        } else {
+          console.warn('⚠️ uniqueId分配失败，使用降级方案');
+          // 降级方案：基于用户openid生成
+          const openid = userData.openid || '';
+          const timestamp = Date.now();
+          const combined = openid + timestamp + tagEncoding.encoded;
+          let fallbackHash = 0;
+          for (let i = 0; i < combined.length; i++) {
+            const char = combined.charCodeAt(i);
+            fallbackHash = ((fallbackHash << 5) - fallbackHash) + char;
+            fallbackHash = fallbackHash & fallbackHash;
+          }
+          uniqueId = Math.abs(fallbackHash) % 4096;
+          console.log('🔄 降级uniqueId:', uniqueId);
+        }
+      } catch (allocateError) {
+        console.warn('⚠️ uniqueId分配异常，使用默认值0:', allocateError);
+        uniqueId = 0;
+      }
+      
+      // 6. 状态位固定为'0'（不再使用动态状态）
+      
+      // 7. 生成完整的新格式Un字符串
+      const encoding = Config.advancedTagsConfig.encoding;
+      console.log('🔍 [调试] 准备生成新格式Un字符串，参数:', {
+        二进制数组长度: tagEncoding.binaryArray.length,
+        前60位: tagEncoding.binaryArray.slice(0, 60),
+        阈值: threshold,
+        阈值类型: typeof threshold,
+        唯一ID: uniqueId,
+        唯一ID类型: typeof uniqueId,
+        状态位: '固定为0'
+      });
+      
+      const completeUnString = encoding.encodeNewFormat(
+        tagEncoding.binaryArray.slice(0, 60), // 确保只有60位标签
+        threshold,
+        uniqueId
+      );
+      
+      console.log('🎯 [关键调试] 完整Un字符串生成结果:', {
+        输入参数: {
+          标签编码: tagEncoding.encoded,
+          标签数量: tagEncoding.selectedTags.length,
+          二进制数组长度: tagEncoding.binaryArray.length,
+          阈值: threshold,
+          唯一ID: uniqueId,
+          状态: '固定为0'
+        },
+        输出结果: {
+          完整Un字符串: completeUnString,
+          长度: completeUnString.length,
+          前缀: completeUnString.substring(0, 2),
+          后四位: completeUnString.substring(completeUnString.length - 4),
+          预期后四位格式: `${threshold.toString(16).toUpperCase()}${uniqueId.toString(16).padStart(2, '0').toUpperCase()}0`
+        }
+      });
+      
+      console.log('🚨 [关键对比] 生成的Un字符串后四位分析:', {
+        实际后四位: completeUnString.substring(completeUnString.length - 4),
+        阈值部分: threshold.toString(16).toUpperCase(),
+        唯一ID部分: uniqueId.toString(16).padStart(2, '0').toUpperCase(),
+        状态部分: '0',
+        拼接预期: `${threshold.toString(16).toUpperCase()}${uniqueId.toString(16).padStart(2, '0').toUpperCase()}0`,
+        是否为0000: completeUnString.substring(completeUnString.length - 4) === '0000'
+      });
+      
+      return completeUnString;
+      
+    } catch (error) {
+      console.error('❌ 生成完整Un字符串失败:', error);
+      return null;
+    }
+  },
+  
+  // 为设备页面生成标签编码（复用index页面逻辑）
+  generateTagsEncodingForDevice(userData) {
+    try {
+      const tagThemes = require('../../config/tagThemes.js');
+      const Config = require('../../utils/config.js');
+      const encoding = Config.advancedTagsConfig.encoding;
+      const steps = tagThemes.getAllStepsConfig();
+      
+      // 只获取前3页的标签列表
+      const encodingSteps = steps.slice(0, 3);
+      const allTagsList = encoding.getAllTagsList(encodingSteps);
+      
+      console.log('🔍 [generateTagsEncodingForDevice] 获取到的标签列表:', {
+        总数: allTagsList.length,
+        类型: typeof allTagsList[0],
+        前5个: allTagsList.slice(0, 5),
+        是字符串数组: Array.isArray(allTagsList) && typeof allTagsList[0] === 'string'
+      });
+      
+      // 获取用户选择的前3页标签
+      const userSelectedTags = [
+        ...(userData.advancedTags.professionalTags || []),
+        ...(userData.advancedTags.interestTags || []),
+        ...(userData.advancedTags.personalityTags || [])
+      ];
+      
+      console.log('🔍 [generateTagsEncodingForDevice] 用户选择的标签:', {
+        总数: userSelectedTags.length,
+        详情: userSelectedTags
+      });
+      
+      // 🚨 关键修复：allTagsList现在是字符串数组，不是对象数组
+      const binaryArray = allTagsList.map((tagString, index) => {
+        const isSelected = userSelectedTags.includes(tagString);
+        if (isSelected) {
+          console.log(`🎯 [标签匹配] 位置${index}: "${tagString}" ✅ 已选中`);
+        }
+        return isSelected;
+      });
+      
+      const selectedCount = binaryArray.filter(x => x).length;
+      console.log('🎯 [generateTagsEncodingForDevice] 二进制映射结果:', {
+        数组长度: binaryArray.length,
+        选中标签数: selectedCount,
+        选中位置: binaryArray.map((selected, index) => selected ? index : -1).filter(index => index !== -1)
+      });
+      
+      // 生成编码
+      const encoded = encoding.encode(binaryArray);
+      
+      console.log('🎯 [generateTagsEncodingForDevice] 编码生成结果:', {
+        编码: encoded,
+        长度: encoded.length,
+        预期长度: Math.ceil(binaryArray.length / 6)
+      });
+      
+      return {
+        encoded: encoded,
+        binaryArray: binaryArray,
+        allTagsList: allTagsList,
+        selectedTags: userSelectedTags
+      };
+      
+    } catch (error) {
+      console.error('❌ 设备页面标签编码生成失败:', error);
+      return null;
     }
   },
   
@@ -2418,29 +2793,69 @@ Page({
       this.addNotification('🔄 开始刷新数据...');
       
       let successCount = 0;
-      let totalOperations = 2;
+      let totalOperations = 3;
       
       // 1. 同步Un字符串到硬件
-      console.log('🔄 [1/2] 同步Un字符串到硬件...');
+      console.log('🔄 [1/3] 同步Un字符串到硬件...');
+      console.log('🔍 [调试] 准备调用syncUnStringToBle函数');
       const unSyncResult = await this.syncUnStringToBle();
+      console.log('🔍 [调试] syncUnStringToBle结果:', unSyncResult);
       if (unSyncResult) {
         successCount++;
-        console.log('✅ [1/2] Un字符串同步成功');
+        console.log('✅ [1/3] Un字符串同步成功');
       } else {
-        console.log('❌ [1/2] Un字符串同步失败');
+        console.log('❌ [1/3] Un字符串同步失败');
       }
       
       // 短暂延迟，确保硬件处理完成
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // 2. 请求硬件发送最新碰一碰列表
-      console.log('🔄 [2/2] 请求最新碰一碰列表...');
+      // 2. 🎨 同步MBTI颜色设置
+      console.log('🔄 [2/3] 同步MBTI颜色设置...');
+      try {
+        // 先从云端获取最新数据
+        const res = await wx.cloud.callFunction({
+          name: 'getUserData',
+          data: {}
+        });
+        
+        if (res.result?.success && res.result.data?.advancedTags?.mbtiType) {
+          const { mbtiType, idleLightColor } = res.result.data.advancedTags;
+          
+          // 保存到本地待发送
+          if (idleLightColor) {
+            const hex = idleLightColor.replace('#', '');
+            wx.setStorageSync('pendingIdleLightColor', {
+              color: {
+                r: parseInt(hex.substr(0, 2), 16),
+                g: parseInt(hex.substr(2, 2), 16),
+                b: parseInt(hex.substr(4, 2), 16)
+              },
+              mbtiType: mbtiType,
+              timestamp: Date.now()
+            });
+          }
+        }
+        
+        // 使用现有函数发送
+        await this.checkAndSendPendingIdleLightColor();
+        successCount++;
+        console.log('✅ [2/3] MBTI颜色同步成功');
+      } catch (error) {
+        console.error('❌ [2/3] MBTI颜色同步失败:', error);
+      }
+      
+      // 短暂延迟
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 3. 请求硬件发送最新碰一碰列表
+      console.log('🔄 [3/3] 请求最新碰一碰列表...');
       const touchListResult = await this.requestTouchListFromBle();
       if (touchListResult) {
         successCount++;
-        console.log('✅ [2/2] 碰一碰列表请求成功');
+        console.log('✅ [3/3] 碰一碰列表请求成功');
       } else {
-        console.log('❌ [2/2] 碰一碰列表请求失败');
+        console.log('❌ [3/3] 碰一碰列表请求失败');
       }
       
       // 显示刷新结果
@@ -2543,6 +2958,123 @@ Page({
   },
 
   // 获取用户编码标签 - 优先使用成功页面显示的编码
+  // 新函数：获取用户编码字符串和格式信息
+  async getUserEncodedString() {
+    try {
+      console.log('🔍 [调试] 获取用户编码字符串和格式信息...');
+      
+      // 先尝试从本地存储获取
+      try {
+        const savedEncoding = wx.getStorageSync('lastGeneratedEncoding');
+        const encodingTime = wx.getStorageSync('lastEncodingTime');
+        
+        if (savedEncoding && encodingTime) {
+          const timeDiff = Date.now() - encodingTime;
+          if (timeDiff < 5 * 60 * 1000) { // 5分钟内
+            console.log('🎯 使用本地存储的编码，转换为新格式:', savedEncoding);
+            try {
+              // 即使是本地存储的编码，也要转换为新格式
+              const completeUnString = await this.generateCompleteUnString();
+              return {
+                encodedString: savedEncoding,
+                isNewFormat: true, // 🔧 强制使用新格式
+                bluetoothName: completeUnString || 'Un**************',
+                formatVersion: 'v2.0' // 🔧 强制设为v2.0
+              };
+            } catch (error) {
+              console.error('❌ 本地编码转换新格式失败:', error);
+              // 继续向下执行云端获取逻辑
+            }
+          }
+        }
+      } catch (storageError) {
+        console.log('📦 本地存储读取失败，继续云端获取');
+      }
+      
+      // 从云数据库获取
+      console.log('🔍 [调试] 开始调用云函数获取用户数据...');
+      const result = await wx.cloud.callFunction({
+        name: 'getUserData',
+        data: {}
+      });
+      
+      if (result.result && result.result.success && result.result.data) {
+        const userData = result.result.data;
+        console.log('[getUserEncodedString] 云端数据:', userData);
+        
+        // 🔧 [关键修复] 强制使用新格式，统一返回isNewFormat: true
+        console.log('🔍 [调试] 强制使用新格式逻辑');
+        
+        // 尝试获取或生成完整的16字节新格式数据
+        try {
+          let bluetoothName;
+          let threshold, uniqueId, status;
+          
+          // 检查是否已有新格式数据
+          if (userData.newFormatData && userData.bluetoothName) {
+            console.log('✅ [调试] 数据库中已有新格式数据');
+            bluetoothName = userData.bluetoothName;
+            threshold = userData.newFormatData.threshold;
+            uniqueId = userData.newFormatData.uniqueId;
+            status = userData.newFormatData.status;
+          } else {
+            console.log('⚠️ [调试] 数据库中无新格式数据，主动生成');
+            // 主动生成新格式数据
+            const completeUnString = await this.generateCompleteUnString();
+            if (completeUnString && completeUnString.length === 16) {
+              bluetoothName = completeUnString;
+              // 从生成的字符串中提取信息
+              threshold = DEFAULT_TAG_THRESHOLD; // 默认阈值
+              uniqueId = Math.floor(Math.random() * 1000000); // 临时唯一ID
+              status = 1; // 默认状态
+            } else {
+              throw new Error('无法生成有效的16字节新格式');
+            }
+          }
+          
+          return {
+            encodedString: userData.encodedTags || '',
+            isNewFormat: true, // 🔧 强制返回true
+            bluetoothName: bluetoothName,
+            formatVersion: 'v2.0', // 🔧 强制设为v2.0
+            threshold: threshold,
+            uniqueId: uniqueId,
+            status: status
+          };
+          
+        } catch (error) {
+          console.error('❌ [调试] 生成新格式数据失败:', error);
+          // 备用方案：仍然返回新格式标识，但使用简化数据
+          return {
+            encodedString: userData.encodedTags || 'AAAAAAAAAA',
+            isNewFormat: true, // 🔧 即使出错也返回true
+            bluetoothName: 'Un**************', // 备用格式
+            formatVersion: 'v2.0',
+            threshold: (() => {
+              try {
+                const sharedConfig = require('../../utils/shared-config-loader.js');
+                return sharedConfig.getDefaultTagThreshold();
+              } catch (error) {
+                console.warn('[Device] 无法加载配置，使用降级值2:', error.message);
+                return 2;
+              }
+            })(),
+            uniqueId: 0,
+            status: 1
+          };
+        }
+      } else {
+        console.log('⚠️ [调试] 云端数据获取失败');
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ [getUserEncodedString] 获取失败:', error);
+      return null;
+    }
+  },
+
+
+  // 保持原有函数用于兼容性
   async getUserEncodedTags() {
     try {
       console.log('🔍 [调试] 获取用户编码标签...');
@@ -2613,10 +3145,11 @@ Page({
           
           try {
             // 🎯 使用与index.js generateTagsEncoding()完全相同的逻辑
+            const tagThemes = require('../../config/tagThemes.js');
             const Config = require('../../utils/config.js');
             console.log('🔍 [调试] Config模块加载成功');
             const encoding = Config.advancedTagsConfig.encoding;
-            const steps = Config.advancedTagsConfig.steps;
+            const steps = tagThemes.getAllStepsConfig();
             
             // 只获取前3页的标签列表（专业领域、兴趣爱好、MBTI性格）
             const encodingSteps = steps.slice(0, 3); // 只取前3步
@@ -2788,7 +3321,9 @@ Page({
 
   // 判断消息是否完整
   isCompleteMessage(str) {
-    const cleanStr = str.trim();
+    const cleanStr = str.trim()
+      .replace(/[\x00-\x1F\x7F-\x9F]/g, '') // 移除控制字符
+      .replace(/\u0000/g, ''); // 移除null字符
     
     // 检查是否是JSON格式的碰一碰设备列表（这是最重要的消息）
     if (cleanStr.includes('"type":"touch_list"')) {
@@ -2874,7 +3409,9 @@ Page({
     console.log('🔍 消息长度:', str.length);
     
     // 清理字符串中可能的控制字符和空白
-    let cleanStr = str.trim();
+    let cleanStr = str.trim()
+      .replace(/[\x00-\x1F\x7F-\x9F]/g, '') // 移除控制字符
+      .replace(/\u0000/g, ''); // 移除null字符
     
     // 特别检查touch_list消息
     if (cleanStr.includes('touch_list')) {
@@ -2977,6 +3514,34 @@ Page({
             } else if (jsonData.status === 'error') {
               console.log('❌ 硬件命令处理失败:', jsonData.message);
               this.addNotification(`❌ 命令处理失败: ${jsonData.message}`);
+              
+              // 🔧 [完整性校验] 检查是否是JSON解析失败错误
+              if (jsonData.message && 
+                  (jsonData.message.includes('JSON parse failed') || 
+                   jsonData.message.includes('JSON解析失败') ||
+                   jsonData.message.includes('parse error') ||
+                   jsonData.message.includes('invalid JSON'))) {
+                
+                console.warn('⚠️ [完整性校验] 硬件报告JSON解析失败，触发重传机制');
+                this.addNotification('⚠️ 检测到数据损坏，正在重传...');
+                
+                // 更新传输统计
+                this.setData({
+                  [`transmissionStats.errorCount`]: this.data.transmissionStats.errorCount + 1
+                });
+                
+                // 触发重传机制
+                if (this.data.retryEnabled && this.data.lastSentMessage) {
+                  this.retryLastMessage('硬件JSON解析失败').catch(error => {
+                    console.error('❌ [完整性校验] 重传失败:', error.message);
+                    this.addNotification(`❌ 重传失败: ${error.message}`);
+                  });
+                } else {
+                  console.warn('⚠️ [完整性校验] 无法重传：重传被禁用或无最后消息记录');
+                  this.addNotification('⚠️ 无法重传：请重新尝试操作');
+                }
+              }
+              
             } else if (jsonData.status === 'ignored') {
               console.log('⚠️ 硬件忽略命令:', jsonData.message);
               this.addNotification(`⚠️ 命令被忽略: ${jsonData.message}`);
@@ -2998,7 +3563,7 @@ Page({
             return;
 
           case 'touch_list':
-            // 处理碰一碰设备列表（兼容旧格式）
+            // 处理碰一碰设备列表
             console.log('📋 收到touch_list消息，设备数量:', jsonData.count);
             console.log('📋 设备列表:', jsonData.devices);
             
@@ -3025,16 +3590,77 @@ Page({
             }
             return;
             
+          case 'idle_light_color_ack':
+            console.log('✅ 收到常亮灯颜色设置确认');
+            
+            // 清除等待状态
+            if (this.data.waitingForColorResponse) {
+              this.setData({ waitingForColorResponse: false });
+              
+              if (this.data.colorResponseTimeout) {
+                clearTimeout(this.data.colorResponseTimeout);
+                this.setData({ colorResponseTimeout: null });
+              }
+            }
+            
+            if (jsonData.status === 'success') {
+              console.log('✅ 常亮灯颜色设置成功:', jsonData.mbtiType || '');
+              this.addNotification(`✅ 常亮灯颜色设置成功: ${jsonData.mbtiType || ''}`);
+              
+              // 成功时清除本地存储的待发送颜色
+              wx.removeStorageSync('pendingIdleLightColor');
+              
+              // 显示成功提示
+              wx.showToast({
+                title: '颜色设置成功',
+                icon: 'success',
+                duration: 2000
+              });
+            } else {
+              console.error('❌ 常亮灯颜色设置失败:', jsonData.message);
+              this.addNotification(`❌ 颜色设置失败: ${jsonData.message}`);
+              
+              // 失败时保留本地存储，下次重试
+              wx.showToast({
+                title: '颜色设置失败',
+                icon: 'error',
+                duration: 2000
+              });
+            }
+            return;
+            
           default:
             console.log('📱 收到其他JSON消息:', jsonData);
             this.addNotification(`📱 收到消息: ${jsonData.type}`);
             break;
         }
       } catch (error) {
-        console.error('JSON解析失败:', error);
-        console.error('失败的字符串:', JSON.stringify(cleanStr));
-        console.error('字符串长度:', cleanStr.length);
-        console.error('错误位置:', error.message);
+        console.error('❌ JSON解析失败:', error);
+        console.error('❌ 失败的字符串:', JSON.stringify(cleanStr));
+        console.error('❌ 字符串长度:', cleanStr.length);
+        console.error('❌ 错误位置:', error.message);
+        
+        // 诊断特殊字符
+        const hasControlChars = /[\x00-\x1F\x7F-\x9F]/.test(cleanStr);
+        const hasNullChars = cleanStr.includes('\u0000');
+        console.error('❌ 包含控制字符:', hasControlChars);
+        console.error('❌ 包含null字符:', hasNullChars);
+        
+        if (hasControlChars || hasNullChars) {
+          // 再次清理并重试
+          const reCleanStr = cleanStr
+            .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
+            .replace(/\u0000/g, '')
+            .replace(/[^\x20-\x7E]/g, ''); // 只保留可打印ASCII字符
+          console.warn('🔄 尝试重新清理字符串并重试解析');
+          try {
+            const jsonData = JSON.parse(reCleanStr);
+            console.log('✅ 重新清理后解析成功:', jsonData);
+            return this.processCompleteMessage(reCleanStr);
+          } catch (retryError) {
+            console.error('❌ 重新清理后仍然失败:', retryError);
+          }
+        }
         
         // 如果是touch_list消息解析失败，尝试修复
         if (cleanStr.includes('touch_list')) {
@@ -3776,10 +4402,12 @@ Page({
 
 
 
-  // BLE写入通用方法，自动分包20字节
-  writeToBle(str, cb) {
+  // BLE写入通用方法，增强版：带完整性校验和重传机制
+  writeToBle(str, cb, isRetry = false) {
     return new Promise((resolve, reject) => {
       console.log('🔍🔍🔍 [writeToBle诊断] ===== 开始BLE写入诊断 =====');
+      console.log('🔧 [完整性校验] 启用状态:', this.data.retryEnabled);
+      console.log('🔧 [重传机制] 是否重传:', isRetry, '当前重传次数:', this.data.retryCount);
       
       const { connected, deviceId, rxServiceId, rxCharId } = this.data;
       console.log('🔍 [writeToBle诊断] 连接状态:', connected);
@@ -3804,7 +4432,52 @@ Page({
       }
       
       console.log('✅ [writeToBle诊断] BLE状态验证通过');
-      console.log('📤 [writeToBle] 开始发送数据，总长度:', str.length, '内容:', str);
+      
+      // 🔧 Step 1: 数据完整性预检
+      let processedStr = str;
+      if (this.data.retryEnabled) {
+        // 验证UTF-8字符串完整性
+        const validation = validateUTF8String(str);
+        if (!validation.valid) {
+          console.warn('⚠️ [完整性校验] 字符串验证失败:', validation.reason);
+          processedStr = sanitizeString(str);
+          console.log('🔧 [完整性校验] 字符串已清理，新长度:', processedStr.length);
+        }
+        
+        // 计算CRC32校验码
+        const crc32 = calculateCRC32(processedStr);
+        console.log('🔐 [完整性校验] CRC32校验码:', crc32);
+        
+        // 生成消息ID（用于重传识别）
+        const messageId = generateMessageId();
+        console.log('🆔 [完整性校验] 消息ID:', messageId);
+        
+        // 保存消息用于可能的重传
+        if (!isRetry) {
+          this.setData({
+            lastSentMessage: {
+              id: messageId,
+              content: processedStr,
+              crc32: crc32,
+              timestamp: Date.now(),
+              attempts: 1
+            }
+          });
+        } else {
+          // 更新重传次数
+          this.setData({
+            [`lastSentMessage.attempts`]: this.data.lastSentMessage.attempts + 1
+          });
+        }
+        
+        // 更新传输统计
+        this.setData({
+          [`transmissionStats.totalSent`]: this.data.transmissionStats.totalSent + 1,
+          [`transmissionStats.retryCount`]: isRetry ? this.data.transmissionStats.retryCount + 1 : this.data.transmissionStats.retryCount
+        });
+      }
+      
+      console.log('📤 [writeToBle] 开始发送数据，总长度:', processedStr.length, '内容:', processedStr);
       
       // 优化：动态MTU大小，根据消息长度和平台优化
       const encoder = this.str2ab;
@@ -3816,13 +4489,25 @@ Page({
       let chunkCount = 0;
       
       const sendNext = () => {
-        if (offset >= str.length) {
+        if (offset >= processedStr.length) {
           console.log('📤 数据发送完成，总共发送', chunkCount, '个分片');
-          cb && cb();
+          
+          // 更新成功统计
+          if (this.data.retryEnabled) {
+            this.setData({
+              [`transmissionStats.successCount`]: this.data.transmissionStats.successCount + 1,
+              retryCount: 0 // 重置重传计数
+            });
+            console.log('✅ [完整性校验] 发送成功，统计已更新');
+          }
+          
+          if (typeof cb === 'function') {
+            cb();
+          }
           resolve();
           return;
         }
-        const chunk = str.slice(offset, offset + maxLen);
+        const chunk = processedStr.slice(offset, offset + maxLen);
         offset += maxLen;
         chunkCount++;
         
@@ -3843,8 +4528,8 @@ Page({
           value: encoder(chunk),
           success: () => {
             console.log('✅ [BLE写入] 分片', chunkCount, '写入微信API成功');
-            // 🚀 性能优化：配合硬件连接参数优化，减少分片延迟
-            setTimeout(sendNext, 20); // 优化至20ms间隔，配合10ms连接间隔
+            // 🔧 修复：增加分片延迟到50ms，避免硬件缓冲区溢出导致数据丢失
+            setTimeout(sendNext, 50); // 从20ms增加到50ms，确保硬件有足够时间处理
           },
           fail: (err) => {
             console.error('❌ [BLE写入] 分片', chunkCount, '写入微信API失败:', err);
@@ -3861,7 +4546,9 @@ Page({
   // 重要消息判断逻辑
   isImportantMessage(str) {
     // 清理字符串中可能的控制字符和空白
-    const cleanStr = str.trim();
+    const cleanStr = str.trim()
+      .replace(/[\x00-\x1F\x7F-\x9F]/g, '') // 移除控制字符
+      .replace(/\u0000/g, ''); // 移除null字符
     console.log('判断消息类型:', cleanStr, '长度:', cleanStr.length);
     
     // 检查是否是JSON格式的碰一碰设备列表（这是最重要的消息）
@@ -4370,5 +5057,438 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
     this.setData({
       showOtherDevices: !this.data.showOtherDevices
     });
+  },
+
+  /**
+   * 更新设备蓝牙名称（Un字符串同步）
+   * 这个函数会被问卷页面调用，用于将新的Un格式同步到已连接的硬件设备
+   */
+  updateDeviceBluetoothName(newUnString) {
+    console.log('[updateDeviceBluetoothName] 🔄 开始更新设备蓝牙名称:', newUnString);
+    
+    // 检查设备连接状态
+    if (!this.data.connected || !this.data.deviceId) {
+      console.warn('[updateDeviceBluetoothName] ⚠️ 设备未连接，无法同步');
+      return {
+        success: false,
+        message: '设备未连接，请先连接设备后再更新'
+      };
+    }
+
+    // 检查新Un字符串格式
+    if (!newUnString || typeof newUnString !== 'string' || newUnString.length !== 16) {
+      console.error('[updateDeviceBluetoothName] ❌ Un字符串格式无效:', {
+        unString: newUnString,
+        type: typeof newUnString,
+        length: newUnString ? newUnString.length : 0
+      });
+      return {
+        success: false,
+        message: 'Un字符串格式无效'
+      };
+    }
+
+    try {
+      // 构造BLE命令来更新设备名称
+      const command = {
+        type: 'SET_DEVICE_NAME',
+        data: {
+          newName: newUnString,
+          timestamp: Date.now()
+        }
+      };
+
+      console.log('[updateDeviceBluetoothName] 📤 发送更新命令:', command);
+      
+      // 发送命令到设备
+      this.sendMessage(JSON.stringify(command));
+      
+      console.log('[updateDeviceBluetoothName] ✅ Un字符串同步命令已发送');
+      
+      // 显示成功提示
+      wx.showToast({
+        title: '设备名称已更新',
+        icon: 'success',
+        duration: 2000
+      });
+      
+      return {
+        success: true,
+        message: '设备名称更新成功',
+        newUnString: newUnString
+      };
+      
+    } catch (error) {
+      console.error('[updateDeviceBluetoothName] ❌ 更新设备名称失败:', error);
+      
+      wx.showToast({
+        title: '设备更新失败',
+        icon: 'error',
+        duration: 2000
+      });
+      
+      return {
+        success: false,
+        message: '设备名称更新失败: ' + error.message,
+        error: error
+      };
+    }
+  },
+
+  /**
+   * 发送颜色指令到硬件设备
+   * @param {string} color - 十六进制颜色值 (如: "#66ccff")
+   * @param {string} mbtiType - MBTI类型名称 (可选，用于日志记录)
+   */
+  sendColorCommand(color, mbtiType = '') {
+    console.log('[sendColorCommand] 发送MBTI颜色指令:', { color, mbtiType });
+    
+    if (!this.data.connected || !this.data.deviceReady) {
+      console.warn('[sendColorCommand] 设备未连接或未就绪');
+      wx.showToast({
+        title: '设备未连接',
+        icon: 'none',
+        duration: 2000
+      });
+      return;
+    }
+
+    // 验证颜色格式
+    if (!color || !/^#[0-9A-Fa-f]{6}$/.test(color)) {
+      console.error('[sendColorCommand] 颜色格式错误:', color);
+      wx.showToast({
+        title: '颜色格式错误',
+        icon: 'none', 
+        duration: 2000
+      });
+      return;
+    }
+
+    try {
+      // 解析十六进制颜色
+      const r = parseInt(color.substring(1, 3), 16);
+      const g = parseInt(color.substring(3, 5), 16);
+      const b = parseInt(color.substring(5, 7), 16);
+
+      // 构建颜色指令 JSON
+      const colorCommand = {
+        type: 'set_idle_light_color',
+        color: {
+          r: r,
+          g: g, 
+          b: b
+        },
+        source: 'mbti_selection',
+        timestamp: Date.now()
+      };
+
+      const commandStr = JSON.stringify(colorCommand);
+      
+      // 记录发送的消息
+      const timestamp = new Date().toLocaleTimeString();
+      const sendMessage = `📤 设置MBTI常亮灯颜色: ${color} [${mbtiType}] ${timestamp}`;
+      this.setData({ 
+        messages: this.data.messages.concat(sendMessage)
+      });
+
+      // 发送指令
+      this.sendMessage(commandStr);
+      
+      console.log('[sendColorCommand] ✅ MBTI颜色指令发送成功:', colorCommand);
+      
+      // 显示成功提示  
+      wx.showToast({
+        title: '常亮灯颜色已更新',
+        icon: 'success',
+        duration: 2000
+      });
+
+    } catch (error) {
+      console.error('[sendColorCommand] ❌ 发送颜色指令失败:', error);
+      
+      wx.showToast({
+        title: '颜色设置失败',
+        icon: 'error',
+        duration: 2000
+      });
+    }
+  },
+
+  // 🎨 检查并发送待处理的MBTI常亮灯颜色设置
+  async checkAndSendPendingIdleLightColor() {
+    try {
+      console.log('🎨 [智能发送时机] 检查是否有待发送的MBTI颜色设置...');
+      
+      // 检查BLE连接状态
+      if (!this.data.connected) {
+        console.log('🎨 [智能发送时机] 设备未连接，跳过颜色设置');
+        return;
+      }
+      
+      // 检查本地存储中是否有待发送的颜色设置
+      const pendingColor = wx.getStorageSync('pendingIdleLightColor');
+      if (!pendingColor) {
+        console.log('🎨 [智能发送时机] 未找到待发送的颜色设置');
+        return;
+      }
+      
+      console.log('🎨 [智能发送时机] 发现待发送的颜色设置:', pendingColor);
+      
+      // 🔧 兼容新旧数据格式：支持新格式（直接的color字段）和旧格式（command.color字段）
+      let rgbColor;
+      let mbtiType;
+      
+      // 检测数据格式
+      if (pendingColor.command && pendingColor.command.color) {
+        // 旧格式：包含command对象
+        console.log('🎨 [兼容性] 检测到旧格式数据，从command中提取颜色');
+        const colorData = pendingColor.command.color;
+        mbtiType = pendingColor.mbtiType || pendingColor.command.mbtiType || 'UNKNOWN';
+        
+        if (typeof colorData === 'object' && colorData.r !== undefined) {
+          rgbColor = colorData;
+        } else {
+          rgbColor = { r: 102, g: 204, b: 255 }; // 默认蓝色
+        }
+      } else if (pendingColor.color) {
+        // 新格式：直接的color字段
+        console.log('🎨 [兼容性] 检测到新格式数据，直接使用颜色字段');
+        mbtiType = pendingColor.mbtiType || 'UNKNOWN';
+        
+        if (typeof pendingColor.color === 'string') {
+          // 十六进制格式：#RRGGBB
+          const hex = pendingColor.color.replace('#', '');
+          rgbColor = {
+            r: parseInt(hex.substr(0, 2), 16),
+            g: parseInt(hex.substr(2, 2), 16),
+            b: parseInt(hex.substr(4, 2), 16)
+          };
+        } else if (typeof pendingColor.color === 'object') {
+          // RGB对象格式
+          rgbColor = {
+            r: pendingColor.color.r || 102,
+            g: pendingColor.color.g || 204, 
+            b: pendingColor.color.b || 255
+          };
+        } else {
+          rgbColor = { r: 102, g: 204, b: 255 }; // 默认蓝色
+        }
+      } else {
+        // 数据格式异常，使用默认颜色
+        console.warn('🎨 [兼容性] 未识别的数据格式，使用默认颜色');
+        rgbColor = { r: 248, g: 222, b: 246 }; // 默认春樱落霞色
+        mbtiType = 'UNKNOWN';
+      }
+      
+      console.log('🎨 [兼容性] 最终解析结果:', { rgbColor, mbtiType });
+      
+      // 构建新的颜色命令（移除中文mbtiType字段避免传输问题）
+      const colorCommand = {
+        type: 'set_idle_light_color',
+        color: rgbColor,
+        source: 'mbti_selection',
+        timestamp: Date.now()
+      };
+      
+      const commandStr = JSON.stringify(colorCommand);
+      console.log('🎨 [智能发送时机] 发送MBTI颜色命令:', commandStr);
+      
+      // 发送给硬件
+      await this.writeToBle(commandStr);
+      
+      // 🎯 设置等待硬件确认状态，而不是立即认为成功
+      this.setData({ waitingForColorResponse: true });
+      
+      // 设置超时机制
+      if (this.data.colorResponseTimeout) {
+        clearTimeout(this.data.colorResponseTimeout);
+      }
+      
+      const timeout = setTimeout(() => {
+        if (this.data.waitingForColorResponse) {
+          console.warn('⚠️ [智能发送时机] 等待颜色设置确认超时');
+          this.setData({ 
+            waitingForColorResponse: false,
+            colorResponseTimeout: null
+          });
+          // 超时时不清除本地存储，下次可以重试
+          this.addNotification(`⚠️ [颜色设置] 等待硬件确认超时，请重试`);
+        }
+      }, 5000); // 5秒超时
+      
+      this.setData({ colorResponseTimeout: timeout });
+      
+      // 添加通信日志
+      const timestamp = new Date().toLocaleString();
+      this.addNotification(`🎨 [发送颜色设置] ${mbtiType} ${timestamp}`);
+      
+      console.log('📤 [智能发送时机] MBTI颜色命令已发送，等待硬件确认...');
+      
+    } catch (error) {
+      console.error('❌ [智能发送时机] 发送MBTI颜色设置失败:', error);
+      // 发送失败时不清除本地存储，下次连接时重试
+    }
+  },
+
+  // ===================== BLE数据完整性校验和重传机制 =====================
+  
+  /**
+   * 智能重传最后发送的消息
+   * @param {string} reason - 重传原因
+   */
+  retryLastMessage(reason = 'JSON解析失败') {
+    if (!this.data.retryEnabled || !this.data.lastSentMessage) {
+      console.log('🔧 [重传机制] 重传已禁用或无消息可重传');
+      return Promise.resolve();
+    }
+
+    // 检查重传次数限制
+    if (this.data.retryCount >= this.data.maxRetries) {
+      console.error('❌ [重传机制] 达到最大重传次数限制:', this.data.maxRetries);
+      this.setData({
+        [`transmissionStats.errorCount`]: this.data.transmissionStats.errorCount + 1
+      });
+      
+      wx.showToast({
+        title: '数据发送失败',
+        icon: 'error',
+        duration: 2000
+      });
+      return Promise.reject(new Error('达到最大重传次数'));
+    }
+
+    // 递增重传计数
+    this.setData({
+      retryCount: this.data.retryCount + 1
+    });
+
+    console.log(`🔄 [重传机制] 开始第${this.data.retryCount}次重传，原因: ${reason}`);
+    console.log('🔄 [重传机制] 重传消息:', this.data.lastSentMessage.content);
+
+    // 计算重传延迟（指数退避）
+    const delay = Math.min(100 * Math.pow(2, this.data.retryCount - 1), 1000);
+    console.log('🔄 [重传机制] 延迟', delay, 'ms后重传');
+
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        // 发送清空缓冲区命令（如果硬件支持）
+        this.clearHardwareBuffer().then(() => {
+          // 重传消息
+          return this.writeToBle(this.data.lastSentMessage.content, null, true);
+        }).then(() => {
+          console.log('✅ [重传机制] 重传成功');
+          resolve();
+        }).catch((error) => {
+          console.error('❌ [重传机制] 重传失败:', error);
+          reject(error);
+        });
+      }, delay);
+    });
+  },
+
+  /**
+   * 清空硬件接收缓冲区
+   */
+  clearHardwareBuffer() {
+    console.log('🧹 [重传机制] 发送缓冲区清空命令');
+    
+    const clearCommand = {
+      type: 'clear_buffer',
+      timestamp: Date.now()
+    };
+
+    // 使用基础BLE发送（不触发重传机制）
+    return this.basicBleWrite(JSON.stringify(clearCommand));
+  },
+
+  /**
+   * 基础BLE写入（不带重传机制，用于控制命令）
+   */
+  basicBleWrite(str) {
+    return new Promise((resolve, reject) => {
+      const { connected, deviceId, rxServiceId, rxCharId } = this.data;
+      
+      if (!connected || !rxServiceId || !rxCharId) {
+        reject(new Error('BLE连接未就绪'));
+        return;
+      }
+
+      const maxLen = 20;
+      let offset = 0;
+
+      const sendNext = () => {
+        if (offset >= str.length) {
+          resolve();
+          return;
+        }
+
+        const chunk = str.slice(offset, offset + maxLen);
+        offset += maxLen;
+
+        wx.writeBLECharacteristicValue({
+          deviceId: deviceId,
+          serviceId: rxServiceId,
+          characteristicId: rxCharId,
+          value: this.str2ab(chunk),
+          success: () => {
+            setTimeout(sendNext, 10); // 短延迟确保硬件处理
+          },
+          fail: (error) => {
+            reject(error);
+          }
+        });
+      };
+
+      sendNext();
+    });
+  },
+
+  /**
+   * 获取传输统计信息
+   */
+  getTransmissionStats() {
+    const stats = this.data.transmissionStats;
+    const successRate = stats.totalSent > 0 ? (stats.successCount / stats.totalSent * 100).toFixed(2) : 0;
+    
+    console.log('📊 [传输统计]', {
+      总发送: stats.totalSent,
+      成功: stats.successCount,
+      重传: stats.retryCount,
+      错误: stats.errorCount,
+      成功率: successRate + '%'
+    });
+    
+    return {
+      ...stats,
+      successRate: parseFloat(successRate)
+    };
+  },
+
+  /**
+   * 重置传输统计
+   */
+  resetTransmissionStats() {
+    this.setData({
+      transmissionStats: {
+        totalSent: 0,
+        successCount: 0,
+        retryCount: 0,
+        errorCount: 0
+      },
+      retryCount: 0
+    });
+    console.log('📊 [传输统计] 统计已重置');
+  },
+
+  // ===== 页面生命周期 =====
+  onUnload() {
+    console.log('🔧 [页面卸载] 清理蓝牙监听器');
+    
+    // 清理蓝牙状态监听器
+    if (this._bluetoothStateListenerSetup) {
+      wx.offBluetoothAdapterStateChange();
+      this._bluetoothStateListenerSetup = false;
+      console.log('✅ [页面卸载] 蓝牙状态监听器已清理');
+    }
   }
 });

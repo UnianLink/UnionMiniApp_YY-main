@@ -34,10 +34,16 @@ exports.main = async (event, context) => {
 
   try {
     // 检查请求的数据类型和是否包含朋友数据
-    const { dataType, type, includeFriends } = event;
+    const { dataType, type, includeFriends, action, mbtiData } = event;
     const finalDataType = dataType || type || 'advanced';
     
-    console.log('[getUserData] 请求参数:', { finalDataType, includeFriends });
+    console.log('[getUserData] 请求参数:', { finalDataType, includeFriends, action });
+    
+    // 🎨 新增：处理MBTI数据更新请求
+    if (action === 'updateMBTI' && mbtiData) {
+      console.log('[getUserData] 处理MBTI数据更新请求:', mbtiData);
+      return await updateMBTIData(openid, mbtiData);
+    }
     
     if (finalDataType === 'advanced' || !finalDataType) {
       // 获取高级标签数据（默认）
@@ -52,9 +58,9 @@ exports.main = async (event, context) => {
       
       return {
         success: true,
-        userData: {
-          advanced: advancedResult.success ? advancedResult.userData : null,
-          original: originalResult.success ? originalResult.userData : null
+        data: {
+          advanced: advancedResult.success ? advancedResult.data : null,
+          original: originalResult.success ? originalResult.data : null
         }
       };
     }
@@ -129,7 +135,7 @@ async function getAdvancedTagsData(openid, includeFriends = false) {
       console.log('[getUserData] 高级标签数据获取成功');
       return {
         success: true,
-        userData: userData // 🔥 修复：返回 userData 字段保持与小程序端一致
+        data: userData // 🔥 修复：使用data字段与device.js保持一致
       };
     } else {
       console.log('[getUserData] 用户尚未填写高级标签数据');
@@ -197,7 +203,7 @@ async function getOriginalQuestionnaireData(openid, includeFriends = false) {
       console.log('[getUserData] 原有问卷数据获取成功');
       return {
         success: true,
-        userData: userData // 🔥 修复：统一返回 userData 字段保持与小程序端一致
+        data: userData // 🔥 修复：使用data字段与device.js保持一致
       };
     } else {
       console.log('[getUserData] 用户尚未填写问卷数据');
@@ -209,5 +215,88 @@ async function getOriginalQuestionnaireData(openid, includeFriends = false) {
   } catch (dbError) {
     console.error('[getUserData] 数据库查询失败:', dbError);
     throw dbError;
+  }
+}
+
+/**
+ * 🎨 新增：更新用户MBTI数据
+ * @param {string} openid 用户openid
+ * @param {Object} mbtiData MBTI更新数据
+ */
+async function updateMBTIData(openid, mbtiData) {
+  console.log('[getUserData] 开始更新MBTI数据:', { openid, mbtiData });
+  
+  try {
+    // 1. 查找用户在users_adv集合中的数据
+    const queryResult = await db.collection('users_adv')
+      .where({
+        openid: openid
+      })
+      .limit(1)
+      .get();
+    
+    if (queryResult.data.length === 0) {
+      console.warn('[getUserData] 用户不存在于users_adv集合，无法更新MBTI数据');
+      return {
+        success: false,
+        message: '用户数据不存在，请先完成问卷'
+      };
+    }
+    
+    const userData = queryResult.data[0];
+    const docId = userData._id;
+    
+    console.log('[getUserData] 找到用户数据，准备更新:', { docId, currentMBTI: userData.advancedTags?.mbtiType });
+    
+    // 2. 准备更新数据
+    const updateFields = {
+      ...mbtiData,
+      updateTime: new Date()
+    };
+    
+    console.log('[getUserData] 更新字段:', updateFields);
+    
+    // 3. 执行更新操作
+    const updateResult = await db.collection('users_adv')
+      .doc(docId)
+      .update({
+        data: updateFields
+      });
+    
+    console.log('[getUserData] MBTI数据更新完成:', updateResult);
+    
+    // 4. 验证更新结果
+    if (updateResult.stats && updateResult.stats.updated > 0) {
+      console.log('[getUserData] ✅ MBTI数据更新成功');
+      
+      // 返回更新后的数据预览
+      const updatedMBTI = mbtiData['advancedTags.mbtiType'];
+      const updatedColor = mbtiData['advancedTags.idleLightColor'];
+      
+      return {
+        success: true,
+        message: 'MBTI数据更新成功',
+        data: {
+          mbtiType: updatedMBTI,
+          idleLightColor: updatedColor,
+          updateTime: updateFields.updateTime
+        }
+      };
+      
+    } else {
+      console.warn('[getUserData] ⚠️ MBTI数据更新无变化或失败');
+      return {
+        success: false,
+        message: 'MBTI数据更新失败，请重试'
+      };
+    }
+    
+  } catch (updateError) {
+    console.error('[getUserData] ❌ MBTI数据更新异常:', updateError);
+    return {
+      success: false,
+      message: 'MBTI数据更新异常，请重试',
+      error: updateError.message
+    };
   }
 } 

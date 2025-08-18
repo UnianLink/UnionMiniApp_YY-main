@@ -8,6 +8,16 @@ cloud.init({
 const db = cloud.database();
 
 /**
+ * 获取默认标签阈值
+ * 从硬件配置同步的默认值
+ */
+function getDefaultTagThreshold() {
+  // 🔧 与硬件配置同步：DEFAULT_TAG_THRESHOLD = 2
+  // 这个值应与硬件端 common.h 中的 DEFAULT_TAG_THRESHOLD 保持一致
+  return 2;
+}
+
+/**
  * 提交问卷数据到数据库
  * 支持原有问卷数据和新的高级标签数据
  */
@@ -67,7 +77,7 @@ async function handleAdvancedTags(event, openid) {
   console.log('[submitQuestionnaire] 处理高级标签数据');
   console.log('[handleAdvancedTags] 接收数据:', JSON.stringify(event, null, 2));
   
-  const { userInfo, advancedTags } = event;
+  const { userInfo, advancedTags, newFormat } = event;
   
   // 验证必填数据
   if (!advancedTags.displayName || advancedTags.displayName.trim() === '') {
@@ -98,8 +108,49 @@ async function handleAdvancedTags(event, openid) {
   const encodedTags = advancedTags.encodedTags;
   console.log('[handleAdvancedTags] 接收到的编码:', encodedTags, '长度:', encodedTags ? encodedTags.length : 0);
   
-  // 🚨 关键修复：前3页编码应该是14字符左右，不是20字符
-  // 20字符是包含所有5页标签的完整编码，但硬件只需要前3页的14字符编码
+  // 处理新格式和旧格式的编码长度验证
+  let expectedLength, bluetoothName;
+  
+  if (newFormat && newFormat.enabled) {
+    // 新格式：Un + 10字节编码 + 1字节阈值 + 2字节唯一ID + 1字节状态码 = 16字符
+    expectedLength = 14; // 除去"Un"前缀，剩余14字符
+    console.log('[handleAdvancedTags] 🆕 检测到新格式数据');
+    
+    // 验证新格式特有字段
+    const threshold = newFormat.threshold || getDefaultTagThreshold();
+    const uniqueId = newFormat.uniqueId || 0;
+    const status = newFormat.status || '0';
+    
+    if (threshold < 0 || threshold > 63) {
+      return {
+        success: false,
+        message: '阈值必须在0-63范围内'
+      };
+    }
+    
+    if (uniqueId < 0 || uniqueId > 4095) {
+      return {
+        success: false,
+        message: '唯一ID必须在0-4095范围内'
+      };
+    }
+    
+    if (status !== '0' && status !== '1') {
+      return {
+        success: false,
+        message: '状态码必须是0或1'
+      };
+    }
+    
+    bluetoothName = `Un${encodedTags}`;
+    console.log('[handleAdvancedTags] 新格式蓝牙名称:', bluetoothName);
+  } else {
+    // 旧格式：前3页编码应该是14字符左右
+    expectedLength = 14;
+    bluetoothName = encodedTags ? `Un${encodedTags}` : '';
+    console.log('[handleAdvancedTags] 🔄 使用旧格式兼容模式');
+  }
+  
   if (encodedTags && (encodedTags.length < 10 || encodedTags.length > 25)) {
     console.warn('[handleAdvancedTags] 编码长度异常:', encodedTags.length, '期望10-25字符范围');
   } else if (encodedTags) {
@@ -117,19 +168,30 @@ async function handleAdvancedTags(event, openid) {
     },
     // 编码数据存储在专门的字段中，便于硬件访问
     encodedTags: encodedTags || '',
-    // 🚨 新增：存储完整的16字符蓝牙名称，用于碰一碰匹配
-    bluetoothName: encodedTags ? `Un${encodedTags}` : '',
+    // 蓝牙名称（旧格式或新格式）
+    bluetoothName: bluetoothName,
     binaryArray: advancedTags.binaryArray || [],
     allTagsList: advancedTags.allTagsList || [],
     selectedTags: advancedTags.selectedTags || [],
+    // 新格式特有字段
+    formatVersion: newFormat && newFormat.enabled ? 'v2.0' : 'v1.0',
+    newFormatData: newFormat && newFormat.enabled ? {
+      threshold: newFormat.threshold || getDefaultTagThreshold(),
+      uniqueId: newFormat.uniqueId || 0,
+      status: newFormat.status || '0',
+      tagConfigHash: newFormat.tagConfigHash || '',
+      generatedAt: new Date()
+    } : null,
     // 添加编码元数据
     encodingMeta: {
-      version: '2.0',
+      version: newFormat && newFormat.enabled ? 'v2.0-new-format' : 'v2.0-legacy',
       algorithm: '6bit-flat-binary',
       charSet: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-',
       totalTagsCount: (advancedTags.allTagsList || []).length,
       selectedTagsCount: (advancedTags.selectedTags || []).length,
       encodingLength: encodedTags ? encodedTags.length : 0,
+      expectedLength: expectedLength,
+      isNewFormat: newFormat && newFormat.enabled,
       generatedAt: new Date()
     },
     createTime: new Date(),
@@ -175,10 +237,12 @@ async function handleAdvancedTags(event, openid) {
           userInfo: saveData.userInfo,
           advancedTags: saveData.advancedTags,
           encodedTags: saveData.encodedTags,
-          bluetoothName: saveData.bluetoothName, // 更新蓝牙名称
+          bluetoothName: saveData.bluetoothName,
           binaryArray: saveData.binaryArray,
           allTagsList: saveData.allTagsList,
           selectedTags: saveData.selectedTags,
+          formatVersion: saveData.formatVersion,
+          newFormatData: saveData.newFormatData,
           encodingMeta: saveData.encodingMeta,
           updateTime: saveData.updateTime
         }
@@ -203,9 +267,14 @@ async function handleAdvancedTags(event, openid) {
       message: '标签设置成功',
       data: {
         totalTags: totalTags,
-        threshold: advancedTags.threshold,
+        threshold: newFormat && newFormat.enabled ? newFormat.threshold : (advancedTags.threshold || getDefaultTagThreshold()),
         encodedTags: encodedTags,
-        encodingLength: encodedTags ? encodedTags.length : 0
+        encodingLength: encodedTags ? encodedTags.length : 0,
+        bluetoothName: bluetoothName,
+        formatVersion: saveData.formatVersion,
+        isNewFormat: newFormat && newFormat.enabled,
+        uniqueId: newFormat && newFormat.enabled ? newFormat.uniqueId : null,
+        status: newFormat && newFormat.enabled ? newFormat.status : null
       }
     };
     

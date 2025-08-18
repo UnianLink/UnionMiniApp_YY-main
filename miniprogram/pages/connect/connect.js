@@ -1678,7 +1678,7 @@ Page({
         throw new Error(res.result.message || '获取用户数据失败');
       }
       
-      if (!res.result.userData) {
+      if (!res.result.data) {
         console.log('[ConnectPage] 用户数据不存在，可能是新用户');
         // 显示空状态，不算错误
         this.setData({
@@ -1695,7 +1695,7 @@ Page({
         return;
       }
       
-      const userData = res.result.userData;
+      const userData = res.result.data;
       const friends = userData.friends || [];
       
       console.log('✅ [ConnectPage] 从云端数据库加载到朋友数量:', friends.length);

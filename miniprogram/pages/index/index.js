@@ -2,6 +2,8 @@
 const Config = require('../../utils/config.js');
 // 引入标签主题配置
 const tagThemes = require('../../config/tagThemes.js');
+// 引入MBTI颜色管理器
+const MBTIColorManager = require('../../utils/mbti-color-manager.js');
 
 Page({
   data: {
@@ -17,14 +19,24 @@ Page({
     advancedTags: {
       professionalTags: [],
       interestTags: [],
-      personalityTags: [],
+      personalityTags: [],  // 现在只包含非MBTI性格标签
       quirkyTags: [],
-      threshold: 4,
+      threshold: (() => {
+        try {
+          const sharedConfig = require('../../utils/shared-config-loader.js');
+          return sharedConfig.getDefaultTagThreshold();
+        } catch (error) {
+          console.warn('[Index] 无法加载配置，使用降级值2:', error.message);
+          return 2;
+        }
+      })(),
       displayName: '',
       contactInfo: '',
       personalTagsText: '',
       qrCodeUrl: '',
-      photos: []
+      photos: [],
+      // 新增：独立的MBTI字段（不参与兴趣编码）
+      mbtiType: null  // 单选，存储一个MBTI类型
     },
     
     // 编码信息
@@ -63,11 +75,11 @@ Page({
       contactWillingness: '',
       contactInfo: ''
     },
-    currentStep: 1,
-    totalSteps: 5, // 更新为5步（第4步是个人信息，第5步是彩蛋）
+    currentStep: 0, // 🔧 从第0步MBTI选择开始
+    totalSteps: 6, // 🔧 更新为6步（第0步MBTI，第1-3步标签，第4步个人信息，第5步彩蛋）
     // 使用新的标签系统
     useAdvancedTags: true, // 标识使用新的标签系统
-    config: Config.advancedTagsConfig,
+    config: tagThemes.meta || Config.advancedTagsConfig,
     currentStepConfig: null,
     // 文字配置
     texts: {},
@@ -83,6 +95,11 @@ Page({
     // 标签主题相关
     currentTheme: null, // 当前主题配置
     themeCategories: [], // 主题分类
+    
+    // MBTI选择器相关
+    showMBTISelectorModal: false, // 是否显示MBTI选择器弹窗
+    mbtiOptions: [], // MBTI选项列表
+    mbtiSelectedColor: '#66ccff', // 当前选中的MBTI颜色
     
     // 选择统计
     totalSelectedTags: 0,
@@ -123,6 +140,9 @@ Page({
       currentTheme: currentTheme,
       themeCategories: currentTheme.categories
     });
+    
+    // 🎯 加载MBTI配置
+    this.initMBTIOptions();
     
     // 更新步骤配置以使用主题标签
     this.updateStepsWithTheme(currentTheme);
@@ -239,9 +259,10 @@ Page({
       this.loadUserProfile(options.openid);
     } else {
       console.log('[Index] 正常加载页面');
-    this.initTextConfig();
+      this.initTextConfig();
       this.initAdvancedTagsFromConfig();
-    this.checkLoginStatus();
+      this.initMBTIOptions();  // 初始化MBTI选项
+      this.checkLoginStatus();
     }
   },
 
@@ -316,13 +337,14 @@ Page({
   // 初始化文字配置
   initTextConfig() {
     // 根据问卷主题设置文字主题
-    const questionnaireTheme = Config.advancedTagsConfig.meta.theme;
+    const questionnaireTheme = Config.questionnaireConfig.meta.theme;
     if (Config.setTheme(questionnaireTheme)) {
       console.log('[Index] 文字主题已设置为:', questionnaireTheme);
     }
 
     // 初始化所有需要的文字
-    const texts = Config.getTexts({
+    const tagThemes = require('../../config/tagThemes.js');
+    const texts = tagThemes.getTexts({
       // 登录页面文字
       welcomeTitle: 'login.welcomeTitle',
       welcomeDesc: 'login.welcomeDesc',
@@ -360,30 +382,127 @@ Page({
 
   // 从高级标签配置初始化页面数据
   initAdvancedTagsFromConfig() {
-    const steps = Config.advancedTagsConfig.steps;
+    // 🎯 关键修改：优先使用外部配置
+    const encoding = Config.advancedTagsConfig.encoding;
     
-    console.log('[initAdvancedTagsFromConfig] 步骤配置:', steps.map(s => ({ id: s.id, title: s.title })));
+    try {
+      console.log('[initAdvancedTagsFromConfig] 🔍 检查配置源:', encoding.configSource);
+      
+      // 检查配置源
+      if (encoding.configSource === 'external') {
+        console.log('[initAdvancedTagsFromConfig] 🚀 开始加载外部tagThemes.js配置');
+        const tagThemes = require('../../config/tagThemes.js');
+        console.log('[initAdvancedTagsFromConfig] ✅ tagThemes.js加载成功');
+        
+        const currentTheme = tagThemes.getCurrentTheme();
+        console.log('[initAdvancedTagsFromConfig] 📋 当前主题:', currentTheme.name);
+        console.log('[initAdvancedTagsFromConfig] 📊 分类数量:', currentTheme.categories.length);
+        
+        // 验证外部配置的有效性
+        const totalExternalTags = tagThemes.getTagCount();
+        console.log('[initAdvancedTagsFromConfig] 🏷️ 外部配置标签总数:', totalExternalTags);
+        
+        if (totalExternalTags === 0) {
+          throw new Error('外部配置中没有找到有效标签');
+        }
+        
+        if (totalExternalTags > 60) {
+          console.warn(`[initAdvancedTagsFromConfig] ⚠️ 外部配置标签数量${totalExternalTags}超过60限制`);
+        }
+        
+        // 从外部配置构建标签选项
+        const tagOptions = this.buildTagOptionsFromTheme(currentTheme);
+        console.log('[initAdvancedTagsFromConfig] 🏗️ 标签选项构建完成');
+        
+        // 构建步骤配置（模拟原有的步骤结构）
+        const stepConfigs = this.buildStepConfigsFromTheme(currentTheme);
+        console.log('[initAdvancedTagsFromConfig] 📝 步骤配置构建完成');
+        
+        const finalTagCount = tagOptions.professional.length + tagOptions.interest.length + 
+                              tagOptions.personality.length + tagOptions.quirky.length;
+        
+        console.log('[initAdvancedTagsFromConfig] 🎯 最终标签统计:', {
+          professional: tagOptions.professional.length,
+          interest: tagOptions.interest.length,
+          personality: tagOptions.personality.length,
+          quirky: tagOptions.quirky.length,
+          total: finalTagCount
+        });
+        
+        // 确保标签数量在合理范围内
+        if (finalTagCount > 60) {
+          console.error(`[initAdvancedTagsFromConfig] ❌ 最终标签数量${finalTagCount}超过60限制，系统可能出现问题`);
+        }
+        
+        // 🔧 清除旧的本地存储数据，避免config.js标签干扰
+        console.log('[initAdvancedTagsFromConfig] 🧹 清除旧的本地存储数据');
+        try {
+          wx.removeStorageSync('advancedTags');
+          console.log('[initAdvancedTagsFromConfig] ✅ 本地存储数据清除成功');
+        } catch (clearError) {
+          console.warn('[initAdvancedTagsFromConfig] ⚠️ 清除本地存储失败:', clearError);
+        }
+        
+        // 🔄 重置所有标签选择为空，确保从外部配置开始
+        const cleanAdvancedTags = {
+          professionalTags: [],
+          interestTags: [],
+          personalityTags: [],
+          quirkyTags: [],
+          threshold: Config.advancedTagsConfig.threshold.default,
+          updateTime: new Date().toISOString()
+        };
+        
+        console.log('[initAdvancedTagsFromConfig] 🔥 初始化阈值:', {
+          配置默认值: Config.advancedTagsConfig.threshold.default,
+          清理后阈值: cleanAdvancedTags.threshold,
+          阈值类型: typeof cleanAdvancedTags.threshold
+        });
+        
+        // 初始化当前分类
+        const currentCategory = {};
+        stepConfigs.forEach((step, index) => {
+          if (step.categories && step.categories.length > 0) {
+            currentCategory[index + 1] = step.categories[0].name;
+          }
+        });
+        
+        console.log('[initAdvancedTagsFromConfig] 🎉 外部配置设置完成，标签数量:', finalTagCount);
+        console.log('[initAdvancedTagsFromConfig] 🧽 清空所有标签选择，重新开始');
+        
+        this.setData({
+          tagOptions,
+          currentCategory,
+          currentStepConfig: stepConfigs[0] || null,
+          totalSteps: stepConfigs.length,
+          advancedTags: cleanAdvancedTags
+        }, () => {
+          this.refreshAllTagsActive();
+          // 保存清空后的数据到本地存储
+          this.saveAdvancedTags();
+        });
+        
+        return;
+      } else {
+        console.log('[initAdvancedTagsFromConfig] 📦 配置源为内置配置，不使用外部配置');
+      }
+    } catch (error) {
+      console.error('[initAdvancedTagsFromConfig] ❌ 外部配置加载失败，使用内置配置:', error);
+      console.error('[initAdvancedTagsFromConfig] 错误详情:', error.stack);
+    }
     
-    // 初始化各步骤的标签选项
+    // 降级：使用内置配置
+    console.log('[initAdvancedTagsFromConfig] 使用内置配置');
+    const tagThemes = require('../../config/tagThemes.js');
+    const steps = tagThemes.getAllStepsConfig();
+    
     const tagOptions = {
-      professional: this.initCategoryOptions(steps[0]), // 第1步：专业领域
-      interest: this.initCategoryOptions(steps[1]), // 第2步：兴趣爱好
-      personality: this.initCategoryOptions(steps[2]), // 第3步：性格
-      quirky: this.initCategoryOptions(steps[4]) // 第5步：彩蛋标签（现在是第5步）
+      professional: this.initCategoryOptions(steps[0]),
+      interest: this.initCategoryOptions(steps[1]),
+      personality: this.initCategoryOptions(steps[2]),
+      quirky: this.initCategoryOptions(steps[4])
     };
     
-    console.log('[initAdvancedTagsFromConfig] 初始化的标签选项:', {
-      professional: tagOptions.professional.length,
-      interest: tagOptions.interest.length,
-      personality: tagOptions.personality.length,
-      quirky: tagOptions.quirky.length
-    });
-    
-    // 检查第5步配置
-    console.log('[initAdvancedTagsFromConfig] 第5步配置:', steps[4]);
-    console.log('[initAdvancedTagsFromConfig] 第5步标签选项:', tagOptions.quirky);
-    
-    // 初始化当前分类，为每步设置默认的第一个分类
     const currentCategory = {};
     steps.forEach((step, index) => {
       if (step.categories && step.categories.length > 0) {
@@ -391,18 +510,81 @@ Page({
       }
     });
     
-    console.log('[initAdvancedTagsFromConfig] 初始化的分类:', currentCategory);
-    
     this.setData({
       tagOptions,
       currentCategory,
-      currentStepConfig: this.getAdvancedStepConfig(1),
-      totalSteps: Config.advancedTagsConfig.meta.totalSteps,
-      'advancedTags.threshold': Config.advancedTagsConfig.threshold.default
+      currentStepConfig: this.getAdvancedStepConfig(0), // 🔧 从第0步开始
+      totalSteps: tagThemes.meta.totalSteps || Config.advancedTagsConfig.meta.totalSteps,
+      'advancedTags.threshold': tagThemes.threshold.default || Config.advancedTagsConfig.threshold.default
     }, () => {
-      // 初始化后刷新选项状态
       this.refreshAllTagsActive();
     });
+  },
+
+  // 从外部主题配置构建标签选项
+  buildTagOptionsFromTheme(themeConfig) {
+    const tagOptions = {
+      professional: [],
+      interest: [],
+      personality: [],
+      quirky: []
+    };
+    
+    // 根据分类ID映射到对应的标签选项
+    themeConfig.categories.forEach(category => {
+      category.tags.forEach(tag => {
+        const option = {
+          name: tag,
+          category: category.name,
+          active: false
+        };
+        
+        // 根据分类ID分配到对应的标签组
+        switch(category.id) {
+          case 'professional':
+            tagOptions.professional.push(option);
+            break;
+          case 'interest':
+            tagOptions.interest.push(option);
+            break;
+          case 'personality':
+            tagOptions.personality.push(option);
+            break;
+          case 'quirky':
+            tagOptions.quirky.push(option);
+            break;
+          default:
+            console.warn(`[buildTagOptionsFromTheme] 未知分类ID: ${category.id}`);
+        }
+      });
+    });
+    
+    return tagOptions;
+  },
+
+  // 从外部主题配置构建步骤配置
+  buildStepConfigsFromTheme(themeConfig) {
+    const stepConfigs = [];
+    
+    // 按照分类ID顺序创建步骤
+    const categoryOrder = ['professional', 'interest', 'personality', 'quirky'];
+    const stepTitles = ['专业领域', '兴趣爱好', 'MBTI性格', '个性彩蛋'];
+    
+    categoryOrder.forEach((categoryId, index) => {
+      const category = themeConfig.categories.find(cat => cat.id === categoryId);
+      if (category) {
+        stepConfigs.push({
+          id: index + 1,
+          title: stepTitles[index] || category.name,
+          categories: [{
+            name: category.name,
+            tags: category.tags
+          }]
+        });
+      }
+    });
+    
+    return stepConfigs;
   },
 
   // 初始化分类选项（包含分类信息）
@@ -429,10 +611,71 @@ Page({
     return options;
   },
 
-  // 获取高级标签步骤配置
+  // 获取高级标签步骤配置（适配层 - 从tagThemes获取）
   getAdvancedStepConfig(step) {
-    const steps = Config.advancedTagsConfig.steps;
-    return steps.find(s => s.id === step) || null;
+    // 优先使用tagThemes的配置
+    try {
+      const stepConfig = tagThemes.getStepConfig(step);
+      if (stepConfig) {
+        console.log(`[getAdvancedStepConfig] ✅ 从tagThemes获取步骤${step}配置:`, stepConfig.title);
+        return stepConfig;
+      }
+    } catch (error) {
+      console.warn(`[getAdvancedStepConfig] ⚠️ tagThemes获取步骤配置失败，回退到config.js:`, error);
+    }
+    
+    // 回退到原有配置（保证兼容性）
+    console.log(`[getAdvancedStepConfig] 🔄 回退到config.js配置`);
+    if (Config.advancedTagsConfig && Config.advancedTagsConfig.steps) {
+      const steps = Config.advancedTagsConfig.steps;
+      return steps.find(s => s.id === step) || null;
+    }
+    
+    return null;
+  },
+  
+  // 适配层：获取配置项（统一访问入口）
+  getConfigValue(path) {
+    try {
+      // 路径映射：将config.js的路径映射到tagThemes
+      const pathMapping = {
+        'meta.totalSteps': 'meta.totalSteps',
+        'meta.minTotalTags': 'meta.minTotalTags', 
+        'meta.theme': 'meta.theme',
+        'threshold.default': 'threshold.default',
+        'threshold.min': 'threshold.min',
+        'threshold.max': 'threshold.max',
+        'encoding': null // encoding需要特殊处理
+      };
+      
+      const mappedPath = pathMapping[path];
+      if (mappedPath && tagThemes[mappedPath.split('.')[0]]) {
+        const parts = mappedPath.split('.');
+        let value = tagThemes;
+        for (let part of parts) {
+          value = value[part];
+          if (value === undefined) break;
+        }
+        if (value !== undefined) {
+          return value;
+        }
+      }
+    } catch (error) {
+      console.warn(`[getConfigValue] tagThemes获取${path}失败:`, error);
+    }
+    
+    // 回退到原有配置
+    if (Config.advancedTagsConfig) {
+      const parts = path.split('.');
+      let value = Config.advancedTagsConfig;
+      for (let part of parts) {
+        value = value[part];
+        if (value === undefined) break;
+      }
+      return value;
+    }
+    
+    return undefined;
   },
 
   // 刷新所有标签的激活状态
@@ -483,10 +726,41 @@ Page({
     });
   },
 
-  // 更新总选择标签数量
+  // 更新总选择标签数量（基于实际用户选择，支持动态配置）
   updateTotalSelectedTags() {
     const { professionalTags, interestTags, personalityTags, quirkyTags } = this.data.advancedTags;
-    const total = professionalTags.length + interestTags.length + personalityTags.length + quirkyTags.length;
+    const total = (professionalTags?.length || 0) + (interestTags?.length || 0) + 
+                  (personalityTags?.length || 0) + (quirkyTags?.length || 0);
+    
+    // 🔍 调试信息：验证标签统计的准确性
+    console.log('[updateTotalSelectedTags] 📊 标签统计详情:', {
+      professional: professionalTags?.length || 0,
+      interest: interestTags?.length || 0,
+      personality: personalityTags?.length || 0,
+      quirky: quirkyTags?.length || 0,
+      total: total
+    });
+    
+    // 获取实际可用的标签总数（用于验证）
+    try {
+      const encoding = Config.advancedTagsConfig.encoding;
+      const allTagsList = encoding.getAllTagsList();
+      const maxAvailableTags = Math.min(allTagsList.length, 60);
+      
+      console.log('[updateTotalSelectedTags] 🏷️ 配置验证:', {
+        availableTags: allTagsList.length,
+        maxSupported: 60,
+        actualLimit: maxAvailableTags,
+        userSelected: total,
+        withinLimit: total <= maxAvailableTags
+      });
+      
+      if (total > maxAvailableTags) {
+        console.warn(`[updateTotalSelectedTags] ⚠️ 用户选择标签数${total}超过可用标签数${maxAvailableTags}`);
+      }
+    } catch (error) {
+      console.warn('[updateTotalSelectedTags] 配置验证失败:', error);
+    }
     
     this.setData({
       totalSelectedTags: total
@@ -540,6 +814,34 @@ Page({
     try {
       const savedData = wx.getStorageSync('advancedTags');
       if (savedData) {
+        // 🔍 验证本地数据是否来自新配置系统
+        const hasValidStructure = savedData.professionalTags && savedData.interestTags && 
+                                  savedData.personalityTags && savedData.quirkyTags;
+        
+        // 🧹 额外检查：如果本地数据的标签数量异常（可能是旧系统数据），直接忽略
+        const totalLocalTags = (savedData.professionalTags?.length || 0) + 
+                              (savedData.interestTags?.length || 0) + 
+                              (savedData.personalityTags?.length || 0) + 
+                              (savedData.quirkyTags?.length || 0);
+        
+        console.log('[loadAdvancedTags] 🔍 本地数据验证:', {
+          hasValidStructure,
+          totalLocalTags,
+          savedDataKeys: Object.keys(savedData)
+        });
+        
+        // 💥 如果本地数据异常（超过合理范围或结构不对），直接忽略
+        if (!hasValidStructure || totalLocalTags > 60) {
+          console.warn('[loadAdvancedTags] ⚠️ 本地数据异常，忽略旧数据:', {
+            hasValidStructure,
+            totalLocalTags,
+            reason: '数据结构无效或标签数量超出限制'
+          });
+          // 清除异常数据
+          wx.removeStorageSync('advancedTags');
+          return;
+        }
+        
         // 设置默认的闪光阈值
         if (!savedData.threshold) {
           savedData.threshold = Config.advancedTagsConfig.threshold.default;
@@ -549,11 +851,18 @@ Page({
           advancedTags: { ...this.data.advancedTags, ...savedData }
         }, () => {
           this.refreshAllTagsActive();
+          this.updateTotalSelectedTags(); // 🎯 强制重新计算
         });
-        console.log('[Index] 已加载本地高级标签数据');
+        console.log('[loadAdvancedTags] ✅ 已加载本地高级标签数据，标签总数:', totalLocalTags);
+      } else {
+        console.log('[loadAdvancedTags] 📭 本地无标签数据，使用默认空状态');
+        // 🔄 确保totalSelectedTags正确初始化为0
+        this.updateTotalSelectedTags();
       }
     } catch (error) {
-      console.error('[Index] 加载本地高级标签数据失败:', error);
+      console.error('[loadAdvancedTags] ❌ 加载本地高级标签数据失败:', error);
+      // 发生错误时，确保清空数据并重新计算
+      this.updateTotalSelectedTags();
     }
   },
 
@@ -574,15 +883,41 @@ Page({
           const cloudUpdateTime = cloudData.updateTime ? new Date(cloudData.updateTime).getTime() : 0;
           
           if (cloudUpdateTime > localUpdateTime && cloudData.advancedTags) {
-            console.log('[Index] 使用云端数据（更新）');
+            // 🔍 验证云端数据是否异常
+            const cloudTags = cloudData.advancedTags;
+            const totalCloudTags = (cloudTags.professionalTags?.length || 0) + 
+                                  (cloudTags.interestTags?.length || 0) + 
+                                  (cloudTags.personalityTags?.length || 0) + 
+                                  (cloudTags.quirkyTags?.length || 0);
+            
+            console.log('[syncDataFromCloud] 🔍 云端数据验证:', {
+              totalCloudTags,
+              hasValidStructure: !!(cloudTags.professionalTags && cloudTags.interestTags)
+            });
+            
+            // 💥 如果云端数据异常，忽略云端数据
+            if (totalCloudTags > 60) {
+              console.warn('[syncDataFromCloud] ⚠️ 云端数据异常，忽略云端更新:', totalCloudTags);
+              return;
+            }
+            
+            console.log('[syncDataFromCloud] ✅ 使用云端数据（更新），标签数:', totalCloudTags);
             this.setData({
               advancedTags: { ...this.data.advancedTags, ...cloudData.advancedTags }
             }, () => {
               this.refreshAllTagsActive();
+              this.updateTotalSelectedTags(); // 🎯 强制重新计算
               this.saveAdvancedTags();
+              
+              // 🎨 如果云端数据包含MBTI类型，自动应用常亮灯颜色设置
+              if (cloudData.advancedTags && cloudData.advancedTags.mbtiType) {
+                console.log('[syncDataFromCloud] 🎨 检测到云端MBTI数据，应用常亮灯颜色:', cloudData.advancedTags.mbtiType);
+                const mbtiCode = this.extractMBTICode(cloudData.advancedTags.mbtiType);
+                this.sendIdleLightColor(mbtiCode);
+              }
             });
           } else {
-            console.log('[Index] 使用本地数据（较新或云端数据不存在）');
+            console.log('[syncDataFromCloud] 📦 使用本地数据（较新或云端数据不存在）');
           }
         }
       },
@@ -689,10 +1024,20 @@ Page({
     const threshold = Config.advancedTagsConfig.threshold;
     const finalValue = Math.max(threshold.min, Math.min(threshold.max, value));
     
+    console.log('[onThresholdChange] 🔥 阈值修改:', {
+      原始输入: e.detail.value,
+      解析数值: value,
+      阈值限制: threshold,
+      最终值: finalValue,
+      最终值类型: typeof finalValue
+    });
+    
     this.setData({
       'advancedTags.threshold': finalValue
     });
     this.saveAdvancedTags();
+    
+    console.log('[onThresholdChange] ✅ 阈值已保存，当前值:', this.data.advancedTags.threshold);
     
     // 显示提示
     wx.showToast({
@@ -863,7 +1208,7 @@ Page({
   },
 
   prevStep() {
-    if (this.data.currentStep > 1) {
+    if (this.data.currentStep > 0) { // 🔧 从第0步开始，不能再往前
       const newStep = this.data.currentStep - 1;
       this.setData({
         currentStep: newStep,
@@ -891,6 +1236,11 @@ Page({
     
     if (!config) return true;
     
+    // 🔧 第0步MBTI选择：始终允许通过（可选步骤）
+    if (step === 0) {
+      return true;
+    }
+    
     // 第1-3步：验证标签选择
     if (step <= 3) {
       const tagField = this.getTagFieldByStep(step);
@@ -908,9 +1258,10 @@ Page({
       // 第3步完成后检查总标签数量
       if (step === 3) {
         const totalTags = this.data.totalSelectedTags;
-        if (totalTags < Config.advancedTagsConfig.meta.minTotalTags) {
+        const minTotalTags = config.minTotalTags || tagThemes.meta.minTotalTags || 4; // 优先从步骤配置获取
+        if (totalTags < minTotalTags) {
           wx.showToast({
-            title: this.data.texts.validateError || '请至少选择4个标签才能继续',
+            title: this.data.texts.validateError || `请至少选择${minTotalTags}个标签才能继续`,
             icon: 'none'
           });
           return false;
@@ -951,8 +1302,9 @@ Page({
   // 解码验证功能（只验证前3页）
   verifyEncoding(encodedString) {
     try {
+      const tagThemes = require('../../config/tagThemes.js');
       const encoding = Config.advancedTagsConfig.encoding;
-      const steps = Config.advancedTagsConfig.steps;
+      const steps = tagThemes.getAllStepsConfig();
       // 只获取前3页的标签列表
       const encodingSteps = steps.slice(0, 3);
       const allTagsList = encoding.getAllTagsList(encodingSteps);
@@ -993,8 +1345,9 @@ Page({
     console.log('=== 开始测试编码功能（前3页） ===');
     
     try {
+      const tagThemes = require('../../config/tagThemes.js');
       const encoding = Config.advancedTagsConfig.encoding;
-      const steps = Config.advancedTagsConfig.steps;
+      const steps = tagThemes.getAllStepsConfig();
       
       // 只获取前3页的标签列表
       const encodingSteps = steps.slice(0, 3);
@@ -1065,39 +1418,84 @@ Page({
     console.log('=== 编码功能测试结束 ===');
   },
 
-  // 生成标签编码（只对前3页进行编码）
+  // 生成标签编码（支持动态标签数量，最多60个）
   generateTagsEncoding() {
     const encoding = Config.advancedTagsConfig.encoding;
-    const steps = Config.advancedTagsConfig.steps;
     
-    // 只获取前3页的标签列表（专业领域、兴趣爱好、MBTI性格）
-    const encodingSteps = steps.slice(0, 3); // 只取前3步
-    const allTagsList = encoding.getAllTagsList(encodingSteps);
-    console.log('[generateTagsEncoding] 编码标签列表（前3页）:', allTagsList);
+    // 🎯 关键修改：直接使用getAllTagsList()，它会自动使用外部配置
+    const allTagsList = encoding.getAllTagsList();
+    console.log('[generateTagsEncoding] 使用的标签列表:', allTagsList);
+    console.log('[generateTagsEncoding] 实际标签数量:', allTagsList.length);
     
-    // 获取用户选择的前3页标签（不包括彩蛋标签）
+    // 获取用户选择的所有标签（排除MBTI，只用于兴趣编码）
     const userSelectedTags = [
       ...(this.data.advancedTags.professionalTags || []),
       ...(this.data.advancedTags.interestTags || []),
-      ...(this.data.advancedTags.personalityTags || [])
+      ...(this.data.advancedTags.personalityTags || []), // 现在只包含非MBTI性格标签
+      ...(this.data.advancedTags.quirkyTags || [])
     ];
     
-    console.log('[generateTagsEncoding] 用户选择的前3页标签:', userSelectedTags);
+    // 🔥 重要：MBTI不参与兴趣编码，独立处理常亮灯颜色
+    console.log('[generateTagsEncoding] 🎯 MBTI类型（不参与编码）:', this.data.advancedTags.mbtiType);
     
-    // 创建二进制数组：每个标签对应一个位，选中为true，未选为false
-    const binaryArray = allTagsList.map(tagInfo => 
-      userSelectedTags.includes(tagInfo.tag)
-    );
+    console.log('[generateTagsEncoding] 用户选择的标签:', userSelectedTags);
+    console.log('[generateTagsEncoding] 📊 详细诊断: 用户标签数量=', userSelectedTags.length, ', 可用标签数量=', allTagsList.length);
     
-    console.log('[generateTagsEncoding] 二进制数组长度:', binaryArray.length);
-    console.log('[generateTagsEncoding] 选中的标签位置:', 
+    // 🚀 关键：创建固定60位的二进制数组
+    const binaryArray = new Array(60).fill(false);
+    
+    // 🔍 诊断计数器
+    let successMatches = 0;
+    let failedMatches = [];
+    
+    // 🔒 安全映射：将用户选择的标签映射到对应位置
+    userSelectedTags.forEach(selectedTag => {
+      // 🐛 修复：allTagsList现在是字符串数组，不是对象数组
+      const tagIndex = allTagsList.findIndex(tag => tag === selectedTag);
+      
+      // 🎯 关键安全检查：确保索引在有效范围内
+      if (tagIndex >= 0 && tagIndex < allTagsList.length && tagIndex < 60) {
+        binaryArray[tagIndex] = true;
+        successMatches++;
+        console.log(`[generateTagsEncoding] ✅ 标签 "${selectedTag}" 映射到位置 ${tagIndex}`);
+      } else if (tagIndex >= 0 && tagIndex >= 60) {
+        failedMatches.push({tag: selectedTag, reason: '超出60位限制', index: tagIndex});
+        console.warn(`[generateTagsEncoding] ⚠️ 标签 "${selectedTag}" 位置 ${tagIndex} 超出60位限制，跳过`);
+      } else if (tagIndex >= 0 && tagIndex >= allTagsList.length) {
+        failedMatches.push({tag: selectedTag, reason: '超出标签列表范围', index: tagIndex});
+        console.error(`[generateTagsEncoding] ❌ 标签 "${selectedTag}" 位置 ${tagIndex} 超出标签列表范围 ${allTagsList.length}，跳过`);
+      } else {
+        failedMatches.push({tag: selectedTag, reason: '在配置中未找到', index: tagIndex});
+        console.warn(`[generateTagsEncoding] 🔍 标签 "${selectedTag}" 在配置中未找到，跳过`);
+      }
+    });
+    
+    // 🚨 详细诊断报告
+    console.log(`[generateTagsEncoding] 🎯 匹配统计: 成功=${successMatches}, 失败=${failedMatches.length}`);
+    if (failedMatches.length > 0) {
+      console.error('[generateTagsEncoding] ❌ 失败的标签匹配:', failedMatches);
+      console.log('[generateTagsEncoding] 💡 可用标签列表前10个:', allTagsList.slice(0, 10));
+    }
+    
+    // ⚠️ 零匹配警告
+    if (successMatches === 0 && userSelectedTags.length > 0) {
+      console.error('[generateTagsEncoding] 🚨 严重错误：没有任何用户标签匹配到编码系统！');
+      console.error('[generateTagsEncoding] 🔍 用户选择的标签:', userSelectedTags);
+      console.error('[generateTagsEncoding] 🔍 系统可用标签:', allTagsList.slice(0, 20));
+      console.error('[generateTagsEncoding] 💊 建议：清除本地存储后重新选择标签');
+    }
+    
+    const selectedCount = binaryArray.filter(x => x).length;
+    console.log('[generateTagsEncoding] 60位二进制数组长度:', binaryArray.length);
+    console.log('[generateTagsEncoding] 选中标签数量:', selectedCount);
+    console.log('[generateTagsEncoding] 选中的位置:', 
       binaryArray.map((selected, index) => selected ? index : -1).filter(index => index !== -1)
     );
     
-    // 调用编码函数
+    // 调用编码函数（应该产生10字节编码）
     const encodedTags = encoding.encode(binaryArray);
     console.log('[generateTagsEncoding] 生成编码:', encodedTags);
-    console.log('[generateTagsEncoding] 编码长度:', encodedTags.length);
+    console.log('[generateTagsEncoding] 编码长度:', encodedTags.length, '(预期10字节)');
     
     // 🎯 保存编码到本地存储，供硬件连接时使用
     try {
@@ -1116,8 +1514,108 @@ Page({
     };
   },
 
+  // 生成标签配置哈希值
+  generateTagConfigHash(selectedTags) {
+    // 使用标签的排序数组生成哈希
+    const sortedTags = [...selectedTags].sort();
+    const jsonString = JSON.stringify(sortedTags);
+    
+    // 简单的哈希函数（小程序环境没有crypto模块）
+    let hash = 0;
+    for (let i = 0; i < jsonString.length; i++) {
+      const char = jsonString.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // 转换为32位整数
+    }
+    
+    // 转换为16进制字符串并取前16位
+    return Math.abs(hash).toString(16).substring(0, 16).padStart(16, '0');
+  },
+
+  // 生成新格式编码
+  generateNewFormatEncoding(oldFormatEncoded, threshold, uniqueId) {
+    console.log('[generateNewFormatEncoding] 🚀 开始生成新格式编码');
+    console.log('[generateNewFormatEncoding] 📥 接收到的参数:', {
+      oldFormatEncoded: oldFormatEncoded,
+      oldFormatLength: oldFormatEncoded?.length,
+      threshold: threshold,
+      thresholdType: typeof threshold,
+      uniqueId: uniqueId,
+      uniqueIdType: typeof uniqueId,
+      状态位: '固定为0'
+    });
+    
+    const encoding = Config.advancedTagsConfig.encoding;
+    
+    // 将编码解码为二进制数组
+    const decodedArray = encoding.decode(oldFormatEncoded);
+    console.log('[generateNewFormatEncoding] 🔄 解码的二进制数组长度:', decodedArray.length);
+    console.log('[generateNewFormatEncoding] 🔍 解码结果前10位:', decodedArray.slice(0, 10));
+    
+    // 确保数组长度为60位
+    const paddedArray = [...decodedArray];
+    while (paddedArray.length < 60) {
+      paddedArray.push(false);
+    }
+    // 如果超过60位，截取前60位
+    const finalArray = paddedArray.slice(0, 60);
+    
+    console.log('[generateNewFormatEncoding] 📊 60位数组处理结果:', {
+      原始长度: decodedArray.length,
+      填充后长度: paddedArray.length,
+      最终长度: finalArray.length,
+      选中位数: finalArray.filter(x => x).length,
+      选中位置: finalArray.map((val, idx) => val ? idx : -1).filter(idx => idx !== -1).slice(0, 10)
+    });
+    
+    // 🔍 特别检查threshold的数据来源
+    console.log('[generateNewFormatEncoding] 🔥 阈值数据来源追踪:', {
+      传入阈值: threshold,
+      数据类型: typeof threshold,
+      是否为数字: typeof threshold === 'number',
+      是否有效: !isNaN(threshold) && threshold > 0,
+      字符映射预览: `阈值${threshold}应映射为'${encoding.charMap[threshold] || '无效'}'`
+    });
+    
+    // 使用config.js中的新格式编码函数
+    const newFormatString = encoding.encodeNewFormat(finalArray, threshold, uniqueId);
+    
+    console.log('[generateNewFormatEncoding] 🎯 编码完成:', {
+      输入参数: { threshold, uniqueId },
+      输出结果: newFormatString,
+      结果长度: newFormatString.length,
+      最后4位: newFormatString.slice(-4)
+    });
+    
+    // 🚨 立即进行解码验证
+    try {
+      const decoded = encoding.decodeNewFormat(newFormatString);
+      console.log('[generateNewFormatEncoding] ✅ 解码验证成功:', {
+        解码阈值: decoded.threshold,
+        原始阈值: threshold,
+        阈值匹配: decoded.threshold === threshold,
+        解码ID: decoded.uniqueId,
+        原始ID: uniqueId,
+        ID匹配: decoded.uniqueId === uniqueId
+      });
+      
+      // 🚨 检查关键不匹配
+      if (decoded.threshold !== threshold) {
+        console.error('[generateNewFormatEncoding] ❌ 阈值编码失败！编码前后不一致');
+      }
+      if (decoded.uniqueId !== uniqueId) {
+        console.error('[generateNewFormatEncoding] ❌ 唯一ID编码失败！编码前后不一致');
+      }
+      // 状态位固定为'0'，无需验证
+    } catch (decodeError) {
+      console.error('[generateNewFormatEncoding] ❌ 解码验证失败:', decodeError);
+    }
+    
+    return newFormatString;
+  },
+
   // 提交表单
-  submitForm() {
+  async submitForm() {
     if (!this.validateAdvancedStep()) {
       return;
     }
@@ -1155,6 +1653,38 @@ Page({
     // 生成标签编码
     const tagEncoding = this.generateTagsEncoding();
     
+    // 检查是否启用新格式
+    const enableNewFormat = true; // 默认启用新格式
+    
+    // 🔍 详细检查threshold的获取过程
+    console.log('[submitForm] 🔥 阈值获取分析:', {
+      'advancedTags对象': this.data.advancedTags,
+      '阈值字段存在': 'threshold' in this.data.advancedTags,
+      '阈值原始值': this.data.advancedTags.threshold,
+      '阈值类型': typeof this.data.advancedTags.threshold,
+      '是否为undefined': this.data.advancedTags.threshold === undefined,
+      '是否为null': this.data.advancedTags.threshold === null,
+      '是否为0': this.data.advancedTags.threshold === 0,
+      '配置默认值': Config.advancedTagsConfig.threshold.default
+    });
+    
+    const threshold = this.data.advancedTags.threshold;
+    console.log('[submitForm] 🎯 最终使用的阈值:', threshold, typeof threshold);
+    
+    let newFormatData = null;
+    if (enableNewFormat) {
+      // 生成标签配置哈希
+      const tagConfigHash = this.generateTagConfigHash(tagEncoding.selectedTags);
+      
+      // 为新格式准备数据（将通过分配云函数获取uniqueId）
+      newFormatData = {
+        enabled: true,
+        threshold: threshold,
+        uniqueId: 0, // 临时值，后续通过allocateUniqueId云函数获取
+        tagConfigHash: tagConfigHash
+      };
+    }
+    
     // 准备提交数据 - 确保数据结构完整
     const submitData = {
       openid: this.data.userInfo.openid,
@@ -1166,7 +1696,11 @@ Page({
         interestTags: this.data.advancedTags.interestTags || [],
         personalityTags: this.data.advancedTags.personalityTags || [],
         quirkyTags: this.data.advancedTags.quirkyTags || [],
-        threshold: this.data.advancedTags.threshold || 4,
+        mbtiType: this.data.advancedTags.mbtiType || null, // 添加MBTI类型字段
+        idleLightColor: this.data.advancedTags.mbtiType ? 
+          MBTIColorManager.getMBTIColor(this.extractMBTICode(this.data.advancedTags.mbtiType)) : 
+          MBTIColorManager.getMBTIColor(''), // 使用统一颜色管理器，空值时返回春樱落霞色
+        threshold: threshold,
         displayName: this.data.advancedTags.displayName || this.data.userInfo.nickName || '',
         contactInfo: this.data.advancedTags.contactInfo || '',
         personalTagsText: this.data.advancedTags.personalTagsText || '',
@@ -1178,14 +1712,199 @@ Page({
         binaryArray: tagEncoding.binaryArray,
         allTagsList: tagEncoding.allTagsList,
         selectedTags: tagEncoding.selectedTags
-      }
+      },
+      // 新格式数据
+      newFormat: newFormatData
     };
     
     console.log('[submitForm] 提交数据:', submitData);
     console.log('[submitForm] openid:', submitData.openid);
     console.log('[submitForm] 标签编码:', submitData.advancedTags.encodedTags);
     
-    // 调用云函数提交数据
+    // 🔧 强制使用新格式，确保newFormatData存在
+    if (!newFormatData) {
+      console.warn('[submitForm] ⚠️ newFormatData为空，创建默认新格式数据');
+      // 创建默认新格式数据
+      const tagConfigHash = this.generateTagConfigHash(tagEncoding.selectedTags);
+      newFormatData = {
+        enabled: true,
+        threshold: threshold,
+        uniqueId: 0,
+        tagConfigHash: tagConfigHash
+      };
+    }
+    
+    // 统一使用新格式，尝试分配uniqueId（带降级机制）
+    if (true) { // 🔧 强制进入新格式分支
+      console.log('[submitForm] 启用新格式，尝试分配uniqueId');
+      
+      console.log('[submitForm] 🆔 开始分配唯一ID，调用云函数allocateUniqueId');
+      
+      // 检查登录态
+      if (!submitData.openid || !this.data.userInfo.openid) {
+        console.warn('[submitForm] ⚠️ 用户登录态无效，先尝试重新获取登录信息');
+        
+        // 尝试重新获取用户信息
+        try {
+          await this.getUserInfo();
+          submitData.openid = this.data.userInfo.openid;
+        } catch (loginError) {
+          console.error('[submitForm] ❌ 重新获取用户信息失败:', loginError);
+          this.handleUniqueIdFailure(submitData, tagEncoding, newFormatData);
+          return;
+        }
+      }
+      
+      console.log('[submitForm] 📊 唯一ID分配参数:', {
+        openid: submitData.openid,
+        tagConfigHash: newFormatData.tagConfigHash,
+        encodedTags: tagEncoding.encoded,
+        encodedLength: tagEncoding.encoded.length,
+        selectedTags: tagEncoding.selectedTags,
+        threshold: newFormatData.threshold
+      });
+      
+      wx.cloud.callFunction({
+        name: 'allocateUniqueId',
+        data: {
+          openid: submitData.openid,
+          tagConfigHash: newFormatData.tagConfigHash,
+          selectedTags: tagEncoding.selectedTags,
+          encodedTags: tagEncoding.encoded, // 添加编码用于数据库匹配
+          threshold: newFormatData.threshold, // 传入阈值供云函数参考
+          tagCount: tagEncoding.selectedTags.length // 传入标签数量
+        },
+        success: (allocateRes) => {
+          console.log('[submitForm] 🆔 uniqueId分配云函数响应:', allocateRes);
+          
+          if (allocateRes.result && allocateRes.result.success) {
+            // 更新新格式数据中的uniqueId
+            newFormatData.uniqueId = allocateRes.result.uniqueId;
+            submitData.newFormat = newFormatData;
+            
+            console.log('[submitForm] ✅ 已获取uniqueId:', {
+              分配的ID: newFormatData.uniqueId,
+              ID类型: typeof newFormatData.uniqueId,
+              ID范围检查: newFormatData.uniqueId >= 0 && newFormatData.uniqueId <= 4095,
+              云函数返回: allocateRes.result
+            });
+            
+            // 使用新格式生成最终的编码
+            const finalEncoding = this.generateNewFormatEncoding(
+              tagEncoding.encoded, 
+              newFormatData.threshold,
+              newFormatData.uniqueId
+            );
+            
+            console.log('[submitForm] 🎯 生成最终编码:', finalEncoding);
+            
+            // 更新编码
+            submitData.advancedTags.encodedTags = finalEncoding;
+            
+            // 🔄 尝试同步新的Un字符串到设备页面（finalEncoding已经是16字节的完整Un字符串）
+            try {
+              console.log('[submitForm] 🔄 直接使用已生成的完整Un字符串:', finalEncoding);
+              this.syncUnStringToDevice(finalEncoding);
+            } catch (error) {
+              console.error('[submitForm] ❌ 同步Un字符串失败:', error);
+            }
+            
+            // 继续提交问卷
+            this.doSubmitQuestionnaire(submitData, tagEncoding);
+          } else {
+            console.error('[submitForm] ❌ uniqueId分配失败，使用降级方案:', allocateRes.result);
+            this.handleUniqueIdFailure(submitData, tagEncoding, newFormatData);
+          }
+        },
+        fail: (error) => {
+          console.error('[submitForm] ❌ uniqueId云函数调用失败，使用降级方案:', error);
+          this.handleUniqueIdFailure(submitData, tagEncoding, newFormatData);
+        }
+      });
+    }
+  },
+
+  // 处理uniqueId分配失败的降级方案
+  handleUniqueIdFailure(submitData, tagEncoding, newFormatData) {
+    console.log('[handleUniqueIdFailure] 🔄 使用改进的降级方案生成uniqueId');
+    
+    // 🚀 v5.3.0 改进的降级算法：增加多重随机因子确保唯一性
+    const openid = this.data.userInfo.openid || '';
+    const timestamp = Date.now();
+    const microTimestamp = Date.now() + Math.random() * 1000; // 微秒级时间戳
+    const randomSeed = Math.random().toString(36).substring(2, 15); // 随机字符串
+    const userAgent = wx.getSystemInfoSync().model || 'unknown'; // 设备型号作为指纹
+    const sessionId = wx.getStorageSync('sessionId') || Math.random().toString(36); // 会话ID
+    
+    // 生成设备指纹（基于openid + 设备信息）
+    let deviceFingerprint = 0;
+    const deviceString = openid + userAgent + sessionId;
+    for (let i = 0; i < deviceString.length; i++) {
+      deviceFingerprint = ((deviceFingerprint << 3) - deviceFingerprint) + deviceString.charCodeAt(i);
+      deviceFingerprint = deviceFingerprint & deviceFingerprint;
+    }
+    
+    // 组合所有随机因子
+    const combinedString = openid + microTimestamp + tagEncoding.encoded + randomSeed + deviceFingerprint;
+    
+    // 使用多重hash算法增强随机性
+    let hash1 = 0, hash2 = 0;
+    for (let i = 0; i < combinedString.length; i++) {
+      const char = combinedString.charCodeAt(i);
+      hash1 = ((hash1 << 5) - hash1) + char;
+      hash2 = ((hash2 << 7) + hash2) + char;
+      hash1 = hash1 & hash1;
+      hash2 = hash2 & hash2;
+    }
+    
+    // 组合两个hash值，使用完整的0-4095范围
+    const combinedHash = Math.abs(hash1 ^ hash2);
+    let fallbackUniqueId = combinedHash % 4096; // 使用完整的0-4095范围
+    
+    console.log('[handleUniqueIdFailure] 🆔 改进降级uniqueId生成:', {
+      输入openid: openid,
+      时间戳: timestamp,
+      微秒时间戳: microTimestamp,
+      随机种子: randomSeed,
+      设备型号: userAgent,
+      会话ID: sessionId,
+      设备指纹: deviceFingerprint,
+      组合字符串长度: combinedString.length,
+      hash1: hash1,
+      hash2: hash2,
+      组合hash: combinedHash,
+      最终uniqueId: fallbackUniqueId,
+      ID范围检查: fallbackUniqueId >= 0 && fallbackUniqueId <= 4095
+    });
+    
+    newFormatData.uniqueId = fallbackUniqueId;
+    submitData.newFormat = newFormatData;
+    
+    // 生成新格式编码（使用降级uniqueId）
+    const finalEncoding = this.generateNewFormatEncoding(
+      tagEncoding.encoded, 
+      newFormatData.threshold,
+      newFormatData.uniqueId
+    );
+    
+    console.log('[handleUniqueIdFailure] 🎯 降级方案生成的最终编码:', finalEncoding);
+    
+    // 更新编码
+    submitData.advancedTags.encodedTags = finalEncoding;
+    
+    // 显示降级提示但不阻断流程
+    wx.showToast({
+      title: `使用本地ID ${fallbackUniqueId} 提交`,
+      icon: 'none',
+      duration: 2000
+    });
+    
+    // 继续提交问卷
+    this.doSubmitQuestionnaire(submitData, tagEncoding);
+  },
+
+  // 实际提交问卷数据
+  doSubmitQuestionnaire(submitData, tagEncoding) {
     wx.cloud.callFunction({
       name: 'submitQuestionnaire',
       data: submitData,
@@ -1201,7 +1920,7 @@ Page({
                     `• 前3页标签数: ${tagEncoding.allTagsList.length}\n` +
                     `• 已选标签: ${tagEncoding.selectedTags.length}\n` +
                     `• 编码长度: ${tagEncoding.encoded.length} 字符\n\n` +
-                    `🔐 你的标签编码:\n${tagEncoding.encoded}\n\n` +
+                    `🔐 你的蓝牙名称(完整16字节):\n${submitData.advancedTags.encodedTags}\n\n` +
                     `💡 即将切换到个人名片视图！\n` +
                     `📝 注意：第5页彩蛋标签不参与编码`,
             showCancel: false,
@@ -1555,63 +2274,124 @@ Page({
   // 🔄 新增：问卷完成后自动同步到BLE设备
   async autoSyncToBleDevice() {
     try {
-      console.log('🔄 检查BLE设备连接状态，准备自动同步...');
+      console.log('🔄 [自动同步] 检查BLE设备连接状态，准备自动同步...');
       
       // 检查设备页面是否存在且已连接
       const pages = getCurrentPages();
       let devicePage = null;
       
+      console.log('🔍 [自动同步] 当前页面栈:', pages.map(p => p.route));
+      
       // 查找设备页面实例
       for (let page of pages) {
         if (page.route === 'pages/device/device') {
           devicePage = page;
+          console.log('✅ [自动同步] 找到设备页面实例');
           break;
         }
       }
       
       if (!devicePage) {
-        console.log('ℹ️ 设备页面未打开，跳过自动同步');
+        console.log('ℹ️ [自动同步] 设备页面未打开，跳过自动同步');
         return;
       }
       
       if (!devicePage.data.connected) {
-        console.log('ℹ️ 设备未连接，跳过自动同步');
+        console.log('ℹ️ [自动同步] 设备未连接，跳过自动同步。连接状态:', devicePage.data.connected);
         return;
       }
       
-      console.log('✅ 设备页面已打开且已连接，开始自动同步...');
+      console.log('✅ [自动同步] 设备页面已打开且已连接，开始自动同步...');
       
-      // 调用设备页面的Un字符串同步函数
+      let successCount = 0;
+      let totalItems = 1; // 蓝牙名称同步
+      
+      // 1. 同步Un字符串（蓝牙名称）
       const syncResult = await devicePage.syncUnStringToBle();
-      
       if (syncResult) {
-        console.log('✅ 问卷更新后自动同步成功');
+        successCount++;
+        console.log('✅ 蓝牙名称同步成功');
+      } else {
+        console.log('⚠️ 蓝牙名称同步失败');
+      }
+      
+      // 2. 🎨 新增：同步MBTI颜色设置（如果存在）
+      if (this.data.advancedTags.mbtiType) {
+        totalItems++;
+        try {
+          console.log('🎨 [自动同步] 检测到MBTI类型，开始同步颜色设置:', this.data.advancedTags.mbtiType);
+          
+          // 使用统一的MBTI颜色管理器同步颜色
+          const colorResult = await MBTIColorManager.saveMBTIColor({
+            mbtiType: this.data.advancedTags.mbtiType,
+            source: 'questionnaire_submit',
+            syncToCloud: false, // 云端已经在submitForm时保存了
+            sendToDevice: true, // 发送到设备
+            showFeedback: false // 不显示单独的反馈，统一在最后显示
+          });
+          
+          if (colorResult.deviceSent) {
+            successCount++;
+            console.log('✅ MBTI颜色同步成功');
+            
+            if (devicePage.addNotification) {
+              devicePage.addNotification(`🎨 MBTI颜色已同步: ${this.data.advancedTags.mbtiType}`);
+            }
+          } else {
+            console.log('⚠️ MBTI颜色同步失败:', colorResult);
+            
+            if (devicePage.addNotification) {
+              devicePage.addNotification(`⚠️ MBTI颜色同步失败，将在下次连接时重试`);
+            }
+          }
+          
+        } catch (colorError) {
+          console.error('❌ MBTI颜色同步异常:', colorError);
+          
+          if (devicePage.addNotification) {
+            devicePage.addNotification(`❌ MBTI颜色同步异常: ${colorError.message}`);
+          }
+        }
+      }
+      
+      // 3. 显示综合结果
+      if (successCount === totalItems) {
+        console.log(`✅ 问卷更新后自动同步成功 (${successCount}/${totalItems})`);
         
-        // 显示成功提示
         wx.showToast({
-          title: '已同步到设备',
+          title: '已全部同步到设备',
           icon: 'success',
           duration: 2000
         });
         
-        // 在设备页面添加成功记录
         if (devicePage.addNotification) {
-          devicePage.addNotification('✅ 问卷更新，蓝牙名称已自动同步');
+          devicePage.addNotification(`✅ 问卷更新，所有设置已自动同步 (${successCount}/${totalItems})`);
+        }
+        
+      } else if (successCount > 0) {
+        console.log(`⚠️ 问卷更新后部分同步成功 (${successCount}/${totalItems})`);
+        
+        wx.showToast({
+          title: `部分同步成功 (${successCount}/${totalItems})`,
+          icon: 'none',
+          duration: 3000
+        });
+        
+        if (devicePage.addNotification) {
+          devicePage.addNotification(`⚠️ 问卷更新，部分设置同步成功 (${successCount}/${totalItems})`);
         }
         
       } else {
-        console.log('⚠️ 问卷更新后自动同步失败');
+        console.log('⚠️ 问卷更新后自动同步全部失败');
         
-        // 显示失败提示
         wx.showToast({
           title: '设备同步失败',
           icon: 'none',
           duration: 2000
         });
         
-        // 在设备页面添加失败记录
         if (devicePage.addNotification) {
-          devicePage.addNotification('⚠️ 问卷更新，但蓝牙同步失败，请手动刷新');
+          devicePage.addNotification('⚠️ 问卷更新，但设备同步失败，请手动刷新');
         }
       }
       
@@ -1640,11 +2420,11 @@ Page({
       // 如果在第4步且已有足够标签，保持在第4步
       console.log('[switchToQuestionnaireView] 保持在第4步进行信息编辑');
     } else if (this.data.totalSelectedTags < 4) {
-      // 如果标签不足，回到第一步
+      // 如果标签不足，回到第一步（现在是第0步MBTI）
       this.setData({
-        currentStep: 1
+        currentStep: 0
       });
-      console.log('[switchToQuestionnaireView] 标签不足，回到第1步');
+      console.log('[switchToQuestionnaireView] 标签不足，回到第0步');
     }
     
     this.setData({
@@ -1766,7 +2546,15 @@ Page({
           interestTags: [],
           personalityTags: [],
           quirkyTags: [],
-          threshold: 4,
+          threshold: (() => {
+            try {
+              const sharedConfig = require('../../utils/shared-config-loader.js');
+              return sharedConfig.getDefaultTagThreshold();
+            } catch (error) {
+              console.warn('[Index] 无法加载配置，使用降级值2:', error.message);
+              return 2;
+            }
+          })(),
           displayName: '',
           contactInfo: '',
           personalTagsText: '',
@@ -1810,5 +2598,295 @@ Page({
     console.log('[predictLedEffect] LED效果预测:', effect);
     
     return effect;
+  },
+
+  /**
+   * 同步Un字符串到设备页面
+   * 当问卷提交成功生成新的Un格式后，尝试同步到已打开的设备页面
+   */
+  syncUnStringToDevice(newUnString) {
+    console.log('[syncUnStringToDevice] 调用更新设备蓝牙名称服务');
+    console.log('[syncUnStringToDevice] 处理更新蓝牙名称:', newUnString);
+    
+    try {
+      // 获取当前页面栈
+      const pages = getCurrentPages();
+      console.log('[syncUnStringToDevice] 当前页面栈长度:', pages.length);
+      
+      // 查找设备页面
+      let devicePage = null;
+      for (let i = pages.length - 1; i >= 0; i--) {
+        const page = pages[i];
+        if (page.route === 'pages/device/device') {
+          devicePage = page;
+          console.log('[syncUnStringToDevice] 找到设备页面，位置:', i);
+          break;
+        }
+      }
+      
+      if (devicePage && typeof devicePage.updateDeviceBluetoothName === 'function') {
+        console.log('[syncUnStringToDevice] ✅ 找到设备页面更新函数，开始同步');
+        
+        const result = devicePage.updateDeviceBluetoothName(newUnString);
+        
+        console.log('[syncUnStringToDevice] 🔄 设备同步结果:', result);
+        
+        if (result.success) {
+          console.log('[syncUnStringToDevice] ✅ 设备名称同步成功');
+        } else {
+          console.warn('[syncUnStringToDevice] ⚠️ 设备名称同步失败:', result.message);
+        }
+        
+        return result;
+      } else {
+        const message = devicePage ? '设备页面未提供更新函数' : '找不到设备页面';
+        console.warn('[syncUnStringToDevice] ⚠️', message + '，同步失败');
+        
+        return {
+          success: false,
+          message: message,
+          fallback: '用户需要手动在设备页面更新'
+        };
+      }
+      
+    } catch (error) {
+      console.error('[syncUnStringToDevice] ❌ 同步过程出错:', error);
+      
+      return {
+        success: false,
+        message: '同步过程出错: ' + error.message,
+        error: error
+      };
+    }
+  },
+  
+  // ===================== MBTI 选择器相关 =====================
+  
+  /**
+   * 初始化MBTI选项
+   */
+  initMBTIOptions() {
+    console.log('[initMBTIOptions] 初始化MBTI选项');
+    
+    try {
+      const mbtiConfig = tagThemes.idleLightConfig;
+      if (mbtiConfig && mbtiConfig.options) {
+        this.setData({
+          mbtiOptions: mbtiConfig.options,
+          mbtiSelectedColor: this.data.advancedTags.mbtiType ? 
+            MBTIColorManager.getMBTIColor(this.extractMBTICode(this.data.advancedTags.mbtiType)) : 
+            MBTIColorManager.getMBTIColor('') // 使用统一颜色管理器，空值时返回春樱落霞色
+        });
+        console.log('[initMBTIOptions] ✅ MBTI选项初始化成功，共', mbtiConfig.options.length, '个选项');
+      } else {
+        console.error('[initMBTIOptions] ❌ 无法获取MBTI配置');
+      }
+    } catch (error) {
+      console.error('[initMBTIOptions] ❌ 初始化MBTI选项失败:', error);
+    }
+  },
+  
+  /**
+   * 显示MBTI选择器
+   * 只允许在问卷编辑的第0步中调用
+   */
+  showMBTISelector() {
+    // 🔒 权限检查：只允许在问卷编辑的第0步中修改常亮灯颜色
+    if (this.data.currentStep !== 0) {
+      console.log('[showMBTISelector] ❌ 权限受限：常亮灯颜色只能在问卷编辑过程中修改');
+      wx.showToast({
+        title: '请在编辑模式下修改',
+        icon: 'none',
+        duration: 2000
+      });
+      return;
+    }
+    
+    console.log('[showMBTISelector] ✅ 显示MBTI选择器 - 编辑模式');
+    this.setData({
+      showMBTISelectorModal: true
+    });
+  },
+  
+  /**
+   * 关闭MBTI选择器
+   */
+  closeMBTISelector() {
+    console.log('[closeMBTISelector] 关闭MBTI选择器');
+    this.setData({
+      showMBTISelectorModal: false
+    });
+  },
+  
+  /**
+   * 选择MBTI类型
+   */
+  selectMBTI(e) {
+    const { mbti, color } = e.currentTarget.dataset;
+    console.log('[selectMBTI] 选择MBTI类型:', mbti, '颜色:', color);
+    
+    this.setData({
+      'advancedTags.mbtiType': mbti,
+      mbtiSelectedColor: color
+    });
+  },
+  
+  /**
+   * 提取MBTI纯英文代码（去掉中文描述）
+   * @param {string} mbtiFullName - 完整的MBTI名称，如"INTJ战略家"
+   * @returns {string} - 纯英文MBTI代码，如"INTJ"
+   */
+  extractMBTICode(mbtiFullName) {
+    if (!mbtiFullName || typeof mbtiFullName !== 'string') {
+      return '';
+    }
+    
+    // 使用正则表达式提取前4位英文字母
+    const match = mbtiFullName.match(/^([A-Z]{4})/);
+    return match ? match[1] : '';
+  },
+  
+  /**
+   * 确认MBTI选择
+   */
+  async confirmMBTISelection() {
+    console.log('[confirmMBTISelection] 确认MBTI选择:', this.data.advancedTags.mbtiType);
+    
+    if (this.data.advancedTags.mbtiType) {
+      // 🔧 转换MBTI格式：从"INTJ战略家"提取为"INTJ"
+      const mbtiCode = this.extractMBTICode(this.data.advancedTags.mbtiType);
+      console.log('[confirmMBTISelection] MBTI格式转换:', this.data.advancedTags.mbtiType, '->', mbtiCode);
+      
+      // 🚀 使用统一的MBTI颜色管理器保存
+      try {
+        const result = await MBTIColorManager.saveMBTIColor({
+          mbtiType: mbtiCode,
+          source: 'mbti_selection',
+          syncToCloud: true,  // 保存到云数据库
+          sendToDevice: true, // 立即发送到设备
+          showFeedback: true  // 显示用户反馈
+        });
+        
+        console.log('[confirmMBTISelection] MBTI颜色保存结果:', result);
+        
+        // 如果保存成功，更新本地显示的颜色
+        if (result.success && result.color) {
+          this.setData({
+            mbtiSelectedColor: result.color
+          });
+        }
+        
+      } catch (error) {
+        console.error('[confirmMBTISelection] MBTI颜色保存失败:', error);
+        // 降级到原有的发送逻辑
+        console.log('[confirmMBTISelection] 降级到原有发送逻辑');
+        this.sendIdleLightColor(mbtiCode);
+      }
+    }
+    
+    this.closeMBTISelector();
+  },
+  
+  /**
+   * 获取MBTI类型对应的颜色
+   * @deprecated 已废弃！请使用 MBTIColorManager.getMBTIColor() 替代
+   * 此方法使用tagThemes.js颜色系统，与硬件传输的颜色不一致
+   */
+  getMBTIColor(mbtiType) {
+    console.warn('[getMBTIColor] ⚠️ 此方法已废弃！请使用 MBTIColorManager.getMBTIColor() 替代');
+    console.warn('[getMBTIColor] ⚠️ 当前方法使用tagThemes.js颜色，与硬件颜色不一致');
+    
+    try {
+      const mbtiConfig = tagThemes.idleLightConfig;
+      if (mbtiConfig && mbtiConfig.options) {
+        const option = mbtiConfig.options.find(opt => opt.name === mbtiType);
+        return option ? option.color : '#66ccff';
+      }
+    } catch (error) {
+      console.error('[getMBTIColor] 获取MBTI颜色失败:', error);
+    }
+    return '#66ccff'; // 修复返回值bug
+  },
+  
+  /**
+   * 发送常亮灯颜色设置命令到硬件
+   */
+  async sendIdleLightColor(mbtiType) {
+    console.log('[sendIdleLightColor] 🎨 发送常亮灯颜色设置:', mbtiType);
+    
+    try {
+      // 🎯 彻底解决：统一使用MBTI颜色管理器，无降级逻辑
+      const mbtiCode = this.extractMBTICode(mbtiType);
+      const color = MBTIColorManager.getMBTIColor(mbtiCode);
+      
+      console.log('[sendIdleLightColor] 🎯 统一颜色系统 - MBTI格式转换和颜色获取:', {
+        原始类型: mbtiType,
+        提取代码: mbtiCode,
+        最终颜色: color
+      });
+      
+      // 解析十六进制颜色为RGB值（color现在永远不会为null）
+      const hex = color.replace('#', '');
+      const r = parseInt(hex.substr(0, 2), 16);
+      const g = parseInt(hex.substr(2, 2), 16);
+      const b = parseInt(hex.substr(4, 2), 16);
+      
+      // 构建颜色设置命令（使用正确的命令格式）
+      const command = {
+        type: 'set_idle_light_color',
+        color: { r, g, b },
+        brightness: 100,
+        mbtiType: mbtiType,
+        timestamp: Date.now()
+      };
+      
+      const commandStr = JSON.stringify(command);
+      console.log('[sendIdleLightColor] 🎨 发送的颜色命令:', commandStr);
+      
+      // 记录消息到列表
+      const timestamp = new Date().toLocaleString();
+      const sendMessage = `🎨 设置常亮灯颜色: ${mbtiType} (${color}) [${timestamp}]`;
+      
+      // 🔧 修复跨页面通信：总是保存到本地存储，让device页面在合适时机发送
+      console.log('[sendIdleLightColor] 💾 保存颜色设置到本地存储，设备连接时自动发送');
+      
+      // 保存到本地存储（使用与device.js兼容的格式）
+      wx.setStorageSync('pendingIdleLightColor', {
+        color: command.color,  // RGB对象格式 {r, g, b}
+        mbtiType: mbtiType,
+        timestamp: Date.now()
+      });
+      
+      // 🚀 尝试立即发送（如果设备页面可用且已连接）
+      try {
+        const pages = getCurrentPages();
+        const devicePage = pages.find(page => page.route === 'pages/device/device');
+        
+        if (devicePage && devicePage.checkAndSendPendingIdleLightColor && devicePage.data.connected) {
+          console.log('[sendIdleLightColor] 🔄 设备已连接，立即尝试发送颜色设置');
+          await devicePage.checkAndSendPendingIdleLightColor();
+        } else {
+          console.log('[sendIdleLightColor] ⏳ 设备未连接，将在连接时自动发送');
+        }
+      } catch (deviceError) {
+        console.warn('[sendIdleLightColor] ⚠️ 立即发送失败，将在设备连接时重试:', deviceError.message);
+      }
+      
+      // 显示成功提示
+      wx.showToast({
+        title: `已设置为${mbtiType}常亮灯`,
+        icon: 'success',
+        duration: 2000
+      });
+      
+    } catch (error) {
+      console.error('[sendIdleLightColor] ❌ 发送常亮灯颜色失败:', error);
+      
+      wx.showToast({
+        title: '颜色设置失败',
+        icon: 'error',
+        duration: 2000
+      });
+    }
   }
 });
