@@ -53,7 +53,7 @@ UnionMiniApp_YY-main/
     interestTags: ["标签3", "标签4"],
     personalityTags: ["标签5"],
     quirkyTags: ["标签6"],
-    threshold: 4,  // 匹配阈值
+    threshold: 2,  // 🔧 匹配阈值（与硬件 DEFAULT_TAG_THRESHOLD 同步）
     updateTime: Date
   },
   encodedTags: "Un**************",  // 14字符编码的蓝牙名称
