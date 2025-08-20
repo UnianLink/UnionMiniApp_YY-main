@@ -689,6 +689,11 @@ const Config = {
       // 配置源选择器：'embedded'使用内置配置 | 'external'使用tagThemes.js
       configSource: 'external', // 默认使用tagThemes.js
       
+      // 缓存机制
+      _tagsListCache: null, // 缓存标签列表
+      _cacheTimestamp: 0,   // 缓存时间戳
+      _cacheExpiry: 60000,  // 缓存过期时间（60秒）
+      
       // 字符映射表：6-bit (0-63) -> 字符
       charMap: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-',
       
@@ -761,6 +766,15 @@ const Config = {
       
       // 获取所有标签的扁平化列表（用于编码映射）
       getAllTagsList: function(stepsConfig) {
+        // 🚀 缓存检查
+        const now = Date.now();
+        if (this._tagsListCache && 
+            this._cacheTimestamp && 
+            (now - this._cacheTimestamp) < this._cacheExpiry) {
+          console.log(`[getAllTagsList] ⚡ 使用缓存结果 (${this._tagsListCache.length}个标签)`);
+          return this._tagsListCache;
+        }
+        
         // 🎯 智能配置源选择
         console.log(`[getAllTagsList] 🔍 配置源选择: ${this.configSource}`);
         
@@ -793,13 +807,19 @@ const Config = {
             console.log('[getAllTagsList] 🏷️ 外部标签前5个:', externalTags.slice(0, 5));
             
             // 确保不超过60个标签
+            let finalTags = externalTags;
             if (externalTags.length > 60) {
               console.warn(`[getAllTagsList] ⚠️ 外部标签数量${externalTags.length}超过60个限制，已截取前60个`);
-              return externalTags.slice(0, 60);
+              finalTags = externalTags.slice(0, 60);
             }
             
-            console.log(`[getAllTagsList] 🎉 外部配置使用成功，返回${externalTags.length}个标签`);
-            return externalTags;
+            // 🚀 更新缓存
+            this._tagsListCache = finalTags;
+            this._cacheTimestamp = Date.now();
+            console.log(`[getAllTagsList] 💾 已缓存标签列表 (${finalTags.length}个标签)`);
+            
+            console.log(`[getAllTagsList] 🎉 外部配置使用成功，返回${finalTags.length}个标签`);
+            return finalTags;
             
           } catch (error) {
             console.error('[getAllTagsList] ❌ 外部配置加载失败，启用降级机制:', error);
@@ -839,14 +859,20 @@ const Config = {
         console.log('[getAllTagsList] 🏷️ 内置标签前5个:', allTags.slice(0, 5));
         
         // 🚨 验证内置配置标签数量
+        let finalTags = allTags;
         if (allTags.length > 60) {
           console.error(`[getAllTagsList] ❌ 内置配置标签数量${allTags.length}超过60限制！这是系统配置错误！`);
           console.error('[getAllTagsList] 🛑 将截取前60个标签以避免编码错误');
-          return allTags.slice(0, 60);
+          finalTags = allTags.slice(0, 60);
         }
         
-        console.log(`[getAllTagsList] 🎉 内置配置使用成功，返回${allTags.length}个标签`);
-        return allTags;
+        // 🚀 更新缓存
+        this._tagsListCache = finalTags;
+        this._cacheTimestamp = Date.now();
+        console.log(`[getAllTagsList] 💾 已缓存标签列表 (${finalTags.length}个标签)`);
+        
+        console.log(`[getAllTagsList] 🎉 内置配置使用成功，返回${finalTags.length}个标签`);
+        return finalTags;
       },
       
       // 计算编码后的字符串长度（只计算前3页）

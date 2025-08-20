@@ -6,6 +6,12 @@ const tagThemes = require('../../config/tagThemes.js');
 const MBTIColorManager = require('../../utils/mbti-color-manager.js');
 
 Page({
+  // 去抖定时器（在页面实例级别，不放在data中）
+  _refreshTimers: {
+    refreshAllTags: null,
+    updateTotalTags: null
+  },
+  
   data: {
     // 基础状态
     hasUserInfo: false,
@@ -721,9 +727,8 @@ Page({
       'tagOptions.interest': updatedInterest,
       'tagOptions.personality': updatedPersonality,
       'tagOptions.quirky': updatedQuirky
-    }, () => {
-      this.updateTotalSelectedTags();
     });
+    // 🚀 移除嵌套调用，由去抖机制统一处理
   },
 
   // 更新总选择标签数量（基于实际用户选择，支持动态配置）
@@ -732,34 +737,37 @@ Page({
     const total = (professionalTags?.length || 0) + (interestTags?.length || 0) + 
                   (personalityTags?.length || 0) + (quirkyTags?.length || 0);
     
-    // 🔍 调试信息：验证标签统计的准确性
-    console.log('[updateTotalSelectedTags] 📊 标签统计详情:', {
-      professional: professionalTags?.length || 0,
-      interest: interestTags?.length || 0,
-      personality: personalityTags?.length || 0,
-      quirky: quirkyTags?.length || 0,
-      total: total
+    // 🔍 调试信息：验证标签统计的准确性（精简版）
+    console.log('[updateTotalSelectedTags] 📊 标签统计:', {
+      total: total,
+      breakdown: `专业${professionalTags?.length || 0} + 兴趣${interestTags?.length || 0} + 性格${personalityTags?.length || 0} + 彩蛋${quirkyTags?.length || 0}`
     });
     
-    // 获取实际可用的标签总数（用于验证）
-    try {
-      const encoding = Config.advancedTagsConfig.encoding;
-      const allTagsList = encoding.getAllTagsList();
-      const maxAvailableTags = Math.min(allTagsList.length, 60);
-      
-      console.log('[updateTotalSelectedTags] 🏷️ 配置验证:', {
-        availableTags: allTagsList.length,
-        maxSupported: 60,
-        actualLimit: maxAvailableTags,
-        userSelected: total,
-        withinLimit: total <= maxAvailableTags
-      });
-      
-      if (total > maxAvailableTags) {
-        console.warn(`[updateTotalSelectedTags] ⚠️ 用户选择标签数${total}超过可用标签数${maxAvailableTags}`);
+    // 🚀 优化：只在必要时进行配置验证（总数变化或超出预期范围）
+    const shouldValidate = !this.data.totalSelectedTags || 
+                          Math.abs(total - this.data.totalSelectedTags) > 0 ||
+                          total > 50; // 只在接近限制时验证
+    
+    if (shouldValidate) {
+      try {
+        const encoding = Config.advancedTagsConfig.encoding;
+        const allTagsList = encoding.getAllTagsList();
+        const maxAvailableTags = Math.min(allTagsList.length, 60);
+        
+        console.log('[updateTotalSelectedTags] 🏷️ 配置验证 (按需):', {
+          userSelected: total,
+          maxAvailable: maxAvailableTags,
+          withinLimit: total <= maxAvailableTags
+        });
+        
+        if (total > maxAvailableTags) {
+          console.warn(`[updateTotalSelectedTags] ⚠️ 用户选择标签数${total}超过可用标签数${maxAvailableTags}`);
+        }
+      } catch (error) {
+        console.warn('[updateTotalSelectedTags] 配置验证失败:', error);
       }
-    } catch (error) {
-      console.warn('[updateTotalSelectedTags] 配置验证失败:', error);
+    } else {
+      console.log('[updateTotalSelectedTags] ⚡ 跳过配置验证（无需重复检查）');
     }
     
     this.setData({
@@ -931,6 +939,26 @@ Page({
     });
   },
 
+  // 去抖辅助函数
+  _debouncedRefresh() {
+    // 清除之前的定时器
+    if (this._refreshTimers.refreshAllTags) {
+      clearTimeout(this._refreshTimers.refreshAllTags);
+    }
+    if (this._refreshTimers.updateTotalTags) {
+      clearTimeout(this._refreshTimers.updateTotalTags);
+    }
+    
+    // 设置新的去抖定时器
+    this._refreshTimers.refreshAllTags = setTimeout(() => {
+      this.refreshAllTagsActive();
+    }, 50); // 50ms去抖延迟
+    
+    this._refreshTimers.updateTotalTags = setTimeout(() => {
+      this.updateTotalSelectedTags();
+    }, 50);
+  },
+
   // 专业领域标签切换
   onProfessionalTagToggle(e) {
     const value = e.currentTarget.dataset.value;
@@ -952,7 +980,8 @@ Page({
     this.setData({
       'advancedTags.professionalTags': tags
     }, () => {
-      this.refreshAllTagsActive();
+      // 🚀 使用去抖刷新替代直接调用
+      this._debouncedRefresh();
       this.saveAdvancedTags();
     });
   },
@@ -965,14 +994,15 @@ Page({
     
     if (index > -1) {
       tags.splice(index, 1);
-                  } else {
+    } else {
       tags.push(value);
-                  }
+    }
     
-                  this.setData({
+    this.setData({
       'advancedTags.interestTags': tags
     }, () => {
-      this.refreshAllTagsActive();
+      // 🚀 使用去抖刷新替代直接调用
+      this._debouncedRefresh();
       this.saveAdvancedTags();
     });
   },
@@ -993,7 +1023,8 @@ Page({
     this.setData({
       'advancedTags.personalityTags': tags
     }, () => {
-      this.refreshAllTagsActive();
+      // 🚀 使用去抖刷新替代直接调用
+      this._debouncedRefresh();
       this.saveAdvancedTags();
     });
   },
@@ -1006,14 +1037,15 @@ Page({
     
     if (index > -1) {
       tags.splice(index, 1);
-              } else {
+    } else {
       tags.push(value);
-                }
+    }
     
-                this.setData({
+    this.setData({
       'advancedTags.quirkyTags': tags
     }, () => {
-      this.refreshAllTagsActive();
+      // 🚀 使用去抖刷新替代直接调用
+      this._debouncedRefresh();
       this.saveAdvancedTags();
     });
   },
@@ -1782,12 +1814,50 @@ Page({
             newFormatData.uniqueId = allocateRes.result.uniqueId;
             submitData.newFormat = newFormatData;
             
+            // 详细的ID分配结果解析
             console.log('[submitForm] ✅ 已获取uniqueId:', {
               分配的ID: newFormatData.uniqueId,
               ID类型: typeof newFormatData.uniqueId,
               ID范围检查: newFormatData.uniqueId >= 0 && newFormatData.uniqueId <= 4095,
               云函数返回: allocateRes.result
             });
+            
+            // 显示数据库分配的详细过程
+            if (allocateRes.result.debugInfo) {
+              console.log('[submitForm] 🔍 ID分配过程详情:', {
+                标签配置哈希: allocateRes.result.debugInfo.tagConfigHash,
+                分配前已用ID: allocateRes.result.debugInfo.beforeAllocation,
+                分配后所有ID: allocateRes.result.debugInfo.afterAllocation,
+                相同配置用户数: allocateRes.result.totalUsersWithSameConfig,
+                是否新分配: allocateRes.result.isNewAssignment
+              });
+            }
+            
+            // 显示编码映射
+            if (allocateRes.result.encoded) {
+              console.log('[submitForm] 🎯 ID编码映射:', {
+                数字ID: newFormatData.uniqueId,
+                编码结果: allocateRes.result.encoded,
+                完整说明: `ID ${newFormatData.uniqueId} → "${allocateRes.result.encoded}"`
+              });
+            }
+            
+            // 显示ID使用统计信息
+            if (allocateRes.result.usedIdsList !== undefined || allocateRes.result.debugInfo) {
+              // 计算当前ID使用情况
+              const usedIds = allocateRes.result.usedIdsList || [];
+              const totalCapacity = 4096;
+              const usageRate = (allocateRes.result.totalUsersWithSameConfig / totalCapacity * 100).toFixed(2);
+              
+              console.log('[submitForm] 📊 当前ID使用情况:', {
+                已使用ID列表: usedIds,
+                总用户数: allocateRes.result.totalUsersWithSameConfig,
+                ID池容量: totalCapacity,
+                利用率: `${allocateRes.result.totalUsersWithSameConfig}/${totalCapacity} (${usageRate}%)`,
+                是否新分配: allocateRes.result.isNewAssignment,
+                当前分配ID: newFormatData.uniqueId
+              });
+            }
             
             // 使用新格式生成最终的编码
             const finalEncoding = this.generateNewFormatEncoding(
@@ -1910,6 +1980,20 @@ Page({
       data: submitData,
       success: (res) => {
         console.log('[Index] 高级标签提交成功', res);
+        
+        // 🔐 数据库最终写入确认（来自submitQuestionnaire云函数）
+        console.log('[Index] 🔐 最终数据库写入确认:', {
+          操作成功: res.result && res.result.success,
+          云函数响应: res.result,
+          提交的数据: {
+            用户openid: submitData.openid ? submitData.openid.substring(0, 8) + '...' : '未提供',
+            蓝牙名称: submitData.advancedTags.encodedTags,
+            uniqueId: submitData.newFormat ? submitData.newFormat.uniqueId : null,
+            阈值: submitData.newFormat ? submitData.newFormat.threshold : null,
+            编码长度: submitData.advancedTags.encodedTags ? submitData.advancedTags.encodedTags.length : 0
+          }
+        });
+        
         this.setData({ isSubmitting: false });
         
         if (res.result && res.result.success) {

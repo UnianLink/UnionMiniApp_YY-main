@@ -2,7 +2,11 @@
  * BLE握手通信协议客户端实现 - 完整版
  * 负责完整的BLE连接流程：连接→服务发现→特征配置→通知订阅→业务就绪
  * 支持3次重连、自适应超时、指数退避重试
+ * v6.0.3: 集成BLE消息预处理器，提升JSON解析稳定性
  */
+
+// 导入BLE消息预处理器
+const BleMessagePreprocessor = require('./ble-message-preprocessor.js');
 
 // 导入协议配置常量 - 增强极端环境适应性
 const BLE_CONFIG = {
@@ -348,9 +352,9 @@ class BleHandshakeClient {
       // 添加序列号到消息
       let messageObj;
       if (typeof message === 'string') {
-        try {
-          messageObj = JSON.parse(message);
-        } catch (e) {
+        // 使用预处理器进行安全解析
+        messageObj = BleMessagePreprocessor.safeParseJSON(message);
+        if (!messageObj) {
           reject(new Error('消息格式错误'));
           return;
         }
@@ -399,7 +403,12 @@ class BleHandshakeClient {
    */
   handleReceivedMessage(message) {
     try {
-      const messageObj = JSON.parse(message);
+      // 使用预处理器进行安全解析
+      const messageObj = BleMessagePreprocessor.safeParseJSON(message);
+      if (!messageObj) {
+        console.error('❌ 消息解析失败，无法处理');
+        return;
+      }
       
       // 检查是否有序列号
       if (messageObj.seq_id) {
@@ -680,14 +689,14 @@ class BleHandshakeClient {
       if (this.isCompleteJSONMessage(this.receiveBuffer)) {
         console.log('✅ 收到完整JSON消息:', this.receiveBuffer);
         
-        try {
-          const message = JSON.parse(this.receiveBuffer);
-          this.handleReceivedMessage(JSON.stringify(message));
-          
+        // 使用预处理器进行安全解析
+        const messageObj = BleMessagePreprocessor.safeParseJSON(this.receiveBuffer);
+        if (messageObj) {
+          this.handleReceivedMessage(JSON.stringify(messageObj));
           // 清空缓冲区
           this.receiveBuffer = '';
-        } catch (parseError) {
-          console.error('❌ JSON解析失败:', parseError);
+        } else {
+          console.error('❌ BLE消息解析失败，清空缓冲区');
           this.receiveBuffer = ''; // 清空无效数据
         }
       } else {

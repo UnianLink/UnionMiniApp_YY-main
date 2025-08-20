@@ -449,41 +449,19 @@
           </view>
 
           <!-- 第5步：性格关键词 / 星座 / 彩蛋标签 -->
-          <view wx:if="{{currentStep === 5 && currentStepConfig}}" class="step-content">
+          <view wx:if="{{currentStep === 5}}" class="step-content">
             <view class="step-header">
-              <view class="step-title">{{currentStepConfig.title}}</view>
-              <view class="step-subtitle">{{currentStepConfig.subtitle}}</view>
-              <view class="step-description">{{currentStepConfig.description}}</view>
+              <view class="step-title">个性彩蛋 & 深入了解</view>
+              <view class="step-subtitle">让朋友更好地认识你</view>
+              <view class="step-description">选择有趣的个人特质和习惯，同时完善更多信息</view>
             </view>
             
-            <!-- 分类选择区域 -->
-            <view class="category-selector">
-              <view class="category-tabs">
-                <view wx:for="{{currentStepConfig.categories}}" 
-                      wx:key="name" 
-                      wx:for-item="category"
-                      class="category-tab {{currentCategory[5] === category.name ? 'active' : ''}}"
-                      data-category="{{category.name}}"
-                      bindtap="onCategorySelect">
-                  {{category.name}}
-                </view>
-              </view>
-            </view>
-            
-            <!-- 当前分类下的标签 -->
+            <!-- 简化的标签区域 - 直接显示所有quirky标签 -->
             <view class="current-category-tags">
-              <view class="category-title">{{currentCategory[5]}}</view>
-              <view wx:for="{{currentStepConfig.categories}}" 
-                    wx:key="name" 
-                    wx:for-item="category"
-                    wx:if="{{category.name === currentCategory[5] && category.note}}"
-                    class="category-note">
-                {{category.note}}
-              </view>
+              <view class="category-title">个性彩蛋</view>
               <view class="tags-grid">
                 <block wx:for="{{tagOptions.quirky}}" wx:key="name" wx:for-item="tagOption">
-                  <view wx:if="{{tagOption.category === currentCategory[5]}}" 
-                        class="tag-btn quirky-tag {{tagOption.active ? 'active' : ''}}" 
+                  <view class="tag-btn quirky-tag {{tagOption.active ? 'active' : ''}}" 
                         data-value="{{tagOption.name}}" 
                         bindtap="onQuirkyTagToggle">
                     {{tagOption.name}}

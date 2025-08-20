@@ -15,7 +15,7 @@ const BleHardwareConfig = {
    * - 设置过长(如15000ms)：降低响应性，影响实时性
    * - 推荐值：6000ms，平衡功耗和响应速度
    */
-  HEARTBEAT_INTERVAL_MS: 6000,
+  HEARTBEAT_INTERVAL_MS: 20000,
 
   /**
    * 连接超时时间（毫秒）
@@ -33,19 +33,15 @@ const BleHardwareConfig = {
   
   /**
    * TAG匹配阈值
-   * 需要多少个相同TAG才能触发灯光显示
-   * 调试建议：
-   * - 设置过低(如1-2)：容易误匹配，LED频繁亮起
-   * - 设置过高(如8-10)：匹配条件严格，很难触发
-   * - 推荐值：4，适合大部分用户的兴趣匹配
+   * 默认需要多少个相同TAG才能触发灯光显示
    */
-  TAG_MATCH_THRESHOLD: 4,
+  TAG_MATCH_THRESHOLD: 2,
 
   /**
    * TAG匹配最大距离（米）
    * 超过此距离的设备不参与TAG匹配
    */
-  TAG_MATCH_MAX_DISTANCE: 50.0,
+  TAG_MATCH_MAX_DISTANCE: 20.0,
 
   // ===== 💡 LED控制参数 =====
   
@@ -91,7 +87,7 @@ const BleHardwareConfig = {
    * 设备超时时间（毫秒）
    * 设备多长时间未更新RSSI则认为已离开
    */
-  DEVICE_TIMEOUT_MS: 4000,
+  DEVICE_TIMEOUT_MS: 3000,
 
   // ===== 📡 BLE扫描参数 =====
   

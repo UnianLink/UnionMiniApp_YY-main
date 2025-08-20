@@ -248,8 +248,17 @@ async function handleAdvancedTags(event, openid) {
         }
       });
       
-      console.log('[handleAdvancedTags] 更新结果:', updateResult);
-      console.log('[submitQuestionnaire] 高级标签数据更新成功');
+      console.log('[handleAdvancedTags] 📝 更新结果:', updateResult);
+      console.log('[submitQuestionnaire] ✅ 高级标签数据更新成功');
+      console.log('[submitQuestionnaire] 🔐 数据库写入确认:', {
+        操作类型: '更新现有用户',
+        用户openid: openid.substring(0, 8) + '...',
+        docId: docId,
+        蓝牙名称: bluetoothName,
+        uniqueId: newFormat && newFormat.enabled ? newFormat.uniqueId : null,
+        编码长度: encodedTags ? encodedTags.length : 0,
+        格式版本: saveData.formatVersion
+      });
     } else {
       // 创建新数据
       console.log('[handleAdvancedTags] 创建新数据记录');
@@ -258,8 +267,17 @@ async function handleAdvancedTags(event, openid) {
         data: saveData
       });
       
-      console.log('[handleAdvancedTags] 创建结果:', addResult);
-      console.log('[submitQuestionnaire] 高级标签数据创建成功');
+      console.log('[handleAdvancedTags] 📝 创建结果:', addResult);
+      console.log('[submitQuestionnaire] ✅ 高级标签数据创建成功');
+      console.log('[submitQuestionnaire] 🔐 数据库写入确认:', {
+        操作类型: '创建新用户',
+        用户openid: openid.substring(0, 8) + '...',
+        新docId: addResult._id,
+        蓝牙名称: bluetoothName,
+        uniqueId: newFormat && newFormat.enabled ? newFormat.uniqueId : null,
+        编码长度: encodedTags ? encodedTags.length : 0,
+        格式版本: saveData.formatVersion
+      });
     }
 
     const result = {
