@@ -57,7 +57,7 @@ const DeviceSelectionConfig = {
    * - 设置过高(如6dBm)：即使信号很不稳定也会推荐
    * - 推荐值：3.0dBm，适合一般环境的信号稳定性
    */
-  RSSI_STABILITY_THRESHOLD:6.0,
+  RSSI_STABILITY_THRESHOLD:8.0,
 
   /**
    * 需要持续稳定的时间（毫秒）

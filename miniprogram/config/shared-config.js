@@ -2,14 +2,14 @@
  * 统一配置文件 - JavaScript模块版本
  * 从硬件配置自动生成，与 shared-config.json 保持同步
  * 
- * 生成时间: 2025-08-18T21:43:21.278130
+ * 生成时间: 2025-08-21T05:41:20.233912
  * 源文件: Unian_esp32c3_ble/NimBLE_Beacon/main/include/common.h
  * 生成器: scripts/extract-config.py
  */
 
 const sharedConfig = {
   metadata: {
-    generated_at: "2025-08-18T21:43:21.278130",
+    generated_at: "2025-08-21T05:41:20.233912",
     source_file: "Unian_esp32c3_ble/NimBLE_Beacon/main/include/common.h",
     generator: "scripts/extract-config.py",
     version: "1.0.0",
@@ -25,11 +25,11 @@ const sharedConfig = {
       source: "#define DEFAULT_TAG_THRESHOLD 2"
     },
     MAX_TOUCH_RECORDS: {
-      value: 2000,
+      value: 500,
       type: "int",
       description: "碰一碰列表最大记录数",
       comment: "",
-      source: "#define MAX_TOUCH_RECORDS 2000"
+      source: "#define MAX_TOUCH_RECORDS 500"
     },
     TOUCH_LIST_BATCH_SIZE: {
       value: 100,
@@ -64,7 +64,7 @@ const sharedConfig = {
   // 简化访问接口
   values: {
     DEFAULT_TAG_THRESHOLD: 2,
-    MAX_TOUCH_RECORDS: 2000,
+    MAX_TOUCH_RECORDS: 500,
     TOUCH_LIST_BATCH_SIZE: 100,
     TOUCH_LIST_BATCH_INTERVAL_MS: 100,
     HIGH_PERFORMANCE_MODE: 1,

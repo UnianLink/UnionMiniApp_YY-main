@@ -1067,7 +1067,7 @@ class BleHandshakeClient {
    * 断开连接 - 修复先reset()导致deviceId为空的问题
    */
   disconnect() {
-    console.log('🔌 开始断开BLE连接');
+    console.log('🔌 [握手客户端] 开始断开BLE连接');
     
     // 保存需要断开的设备ID（因为reset()会清空它）
     const targetDeviceId = this.deviceId;
@@ -1077,12 +1077,15 @@ class BleHandshakeClient {
       return Promise.resolve();
     }
     
+    // 🚨 强制中断所有异步操作
+    console.log('🚫 [握手客户端] 强制中断所有等待中的操作');
+    
     // 停止健康监控
     this.stopConnectionHealthMonitoring();
     
-    // 清理所有等待的响应
+    // 清理所有等待的响应（强制中断）
     this.pendingResponses.forEach((pending, seqId) => {
-      pending.reject(new Error('连接已断开'));
+      pending.reject(new Error('🚫 强制断开连接：连接已中断'));
     });
     this.pendingResponses.clear();
     

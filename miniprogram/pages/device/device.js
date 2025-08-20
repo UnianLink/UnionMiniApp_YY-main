@@ -27,6 +27,9 @@ Page({
     connectionAttempt: 0, // 当前连接尝试次数
     maxRetries: 3, // 最大重试次数
     
+    // ===== 强制断开连接控制 =====
+    _forceDisconnecting: false, // 强制断开连接标志
+    
     // 🚀 BLE性能优化字段
     negotiatedMTU: 23, // 协商的MTU大小，默认23字节
     maxPacketSize: 20, // 最大数据包大小，默认20字节
@@ -235,15 +238,49 @@ Page({
    * 初始化设备绑定状态
    */
   initDeviceBinding() {
+    // 🔥 强制从存储重新获取绑定设备，避免使用过期的内存数据
     const boundDevice = this.getBoundDevice();
+    
+    // 🔥 检查当前内存状态与存储状态的一致性
+    const currentBoundDevice = this.data.boundDevice;
+    if (currentBoundDevice && !boundDevice) {
+      console.warn('⚠️ 检测到绑定状态不一致：内存中有绑定设备但存储中已清除，重置状态');
+      // 内存中有绑定设备但存储中已清除，需要重置状态
+      this.setData({
+        boundDevice: null,
+        blockOtherDevices: false,
+        searchingMyDevice: false,
+        searchingAllDevices: false,
+        recommendedDevice: null,
+        statusMessage: '正在搜索可用设备...'
+      });
+      return;
+    }
+    
+    // 🔥 正常设置绑定状态，确保所有相关字段一致
     this.setData({
       boundDevice: boundDevice,
       blockOtherDevices: !!boundDevice,
+      // 🔥 重置搜索状态，避免状态混乱
+      searchingMyDevice: false,
+      searchingAllDevices: false,
+      recommendedDevice: null,
       statusMessage: boundDevice ? 
         `正在寻找我的设备 ${boundDevice.deviceName}...` : 
         '正在搜索可用设备...'
     });
-    console.log('🔗 设备绑定状态初始化:', boundDevice ? '已绑定' : '未绑定');
+    console.log('🔗 设备绑定状态初始化:', boundDevice ? `已绑定(${boundDevice.deviceName})` : '未绑定');
+    
+    // 🔥 额外验证：确保绑定状态逻辑正确
+    if (boundDevice && !boundDevice.deviceName) {
+      console.error('❌ 检测到无效的绑定设备数据（缺少deviceName），自动清除');
+      this.clearBoundDevice();
+      this.setData({ 
+        boundDevice: null,
+        blockOtherDevices: false,
+        statusMessage: '检测到无效绑定，已自动清除'
+      });
+    }
   },
 
   // ===== 智能扫描流程控制 =====
@@ -455,26 +492,40 @@ Page({
   performUnbind() {
     console.log('🗑️ 开始执行设备解绑');
     
+    // 🚨 立即设置强制断开连接标志，阻止所有异步BLE操作
+    this.setData({ _forceDisconnecting: true });
+    console.log('🚫 [强制断开] 已设置强制断开标志，阻止所有BLE操作');
+    
     // 先断开当前连接（如果已连接）
     if (this.data.connected) {
       this.disconnect();
     }
     
-    // 停止所有搜索活动
+    // 停止所有搜索活动和清理定时器
     this.stopAllScanning();
+    this.clearAllTimers();
     
     // 清除设备绑定记录
     const success = this.clearBoundDevice();
     
     if (success) {
-      // 更新UI状态
+      // 🔥 完整重置所有绑定相关状态，确保状态一致性
       this.setData({ 
-        boundDevice: null,
-        connected: false,
-        blockOtherDevices: false,
-        searchingMyDevice: false,
-        statusMessage: '正在搜索可用设备...'
+        boundDevice: null,                // 清除绑定设备对象
+        connected: false,                 // 断开连接状态
+        blockOtherDevices: false,         // 解除设备连接限制
+        searchingMyDevice: false,         // 停止搜索我的设备
+        searchingAllDevices: false,       // 停止搜索所有设备
+        recommendedDevice: null,          // 清除推荐设备
+        deviceId: '',                     // 清除设备ID
+        deviceReady: false,               // 重置设备就绪状态
+        connecting: false,                // 重置连接中状态
+        // 🔥 重置智能选择相关状态
+        showOtherDevices: false,          // 隐藏其他设备列表
+        lastStableCheck: 0,               // 重置稳定性检查时间
+        statusMessage: '正在搜索可用设备...'  // 更新状态信息
       });
+      console.log('🔄 [状态重置] 已完整重置所有绑定相关状态');
       
       // 显示成功提示
       wx.showToast({ 
@@ -491,11 +542,27 @@ Page({
       console.log('✅ 设备解绑完成，开始搜索新设备');
       
     } else {
+      // 🚨 即使清除失败，也要重置状态防止状态不一致
+      console.warn('⚠️ 绑定记录清除失败，但仍要重置状态防止混乱');
+      this.setData({ 
+        boundDevice: null,
+        blockOtherDevices: false,
+        searchingMyDevice: false,
+        searchingAllDevices: false,
+        recommendedDevice: null,
+        statusMessage: '解绑失败，但已重置状态'
+      });
       wx.showToast({ 
         title: '解绑失败', 
         icon: 'error' 
       });
     }
+    
+    // 🔄 重置强制断开标志，允许新的连接
+    setTimeout(() => {
+      this.setData({ _forceDisconnecting: false });
+      console.log('✅ [强制断开] 已重置强制断开标志，允许新连接');
+    }, 1500); // 延迟1.5秒确保所有清理操作完成
   },
 
   /**
@@ -520,6 +587,7 @@ Page({
     
     const boundDevice = this.getBoundDevice();
     const currentDeviceId = this.data.deviceId;
+    
     const currentDeviceName = deviceInfo.deviceName || this.data.deviceName;
     
     if (!boundDevice) {
@@ -970,7 +1038,9 @@ Page({
    * 使用握手协议连接设备 - 完整流程
    */
   async connectWithHandshake() {
-    const { deviceId, deviceName } = this.data;
+    const { deviceId } = this.data;
+    // 🔧 确保deviceName不为空，避免设备绑定数据异常
+    const deviceName = this.data.deviceName || `设备_${deviceId.slice(-6)}`;
     
     if (!this.handshakeClient) {
       console.error('❌ 握手协议客户端未初始化');
@@ -1248,6 +1318,66 @@ Page({
       this._deviceUpdateTimer = null;
     }
   },
+
+  // 🚨 清理所有定时器和异步操作（强制断开连接时使用）
+  clearAllTimers() {
+    console.log('🧹 [强制断开] 开始清理所有定时器和异步操作');
+    
+    // 清理扫描相关定时器
+    this.clearScanTimers();
+    
+    // 清理连接和响应相关定时器
+    if (this.data.connectionTimeout) {
+      clearTimeout(this.data.connectionTimeout);
+      this.setData({ connectionTimeout: null });
+    }
+    
+    if (this.unStringResponseTimeout) {
+      clearTimeout(this.unStringResponseTimeout);
+      this.unStringResponseTimeout = null;
+    }
+    
+    if (this.bufferTimeout) {
+      clearTimeout(this.bufferTimeout);
+      this.bufferTimeout = null;
+    }
+    
+    if (this.data.colorResponseTimeout) {
+      clearTimeout(this.data.colorResponseTimeout);
+      this.setData({ colorResponseTimeout: null });
+    }
+    
+    // 清理设备检查定时器
+    if (this.deviceCheckInterval) {
+      clearInterval(this.deviceCheckInterval);
+      this.deviceCheckInterval = null;
+    }
+    
+    // 🔥 清理设备搜索和选择相关定时器
+    if (this.data.deviceSelectionTimer) {
+      clearTimeout(this.data.deviceSelectionTimer);
+      this.setData({ deviceSelectionTimer: null });
+    }
+    
+    // 🔥 清理设备搜索超时定时器（局部变量需要强制清理）
+    if (this.searchTimeout) {
+      clearTimeout(this.searchTimeout);
+      this.searchTimeout = null;
+    }
+    
+    // 🔥 清理其他可能的定时器
+    if (this.retryConnectionTimer) {
+      clearTimeout(this.retryConnectionTimer);
+      this.retryConnectionTimer = null;
+    }
+    
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
+    console.log('✅ [强制断开] 所有定时器已清理完成（包括设备搜索定时器）');
+  },
   
   // 重启扫描（保持设备列表）
   restartScan() {
@@ -1483,6 +1613,7 @@ Page({
       clearTimeout(this.data.connectionTimeout);
     }
     
+    // 🔥 重置到扫描状态，同时清除所有绑定相关状态
     this.setData({ 
       showScanView: true,
       connected: false,
@@ -1498,8 +1629,18 @@ Page({
       rxCharId: '',
       txServiceId: '',
       txCharId: '',
-      unDevices: []
+      unDevices: [],
+      // 🔥 重置绑定和搜索相关状态，防止状态不一致
+      boundDevice: null,                // 清除绑定设备信息
+      searchingMyDevice: false,         // 停止搜索我的设备
+      searchingAllDevices: false,       // 停止搜索所有设备
+      blockOtherDevices: false,         // 解除设备连接限制
+      recommendedDevice: null,          // 清除推荐设备
+      showOtherDevices: false,          // 隐藏其他设备列表
+      lastStableCheck: 0,               // 重置稳定性检查时间
+      statusMessage: '正在搜索设备...'    // 重置状态消息
     });
+    console.log('🔄 [resetToScan] 已重置所有连接和绑定状态');
     this.startScan();
   },
 
@@ -1947,46 +2088,6 @@ Page({
     }
   },
 
-  // 测试编码一致性（调试用）
-  async testEncodingConsistency() {
-    console.log('🔍🔍🔍 [重要调试] ===== 开始测试编码一致性 =====');
-    
-    try {
-      // 1. 获取当前BLE发送的编码
-      const bleEncoding = await this.getUserEncodedTags();
-      console.log('🔍🔍🔍 [重要调试] BLE发送编码:', bleEncoding);
-      
-      // 2. 模拟成功页面的编码生成
-      const tagThemes = require('../../config/tagThemes.js');
-      const Config = require('../../utils/config.js');
-      const encoding = Config.advancedTagsConfig.encoding;
-      const steps = tagThemes.getAllStepsConfig();
-      const encodingSteps = steps.slice(0, 3);
-      const allTagsList = encoding.getAllTagsList(encodingSteps);
-      
-      // 根据截图，用户成功页面显示的是 iCQCAABqMIgQAA
-      console.log('🔍🔍🔍 [重要调试] 成功页面应该显示: iCQCAABqMIgQAA');
-      
-      // 显示对比结果
-      const expectedEncoding = 'iCQCAABqMIgQAA';
-      const isConsistent = bleEncoding === expectedEncoding;
-      
-      wx.showModal({
-        title: '编码一致性测试',
-        content: `✨ 成功页面显示: ${expectedEncoding}\n📱 BLE实际发送: ${bleEncoding || 'null'}\n🔧 硬件应接收: Un${expectedEncoding}\n\n${isConsistent ? '✅ 编码一致！' : '❌ 编码不一致！需要修复'}`,
-        showCancel: false,
-        confirmText: '确定'
-      });
-      
-    } catch (error) {
-      console.error('❌ [调试] 编码一致性测试失败:', error);
-      wx.showToast({
-        title: '测试失败',
-        icon: 'error',
-        duration: 2000
-      });
-    }
-  },
 
   // 🔥 新增：保存碰一碰结果到本地存储（作为云函数的兜底方案）
   saveTouchListToStorage(devices) {
@@ -2906,6 +3007,18 @@ Page({
     try {
       console.log('📤 发送碰一碰列表确认');
       
+      // 🚫 强制断开连接检查：防止误发ACK导致硬件数据丢失
+      if (this.data._forceDisconnecting) {
+        console.log('🚫 [ACK安全] 强制断开中，拒绝发送ACK确认，避免硬件误删数据');
+        return;
+      }
+      
+      // 🚫 连接状态检查：确保只在真正连接时发送ACK
+      if (!this.data.connected || this.data._forceDisconnecting) {
+        console.log('🚫 [ACK安全] 连接已断开，拒绝发送ACK确认，避免硬件误删数据');
+        return;
+      }
+      
       // 构建确认命令
       const command = {
         type: 'touch_list_ack',
@@ -3272,6 +3385,18 @@ Page({
 
   // 处理接收到的数据包
   handleReceivedData(str) {
+    // 🚫 强制断开连接检查：断开连接时停止处理新消息
+    if (this.data._forceDisconnecting) {
+      console.log('🚫 [消息保护] 强制断开中，忽略收到的消息，防止状态混乱');
+      return;
+    }
+    
+    // 🚫 连接状态检查：确保只在连接状态下处理消息
+    if (!this.data.connected) {
+      console.log('🚫 [消息保护] 连接已断开，忽略收到的消息');
+      return;
+    }
+    
     const now = Date.now();
     
     console.log('📨 收到新数据片段:', JSON.stringify(str));
@@ -4592,11 +4717,22 @@ Page({
 
   // 断开蓝牙连接
   disconnect() {
+    console.log('🔌 [断开连接] 开始断开BLE连接');
+    
+    // 🚨 设置强制断开连接标志，阻止异步操作继续执行
+    this.setData({ _forceDisconnecting: true });
+    console.log('🚫 [断开连接] 已设置强制断开标志');
+    
+    // 清理所有定时器和异步操作
+    this.clearAllTimers();
+    
     // 通过握手协议客户端断开连接
     if (this.handshakeClient) {
       this.handshakeClient.disconnect().then(() => {
+        console.log('✅ [断开连接] 握手协议客户端断开成功');
         this.backToScan();
       }).catch(() => {
+        console.error('❌ [断开连接] 握手协议客户端断开失败');
         this.backToScan();
       });
     } else {
@@ -4604,6 +4740,12 @@ Page({
       console.warn('握手协议客户端未初始化，直接返回扫描界面');
       this.backToScan();
     }
+    
+    // 🔄 延迟重置强制断开标志，确保断开过程完全结束
+    setTimeout(() => {
+      this.setData({ _forceDisconnecting: false });
+      console.log('✅ [断开连接] 已重置强制断开标志');
+    }, 2000); // 2秒延迟确保所有清理完成
   },
 
   // 清除调试信息

@@ -443,10 +443,6 @@
             </view>
           </view>
 
-          <!-- 编码测试按钮（开发环境） -->
-          <view wx:if="{{currentStep === 1}}" class="debug-section">
-            <button class="test-btn" bindtap="testEncoding" type="primary" size="mini">测试编码功能</button>
-          </view>
 
           <!-- 第5步：性格关键词 / 星座 / 彩蛋标签 -->
           <view wx:if="{{currentStep === 5}}" class="step-content">

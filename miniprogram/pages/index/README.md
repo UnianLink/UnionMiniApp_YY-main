@@ -426,9 +426,6 @@ console.log('当前视图模式:', this.data.viewMode);
 console.log('当前选择的标签:', this.data.totalSelectedTags);
 console.log('编码信息:', this.data.encodingInfo);
 
-// 测试编码功能
-testEncoding() // 在第1页点击测试按钮
-```
 
 ### 部署云函数
 ```bash
