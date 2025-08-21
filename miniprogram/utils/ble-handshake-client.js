@@ -866,9 +866,9 @@ class BleHandshakeClient {
     if (!this.deviceReady) return;
     
     try {
+      // 🔧 [KISS] 简化心跳消息 - 移除timestamp避免分片截断
       const heartbeatMessage = {
-        type: 'heartbeat',
-        timestamp: Date.now()
+        type: 'heartbeat'
       };
       
       // 🔥 修复：直接发送心跳，不等待响应（避免超时错误）

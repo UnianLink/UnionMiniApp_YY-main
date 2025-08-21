@@ -29,10 +29,16 @@ Page({
     
     // ===== 强制断开连接控制 =====
     _forceDisconnecting: false, // 强制断开连接标志
+    userDisconnected: false, // 用户主动断开连接意图记录
     
     // 🚀 BLE性能优化字段
     negotiatedMTU: 23, // 协商的MTU大小，默认23字节
     maxPacketSize: 20, // 最大数据包大小，默认20字节
+    
+    // 🔒 ACK状态锁机制 (KISS原则可靠通信)
+    waitingForAck: false, // ACK等待状态
+    pendingCommand: null, // 待确认命令
+    commandQueue: [], // 命令队列，确保串行处理
     
     // ===== 颜色方案编辑 =====
     colorNear: '#FF0000', // 近距离颜色
@@ -493,8 +499,12 @@ Page({
     console.log('🗑️ 开始执行设备解绑');
     
     // 🚨 立即设置强制断开连接标志，阻止所有异步BLE操作
-    this.setData({ _forceDisconnecting: true });
-    console.log('🚫 [强制断开] 已设置强制断开标志，阻止所有BLE操作');
+    // 🔥 解绑时重置用户断开标志，因为这是一个重新开始的操作
+    this.setData({ 
+      _forceDisconnecting: true,
+      userDisconnected: false
+    });
+    console.log('🚫 [强制断开] 已设置强制断开标志，重置用户断开标志');
     
     // 先断开当前连接（如果已连接）
     if (this.data.connected) {
@@ -576,6 +586,11 @@ Page({
     }
 
     console.log('🔄 开始重新连接我的设备');
+    // 🔥 用户主动重连操作，重置强制断开标志和用户断开标志
+    this.setData({ 
+      _forceDisconnecting: false,
+      userDisconnected: false
+    });
     this.startBoundDeviceFlow(boundDevice);
   },
 
@@ -825,7 +840,9 @@ Page({
     this.initDeviceBinding();
     
     // 如果在扫描界面且没有连接设备，启动智能扫描流程
-    if (this.data.showScanView && !this.data.connected) {
+    // 🔥 增加用户主动断开检查：避免用户断开连接后立即自动重连
+    // ⚡ 新增：检查用户主动断开标志，避免用户断开后的误重连
+    if (this.data.showScanView && !this.data.connected && !this.data._forceDisconnecting && !this.data.userDisconnected) {
       setTimeout(() => {
         this.startIntelligentFlow();
       }, 300); // 给页面足够时间初始化
@@ -1002,6 +1019,11 @@ Page({
           confirmText: '手动重连',
           success: (res) => {
             if (res.confirm) {
+              // 🔥 用户选择手动重连，重置强制断开标志和用户断开标志
+              this.setData({ 
+                _forceDisconnecting: false,
+                userDisconnected: false
+              });
               this.connectWithHandshake();
             } else {
               this.backToScan();
@@ -1514,6 +1536,12 @@ Page({
       });
       return;
     }
+
+    // 🔥 用户主动点击设备连接，重置强制断开标志和用户断开标志
+    this.setData({ 
+      _forceDisconnecting: false,
+      userDisconnected: false
+    });
     
     const deviceId = e.currentTarget.dataset.deviceid;
     const device = this.data.devices.find(d => d.deviceId === deviceId);
@@ -1630,18 +1658,26 @@ Page({
       txServiceId: '',
       txCharId: '',
       unDevices: [],
-      // 🔥 重置绑定和搜索相关状态，防止状态不一致
-      boundDevice: null,                // 清除绑定设备信息
+      // 🔥 重置搜索相关状态，但保留绑定设备信息
       searchingMyDevice: false,         // 停止搜索我的设备
       searchingAllDevices: false,       // 停止搜索所有设备
-      blockOtherDevices: false,         // 解除设备连接限制
+      // boundDevice 保持不变，让智能流程自动判断
+      // blockOtherDevices 保持现有状态，避免误连其他设备
       recommendedDevice: null,          // 清除推荐设备
       showOtherDevices: false,          // 隐藏其他设备列表
       lastStableCheck: 0,               // 重置稳定性检查时间
-      statusMessage: '正在搜索设备...'    // 重置状态消息
+      statusMessage: this.data.userDisconnected ? '✅ 已断开连接，请选择后续操作' : '🔄 连接已断开，正在重新搜索设备...'
     });
-    console.log('🔄 [resetToScan] 已重置所有连接和绑定状态');
-    this.startScan();
+    
+    // 🎯 根据断开原因决定后续操作
+    if (this.data.userDisconnected) {
+      console.log('🔄 [resetToScan] 用户主动断开，等待用户选择操作');
+      // 用户主动断开，不自动重连，等待用户选择
+    } else {
+      console.log('🔄 [resetToScan] 系统断开，开始智能搜索');
+      // 🚀 系统异常断开，使用智能流程自动重连
+      this.startIntelligentFlow();
+    }
   },
 
   // ===== 设备连接功能 =====
@@ -1695,11 +1731,10 @@ Page({
       
       console.log('🎯 [阈值设置] 当前阈值:', threshold);
       
-      // 构建发送给硬件的JSON命令
+      // 🔧 [KISS] 简化阈值设置命令 - 移除timestamp避免分片截断
       const command = {
         type: 'set_threshold',
-        threshold: threshold,
-        timestamp: Date.now()
+        threshold: threshold
       };
       
       const commandStr = JSON.stringify(command);
@@ -1726,8 +1761,8 @@ Page({
       
       console.log('🎯 [阈值设置] BLE特征已就绪，开始发送...');
       
-      // 发送给硬件
-      await this.writeToBle(commandStr);
+      // 🔒 [KISS原则] 使用ACK确认发送
+      await this.sendCommandWithAck(command);
       
       console.log('✅ [阈值设置] 阈值设置发送完成');
       
@@ -1855,11 +1890,10 @@ Page({
         encodedLength: encodingResult && encodingResult.encodedString ? encodingResult.encodedString.length : 0
       });
       
-      // 构建发送给硬件的JSON命令
+      // 🔧 [KISS] 简化Un字符串设置命令 - 移除timestamp避免分片截断
       const command = {
         type: 'set_un_string',
-        un_string: unString,
-        timestamp: Date.now()
+        un_string: unString
       };
       
       const commandStr = JSON.stringify(command);
@@ -1875,8 +1909,8 @@ Page({
       // ✅ BLE状态在函数开始处已验证，直接发送
       console.log('🔍 [调试] BLE特征已验证，开始发送Un字符串...');
       
-      // 发送给硬件
-      await this.writeToBle(commandStr);
+      // 🔒 [KISS原则] 使用ACK确认发送
+      await this.sendCommandWithAck(command);
       
       console.log('✅ [调试] 16字节Un字符串发送完成，等待硬件确认...');
       
@@ -1990,10 +2024,10 @@ Page({
     try {
       // 直接发送一个简单的测试Un字符串
       const testUnString = 'UnTEST1234567890'; // 16字符测试字符串
+      // 🔧 [KISS] 简化测试Un字符串设置命令 - 移除timestamp避免分片截断
       const command = {
         type: 'set_un_string',
-        un_string: testUnString,
-        timestamp: Date.now()
+        un_string: testUnString
       };
       
       const commandStr = JSON.stringify(command);
@@ -2553,10 +2587,10 @@ Page({
       console.log('🎯 准备发送完整Un字符串:', completeUnString);
       
       // 构建设置Un字符串的命令
+      // 🔧 [KISS] 简化完整Un字符串设置命令 - 移除timestamp避免分片截断
       const command = {
         type: 'set_un_string',
-        un_string: completeUnString,
-        timestamp: Date.now()
+        un_string: completeUnString
       };
       
       const commandStr = JSON.stringify(command);
@@ -2848,10 +2882,9 @@ Page({
         return false;
       }
       
-      // 构建请求碰一碰列表的命令
+      // 🔧 [KISS] 简化请求碰一碰列表命令 - 移除timestamp避免分片截断
       const command = {
-        type: 'request_touch_list',
-        timestamp: Date.now()
+        type: 'request_touch_list'
       };
       
       const commandStr = JSON.stringify(command);
@@ -2865,8 +2898,8 @@ Page({
         return false;
       }
       
-      // 发送请求给硬件
-      await this.writeToBle(commandStr);
+      // 🔒 [KISS原则] 使用ACK确认发送  
+      await this.sendCommandWithAck(command);
       
       console.log('✅ 碰一碰列表请求发送成功');
       
@@ -2926,14 +2959,14 @@ Page({
           // 保存到本地待发送
           if (idleLightColor) {
             const hex = idleLightColor.replace('#', '');
+            // 🔧 [KISS] 简化存储对象 - 移除timestamp避免分片截断
             wx.setStorageSync('pendingIdleLightColor', {
               color: {
                 r: parseInt(hex.substr(0, 2), 16),
                 g: parseInt(hex.substr(2, 2), 16),
                 b: parseInt(hex.substr(4, 2), 16)
               },
-              mbtiType: mbtiType,
-              timestamp: Date.now()
+              mbtiType: mbtiType
             });
           }
         }
@@ -3019,10 +3052,9 @@ Page({
         return;
       }
       
-      // 构建确认命令
+      // 🔧 [KISS] 简化确认命令 - 移除timestamp避免分片截断
       const command = {
-        type: 'touch_list_ack',
-        timestamp: Date.now()
+        type: 'touch_list_ack'
       };
       
       const commandStr = JSON.stringify(command);
@@ -3040,8 +3072,8 @@ Page({
         return;
       }
       
-      // 发送给硬件
-      await this.writeToBle(commandStr);
+      // 🔒 [KISS原则] 使用ACK确认发送
+      await this.sendCommandWithAck(command);
       
       console.log('✅ 碰一碰列表确认发送成功');
       
@@ -3577,6 +3609,32 @@ Page({
         console.log('✅ 成功解析JSON消息:', jsonData);
         console.log('✅ 消息类型:', jsonData.type);
         
+        // 🔒 [KISS原则] 通用ACK处理逻辑
+        if (jsonData.type.endsWith('_ack') && this.data.waitingForAck && this.currentAckHandler) {
+          console.log('🔒 [ACK锁] 收到ACK响应:', jsonData.type);
+          
+          const handler = this.currentAckHandler;
+          
+          // 清理ACK处理器
+          if (handler.timeout) {
+            clearTimeout(handler.timeout);
+          }
+          this.currentAckHandler = null;
+          
+          // 重置ACK等待状态
+          this.setData({ waitingForAck: false, pendingCommand: null });
+          
+          // 处理队列中的下一个命令
+          this.processCommandQueue();
+          
+          // 调用命令的resolve
+          if (handler.resolve) {
+            handler.resolve(jsonData);
+          }
+          
+          console.log('✅ [ACK锁] ACK处理完成，已解锁');
+        }
+        
         // 处理不同类型的确认消息
         switch (jsonData.type) {
           case 'device_ready_ack':
@@ -3622,7 +3680,38 @@ Page({
             }
             return;
             
+          case 'heartbeat_ack':
+            // 🔧 [KISS修复] 心跳响应处理 - 确保连接健康
+            console.log('💓 收到心跳响应，连接健康');
+            // 心跳响应无需进一步处理，仅用于连接存活检测
+            return;
+            
           case 'touch_list_ack_response':
+            // 🔧 [KISS修复] 特殊处理touch_list_ack的ACK响应
+            if (this.data.waitingForAck && this.data.pendingCommand === 'touch_list_ack') {
+              console.log('🔒 [特殊ACK] 收到touch_list_ack_response，清除ACK状态');
+              
+              // 清理ACK处理器
+              if (this.currentAckHandler) {
+                if (this.currentAckHandler.timeout) {
+                  clearTimeout(this.currentAckHandler.timeout);
+                }
+                if (this.currentAckHandler.resolve) {
+                  this.currentAckHandler.resolve(jsonData);
+                }
+                this.currentAckHandler = null;
+              }
+              
+              // 重置ACK等待状态
+              this.setData({ waitingForAck: false, pendingCommand: null });
+              
+              // 处理队列中的下一个命令
+              this.processCommandQueue();
+              
+              console.log('✅ [特殊ACK] ACK处理完成，已解锁');
+            }
+            
+            // 原有显示逻辑保持不变
             if (jsonData.status === 'success') {
               console.log('✅ 硬件确认碰一碰列表已清空');
               this.addNotification('✅ 碰一碰列表已清空');
@@ -3640,29 +3729,59 @@ Page({
               console.log('❌ 硬件命令处理失败:', jsonData.message);
               this.addNotification(`❌ 命令处理失败: ${jsonData.message}`);
               
-              // 🔧 [完整性校验] 检查是否是JSON解析失败错误
+              // 🔧 [协议修复] 检查是否是JSON解析失败错误 - 按产品文档协议处理
               if (jsonData.message && 
                   (jsonData.message.includes('JSON parse failed') || 
                    jsonData.message.includes('JSON解析失败') ||
                    jsonData.message.includes('parse error') ||
                    jsonData.message.includes('invalid JSON'))) {
                 
-                console.warn('⚠️ [完整性校验] 硬件报告JSON解析失败，触发重传机制');
-                this.addNotification('⚠️ 检测到数据损坏，正在重传...');
+                console.warn('⚠️ [协议修复] 硬件报告JSON解析失败，检查当前协议阶段');
+                this.addNotification('⚠️ 检测到数据损坏，分析协议状态...');
+                
+                // 🔧 [协议修复] 根据产品文档要求判断当前处于哪个协议阶段
+                const currentPhase = this.detectProtocolPhase();
+                console.log('🔍 [协议修复] 当前协议阶段:', currentPhase);
+                
+                if (currentPhase === 'name_exchange' || currentPhase === 'critical') {
+                  // 第三阶段：蓝牙名称交换阶段 - 关键阶段超时需要断开连接
+                  console.error('❌ [协议修复] 第三阶段关键操作失败，按产品文档要求断开连接');
+                  this.addNotification('❌ 关键操作失败，断开连接');
+                  
+                  // 按产品文档要求：关键阶段失败必须断开连接，返回扫描页面
+                  setTimeout(() => {
+                    this.disconnectDevice('协议第三阶段失败');
+                    wx.navigateBack({
+                      delta: 1,
+                      success: () => {
+                        console.log('📱 [协议修复] 已返回扫描页面');
+                      }
+                    });
+                  }, 1000);
+                  
+                  return; // 不进行重传，直接断开
+                }
                 
                 // 更新传输统计
                 this.setData({
                   [`transmissionStats.errorCount`]: this.data.transmissionStats.errorCount + 1
                 });
                 
-                // 触发重传机制
+                // 非关键阶段才尝试重传
                 if (this.data.retryEnabled && this.data.lastSentMessage) {
+                  console.log('🔄 [协议修复] 非关键阶段，尝试重传');
                   this.retryLastMessage('硬件JSON解析失败').catch(error => {
-                    console.error('❌ [完整性校验] 重传失败:', error.message);
+                    console.error('❌ [协议修复] 重传失败:', error.message);
                     this.addNotification(`❌ 重传失败: ${error.message}`);
+                    
+                    // 🔧 [协议修复] 重传失败超过阈值也要断开连接
+                    if (this.data.transmissionStats.errorCount >= 3) {
+                      console.error('❌ [协议修复] 错误次数过多，断开连接');
+                      this.disconnectDevice('重传失败次数过多');
+                    }
                   });
                 } else {
-                  console.warn('⚠️ [完整性校验] 无法重传：重传被禁用或无最后消息记录');
+                  console.warn('⚠️ [协议修复] 无法重传：重传被禁用或无最后消息记录');
                   this.addNotification('⚠️ 无法重传：请重新尝试操作');
                 }
               }
@@ -3816,6 +3935,27 @@ Page({
               }
             }
           }
+        }
+        
+        // 🔧 [协议修复] JSON解析失败时检查协议阶段
+        const currentPhase = this.detectProtocolPhase();
+        console.log('🔍 [协议修复] JSON解析失败，当前协议阶段:', currentPhase);
+        
+        if (currentPhase === 'name_exchange' || currentPhase === 'critical') {
+          console.error('❌ [协议修复] 第三阶段JSON解析失败，按产品文档要求断开连接');
+          this.addNotification('❌ 关键阶段通信失败，断开连接');
+          
+          setTimeout(() => {
+            this.disconnectDevice('协议第三阶段JSON解析失败');
+            wx.navigateBack({
+              delta: 1,
+              success: () => {
+                console.log('📱 [协议修复] 已返回扫描页面');
+              }
+            });
+          }, 1000);
+          
+          return;
         }
         
         this.addNotification(`❌ JSON解析失败: ${error.message}`);
@@ -4604,18 +4744,18 @@ Page({
       
       console.log('📤 [writeToBle] 开始发送数据，总长度:', processedStr.length, '内容:', processedStr);
       
-      // 优化：动态MTU大小，根据消息长度和平台优化
+      // 🔧 [分片修复] 智能分片策略 - 避免在关键位置截断JSON
       const encoder = this.str2ab;
       
-      // 🔧 修复：暂时使用固定20字节分包，确保连接稳定
-      let maxLen = 20;
-      console.log('📤 使用分包大小:', maxLen, '字节');
-      let offset = 0;
-      let chunkCount = 0;
+      // 🔧 [分片修复] 动态确定分片大小，优先保证JSON结构完整性
+      const smartChunking = this.createSmartChunks(processedStr);
+      console.log('📤 [分片修复] 智能分片完成，共', smartChunking.length, '个片段');
+      
+      let chunkIndex = 0;
       
       const sendNext = () => {
-        if (offset >= processedStr.length) {
-          console.log('📤 数据发送完成，总共发送', chunkCount, '个分片');
+        if (chunkIndex >= smartChunking.length) {
+          console.log('📤 [分片修复] 数据发送完成，总共发送', smartChunking.length, '个智能分片');
           
           // 更新成功统计
           if (this.data.retryEnabled) {
@@ -4632,11 +4772,11 @@ Page({
           resolve();
           return;
         }
-        const chunk = processedStr.slice(offset, offset + maxLen);
-        offset += maxLen;
-        chunkCount++;
         
-        console.log('📤 [writeToBle] 发送分片', chunkCount, ':', chunk, '长度:', chunk.length);
+        const chunk = smartChunking[chunkIndex];
+        chunkIndex++;
+        
+        console.log('📤 [分片修复] 发送智能分片', chunkIndex, ':', chunk, '长度:', chunk.length);
         
         // 🔍 详细诊断即将发送的BLE写入参数
         console.log('🔍 [BLE写入] 即将写入参数:');
@@ -4652,12 +4792,13 @@ Page({
           characteristicId: rxCharId,
           value: encoder(chunk),
           success: () => {
-            console.log('✅ [BLE写入] 分片', chunkCount, '写入微信API成功');
-            // 🔧 修复：增加分片延迟到50ms，避免硬件缓冲区溢出导致数据丢失
-            setTimeout(sendNext, 50); // 从20ms增加到50ms，确保硬件有足够时间处理
+            console.log('✅ [BLE写入] 智能分片', chunkIndex, '写入微信API成功');
+            // 🔧 [分片修复] 增加分片间隔，确保硬件有足够时间处理
+            const delay = chunk.length > 15 ? 80 : 60; // 长分片需要更多时间
+            setTimeout(sendNext, delay);
           },
           fail: (err) => {
-            console.error('❌ [BLE写入] 分片', chunkCount, '写入微信API失败:', err);
+            console.error('❌ [BLE写入] 智能分片', chunkIndex, '写入微信API失败:', err);
             console.error('❌ [BLE写入] 错误详情:', JSON.stringify(err));
             wx.showToast({ title: '写入失败', icon: 'none' });
             reject(err);
@@ -4666,6 +4807,239 @@ Page({
       };
       sendNext();
     });
+  },
+
+  // 🔒 [KISS原则] 带ACK确认的命令发送方法
+  async sendCommandWithAck(command, timeout = 5000) {
+    // 检查是否正在等待其他命令的ACK
+    if (this.data.waitingForAck) {
+      console.log('🔒 [ACK锁] 正在等待前一个命令ACK，将命令加入队列');
+      return this.queueCommand(command, timeout);
+    }
+
+    // 设置ACK等待状态
+    this.setData({ 
+      waitingForAck: true, 
+      pendingCommand: command 
+    });
+
+    console.log('🔒 [ACK锁] 开始发送命令并等待ACK:', JSON.stringify(command));
+
+    return new Promise((resolve, reject) => {
+      const commandStr = JSON.stringify(command);
+      
+      // 设置ACK超时
+      const ackTimeout = setTimeout(() => {
+        if (this.data.waitingForAck && this.data.pendingCommand === command) {
+          console.warn('⚠️ [ACK锁] 命令ACK超时，重置状态');
+          this.setData({ waitingForAck: false, pendingCommand: null });
+          this.processCommandQueue(); // 处理队列中的下一个命令
+          reject(new Error('命令确认超时'));
+        }
+      }, timeout);
+
+      // 发送命令
+      this.writeToBle(commandStr)
+        .then(() => {
+          console.log('✅ [ACK锁] 命令发送成功，等待ACK确认');
+          
+          // 保存ACK响应处理器
+          this.currentAckHandler = {
+            command: command,
+            resolve: resolve,
+            reject: reject,
+            timeout: ackTimeout
+          };
+        })
+        .catch(error => {
+          console.error('❌ [ACK锁] 命令发送失败:', error);
+          clearTimeout(ackTimeout);
+          this.setData({ waitingForAck: false, pendingCommand: null });
+          this.processCommandQueue();
+          reject(error);
+        });
+    });
+  },
+
+  // 🔄 [KISS原则] 命令队列管理
+  queueCommand(command, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+      this.data.commandQueue.push({ 
+        command: command, 
+        timeout: timeout,
+        resolve: resolve, 
+        reject: reject 
+      });
+      console.log('📋 [命令队列] 命令已加入队列，当前队列长度:', this.data.commandQueue.length);
+    });
+  },
+
+  // ⚡ [KISS原则] 处理命令队列
+  async processCommandQueue() {
+    // 如果正在等待ACK或队列为空，不处理
+    if (this.data.waitingForAck || this.data.commandQueue.length === 0) {
+      return;
+    }
+
+    console.log('🔄 [命令队列] 开始处理队列，剩余命令:', this.data.commandQueue.length);
+
+    const nextCommand = this.data.commandQueue.shift();
+    
+    try {
+      const result = await this.sendCommandWithAck(nextCommand.command, nextCommand.timeout);
+      nextCommand.resolve(result);
+    } catch (error) {
+      console.error('❌ [命令队列] 队列命令执行失败:', error);
+      nextCommand.reject(error);
+    }
+  },
+
+  // 🔧 [分片修复] 智能分片算法 - 避免在JSON关键位置截断
+  createSmartChunks(str) {
+    const chunks = [];
+    const maxChunkSize = 18; // 保守的分片大小，确保不会超过BLE MTU
+    
+    // 如果字符串很短，直接返回
+    if (str.length <= maxChunkSize) {
+      console.log('📦 [智能分片] 字符串较短，无需分片');
+      return [str];
+    }
+    
+    // 检查是否是JSON格式
+    const isJSON = str.trim().startsWith('{') && str.trim().endsWith('}');
+    
+    if (isJSON) {
+      console.log('📦 [智能分片] 检测到JSON格式，使用JSON智能分片');
+      return this.createJSONSmartChunks(str, maxChunkSize);
+    } else {
+      console.log('📦 [智能分片] 普通字符串，使用通用分片');
+      return this.createGenericSmartChunks(str, maxChunkSize);
+    }
+  },
+
+  // 🔧 [分片修复] JSON专用智能分片
+  createJSONSmartChunks(jsonStr, maxSize) {
+    const chunks = [];
+    let currentPos = 0;
+    
+    // JSON分片的安全切分点（优先级从高到低）
+    const safeBreakPoints = [
+      '","',    // 字段之间
+      '":',     // 键值对之间  
+      ',',      // 数组元素或对象字段之间
+      '{',      // 对象开始后
+      '[',      // 数组开始后
+      '}',      // 对象结束后
+      ']'       // 数组结束后
+    ];
+    
+    while (currentPos < jsonStr.length) {
+      let chunkEnd = currentPos + maxSize;
+      
+      // 如果已到字符串末尾
+      if (chunkEnd >= jsonStr.length) {
+        chunks.push(jsonStr.substring(currentPos));
+        break;
+      }
+      
+      // 寻找最佳切分点
+      let bestBreakPoint = chunkEnd;
+      
+      for (const breakPoint of safeBreakPoints) {
+        // 在当前窗口内寻找安全的切分点
+        const searchStart = Math.max(currentPos + 1, chunkEnd - 8); // 向前搜索8个字符
+        const foundIndex = jsonStr.indexOf(breakPoint, searchStart);
+        
+        if (foundIndex > 0 && foundIndex <= chunkEnd && foundIndex > currentPos) {
+          bestBreakPoint = foundIndex + breakPoint.length;
+          break; // 找到第一个（优先级最高的）切分点就使用
+        }
+      }
+      
+      // 确保不会产生空分片
+      if (bestBreakPoint <= currentPos) {
+        bestBreakPoint = Math.min(currentPos + maxSize, jsonStr.length);
+      }
+      
+      const chunk = jsonStr.substring(currentPos, bestBreakPoint);
+      chunks.push(chunk);
+      
+      console.log(`📦 [JSON分片] 分片 ${chunks.length}: "${chunk}" (${chunk.length}字节)`);
+      
+      currentPos = bestBreakPoint;
+    }
+    
+    console.log(`📦 [JSON分片] 完成，共${chunks.length}个分片`);
+    return chunks;
+  },
+
+  // 🔧 [分片修复] 通用智能分片
+  createGenericSmartChunks(str, maxSize) {
+    const chunks = [];
+    let currentPos = 0;
+    
+    while (currentPos < str.length) {
+      let chunkEnd = Math.min(currentPos + maxSize, str.length);
+      
+      // 如果不是最后一个分片，尝试在空格或标点处切分
+      if (chunkEnd < str.length) {
+        for (let i = chunkEnd; i > currentPos + maxSize * 0.8; i--) {
+          if (str[i] === ' ' || str[i] === ',' || str[i] === '.' || str[i] === ';') {
+            chunkEnd = i + 1;
+            break;
+          }
+        }
+      }
+      
+      const chunk = str.substring(currentPos, chunkEnd);
+      chunks.push(chunk);
+      
+      console.log(`📦 [通用分片] 分片 ${chunks.length}: "${chunk}" (${chunk.length}字节)`);
+      
+      currentPos = chunkEnd;
+    }
+    
+    console.log(`📦 [通用分片] 完成，共${chunks.length}个分片`);
+    return chunks;
+  },
+
+  // 🔧 [协议修复] 协议阶段检测 - 按产品文档四阶段协议流程判断
+  detectProtocolPhase() {
+    // 检查连接状态和时间
+    const currentTime = Date.now();
+    const connectionTime = this.data.connectionStartTime || currentTime;
+    const elapsedTime = currentTime - connectionTime;
+    
+    // 检查最近发送的消息类型来判断协议阶段
+    const lastMessage = this.data.lastSentMessage;
+    
+    // 第一阶段：连接建立与重试机制（通常在前30秒内）
+    if (elapsedTime < 30000 && !this.data.nameExchangeCompleted) {
+      return 'connection_establishment';
+    }
+    
+    // 第二阶段：连接稳定性确认（特征发现完成但未开始信息交换）
+    if (this.data.rxServiceId && this.data.rxCharId && !this.data.nameExchangeStarted) {
+      return 'connection_stabilization';
+    }
+    
+    // 第三阶段：有序信息交换（关键操作）- 蓝牙名称更新阶段
+    if (lastMessage && (
+        lastMessage.content.includes('set_un_string') ||
+        lastMessage.content.includes('蓝牙名称') ||
+        this.data.nameExchangeStarted && !this.data.nameExchangeCompleted
+      )) {
+      return 'name_exchange'; // 关键阶段
+    }
+    
+    // 第四阶段：碰一碰列表传输（数据传输）
+    if (this.data.nameExchangeCompleted || 
+        (lastMessage && lastMessage.content.includes('touch_list'))) {
+      return 'data_transfer';
+    }
+    
+    // 默认返回连接建立阶段
+    return 'connection_establishment';
   },
 
   // 重要消息判断逻辑
@@ -4717,11 +5091,15 @@ Page({
 
   // 断开蓝牙连接
   disconnect() {
-    console.log('🔌 [断开连接] 开始断开BLE连接');
+    console.log('🔌 [断开连接] 用户主动断开BLE连接');
     
     // 🚨 设置强制断开连接标志，阻止异步操作继续执行
-    this.setData({ _forceDisconnecting: true });
-    console.log('🚫 [断开连接] 已设置强制断开标志');
+    // 🔥 同时标记为用户主动断开，防止自动重连
+    this.setData({ 
+      _forceDisconnecting: true,
+      userDisconnected: true
+    });
+    console.log('🚫 [断开连接] 已设置强制断开标志和用户断开标志');
     
     // 清理所有定时器和异步操作
     this.clearAllTimers();
@@ -4742,10 +5120,11 @@ Page({
     }
     
     // 🔄 延迟重置强制断开标志，确保断开过程完全结束
+    // 🔥 延长保护时间，给用户足够的操作时间防止误触自动重连
     setTimeout(() => {
       this.setData({ _forceDisconnecting: false });
       console.log('✅ [断开连接] 已重置强制断开标志');
-    }, 2000); // 2秒延迟确保所有清理完成
+    }, 5000); // 5秒延迟确保用户有充足时间做出下一步操作
   },
 
   // 清除调试信息
@@ -4906,10 +5285,10 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
     this.setData({ deviceReady: true });
     
     // 🚨 重要修复：发送正确的JSON格式，包含type字段
+    // 🔧 [KISS] 简化设备就绪命令 - 移除timestamp避免分片截断
     const readyCommand = {
       type: 'device_ready',
-      cmd: 'ready',
-      timestamp: Date.now()
+      cmd: 'ready'
     };
     
     const readyMessage = JSON.stringify(readyCommand);
@@ -5312,7 +5691,7 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
       const g = parseInt(color.substring(3, 5), 16);
       const b = parseInt(color.substring(5, 7), 16);
 
-      // 构建颜色指令 JSON
+      // 🔧 [KISS] 简化颜色指令 - 移除timestamp避免分片截断
       const colorCommand = {
         type: 'set_idle_light_color',
         color: {
@@ -5320,8 +5699,7 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
           g: g, 
           b: b
         },
-        source: 'mbti_selection',
-        timestamp: Date.now()
+        source: 'mbti_selection'
       };
 
       const commandStr = JSON.stringify(colorCommand);
@@ -5424,12 +5802,11 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
       
       console.log('🎨 [兼容性] 最终解析结果:', { rgbColor, mbtiType });
       
-      // 构建新的颜色命令（移除中文mbtiType字段避免传输问题）
+      // 🔧 [KISS] 简化颜色命令 - 移除timestamp避免分片截断
       const colorCommand = {
         type: 'set_idle_light_color',
         color: rgbColor,
-        source: 'mbti_selection',
-        timestamp: Date.now()
+        source: 'mbti_selection'
       };
       
       const commandStr = JSON.stringify(colorCommand);
@@ -5534,9 +5911,9 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
   clearHardwareBuffer() {
     console.log('🧹 [重传机制] 发送缓冲区清空命令');
     
+    // 🔧 [KISS] 简化清空缓冲区命令 - 移除timestamp避免分片截断
     const clearCommand = {
-      type: 'clear_buffer',
-      timestamp: Date.now()
+      type: 'clear_buffer'
     };
 
     // 使用基础BLE发送（不触发重传机制）

@@ -186,11 +186,11 @@ const BleConfigHelper = {
    * @param {number} intervalMs 心跳间隔（毫秒）
    * @returns {string} JSON格式的配置消息
    */
+  // 🔧 [KISS] 简化心跳配置消息 - 移除timestamp避免分片截断
   createHeartbeatConfigMessage(intervalMs) {
     return JSON.stringify({
       type: "set_heartbeat_interval",
-      interval_ms: intervalMs,
-      timestamp: Date.now()
+      interval_ms: intervalMs
     });
   },
 
@@ -199,11 +199,11 @@ const BleConfigHelper = {
    * @param {number} threshold TAG匹配阈值
    * @returns {string} JSON格式的配置消息
    */
+  // 🔧 [KISS] 简化阈值配置消息 - 移除timestamp避免分片截断
   createTagThresholdConfigMessage(threshold) {
     return JSON.stringify({
       type: "set_threshold",
-      threshold: threshold,
-      timestamp: Date.now()
+      threshold: threshold
     });
   },
 
@@ -212,13 +212,13 @@ const BleConfigHelper = {
    * @param {Object} ledConfig LED配置对象
    * @returns {string} JSON格式的配置消息
    */
+  // 🔧 [KISS] 简化LED配置消息 - 移除timestamp避免分片截断
   createLedConfigMessage(ledConfig) {
     return JSON.stringify({
       type: "set_led_config",
       near_distance: ledConfig.nearDistance || BleHardwareConfig.LED_NEAR_DISTANCE_THRESHOLD,
       breath_period_far: ledConfig.breathPeriodFar || BleHardwareConfig.LED_BREATH_PERIOD_FAR,
-      max_brightness: ledConfig.maxBrightness || BleHardwareConfig.LED_MAX_BRIGHTNESS,
-      timestamp: Date.now()
+      max_brightness: ledConfig.maxBrightness || BleHardwareConfig.LED_MAX_BRIGHTNESS
     });
   },
 
@@ -227,13 +227,13 @@ const BleConfigHelper = {
    * @param {Object} powerConfig 功耗配置对象
    * @returns {string} JSON格式的配置消息
    */
+  // 🔧 [KISS] 简化功耗配置消息 - 移除timestamp避免分片截断
   createPowerConfigMessage(powerConfig) {
     return JSON.stringify({
       type: "set_power_config",
       idle_timeout_ms: powerConfig.idleTimeoutMs || BleHardwareConfig.IDLE_TIMEOUT_MS,
       sleep_timeout_ms: powerConfig.sleepTimeoutMs || BleHardwareConfig.SLEEP_TIMEOUT_MS,
-      high_performance: powerConfig.highPerformance !== undefined ? powerConfig.highPerformance : BleHardwareConfig.HIGH_PERFORMANCE_MODE,
-      timestamp: Date.now()
+      high_performance: powerConfig.highPerformance !== undefined ? powerConfig.highPerformance : BleHardwareConfig.HIGH_PERFORMANCE_MODE
     });
   },
 
@@ -242,12 +242,12 @@ const BleConfigHelper = {
    * @param {Object} config 配置对象（可选，使用默认配置）
    * @returns {string} JSON格式的完整配置消息
    */
+  // 🔧 [KISS] 简化完整配置消息 - 移除timestamp避免分片截断
   createFullConfigMessage(config = {}) {
     const fullConfig = { ...BleHardwareConfig, ...config };
     return JSON.stringify({
       type: "set_full_config",
-      config: fullConfig,
-      timestamp: Date.now()
+      config: fullConfig
     });
   },
 

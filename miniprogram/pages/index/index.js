@@ -254,22 +254,28 @@ Page({
     });
   },
 
+  // 🔧 KISS原则：简化后的页面初始化
   onLoad: function(options) {
-    // 加载标签主题配置
-    this.loadTagTheme();
     console.log('[Index] 页面加载 - 使用高级标签系统', options);
     
-    // 检查是否是从connect页面跳转过来的
+    // 加载标签主题配置
+    this.loadTagTheme();
+    
+    // 🎯 特殊情况：从connect页面跳转查看其他用户资料
     if (options.openid && options.viewMode === 'profile') {
       console.log('[Index] 从connect页面跳转，显示用户问卷:', options.openid);
       this.loadUserProfile(options.openid);
-    } else {
-      console.log('[Index] 正常加载页面');
-      this.initTextConfig();
-      this.initAdvancedTagsFromConfig();
-      this.initMBTIOptions();  // 初始化MBTI选项
-      this.checkLoginStatus();
+      return;
     }
+    
+    // 🎯 正常情况：统一的初始化流程
+    console.log('[Index] 正常加载页面，开始统一初始化');
+    this.initTextConfig();
+    this.initAdvancedTagsFromConfig();
+    this.initMBTIOptions();
+    
+    // 关键：统一调用checkLoginStatus，让它自动决定显示什么视图
+    this.checkLoginStatus();
   },
 
   /**
@@ -775,8 +781,38 @@ Page({
     });
   },
 
-  // 检查登录状态
+  // 🔧 KISS原则：简单的数据完整性检查
+  isUserDataComplete() {
+    const { userInfo, advancedTags } = this.data;
+    
+    // 检查基础用户信息
+    if (!userInfo || !userInfo.openid) {
+      return false;
+    }
+    
+    // 检查标签数据完整性
+    const totalSelectedTags = (advancedTags.professionalTags?.length || 0) + 
+                             (advancedTags.interestTags?.length || 0) + 
+                             (advancedTags.personalityTags?.length || 0) + 
+                             (advancedTags.quirkyTags?.length || 0);
+    
+    // 检查基本个人信息
+    const hasBasicInfo = !!(advancedTags.displayName && totalSelectedTags > 0);
+    
+    console.log('[isUserDataComplete] 数据完整性检查:', {
+      hasUserInfo: !!(userInfo && userInfo.openid),
+      totalSelectedTags,
+      hasBasicInfo,
+      isComplete: hasBasicInfo
+    });
+    
+    return hasBasicInfo;
+  },
+
+  // 🔧 KISS原则：简化后的登录状态检查
   checkLoginStatus() {
+    console.log('[checkLoginStatus] 开始检查登录状态');
+    
     // 首先加载本地数据
     this.loadAdvancedTags();
     
@@ -787,24 +823,28 @@ Page({
         userInfo: userInfo
       });
       
-      // 同步云端数据
+      // 🎯 关键改进：立即检查数据完整性并设置正确的视图模式
+      if (this.isUserDataComplete()) {
+        console.log('[checkLoginStatus] 用户数据完整，切换到profile模式');
+        this.setData({ viewMode: 'profile' });
+      } else {
+        console.log('[checkLoginStatus] 用户数据不完整，保持questionnaire模式');
+        this.setData({ viewMode: 'questionnaire' });
+      }
+      
+      // 同步云端数据（会在syncDataFromCloud中再次检查并切换视图）
       this.syncDataFromCloud();
       
-      // 检查用户完成状态并设置合适的视图模式
-      setTimeout(() => {
-        this.checkUserCompletionStatus();
-        // 初始化当前步骤的分类
-        this.initStepCategory(this.data.currentStep);
-      }, 500); // 等待数据加载完成
     } else {
-      console.log('[Index] 用户未登录');
-      // 确保在未登录状态下显示问卷视图
+      console.log('[Index] 用户未登录，显示问卷视图');
       this.setData({
+        hasUserInfo: false,
         viewMode: 'questionnaire'
       });
-      // 初始化当前步骤的分类
-      this.initStepCategory(this.data.currentStep);
     }
+    
+    // 初始化当前步骤的分类
+    this.initStepCategory(this.data.currentStep);
   },
 
   // 保存高级标签数据到本地
@@ -917,6 +957,14 @@ Page({
               this.updateTotalSelectedTags(); // 🎯 强制重新计算
               this.saveAdvancedTags();
               
+              // 🎯 KISS原则关键改进：云端数据同步后立即检查并切换视图模式
+              if (this.isUserDataComplete()) {
+                console.log('[syncDataFromCloud] 云端数据完整，自动切换到profile模式');
+                this.setData({ viewMode: 'profile' });
+              } else {
+                console.log('[syncDataFromCloud] 云端数据不完整，保持questionnaire模式');
+              }
+              
               // 🎨 如果云端数据包含MBTI类型，自动应用常亮灯颜色设置
               if (cloudData.advancedTags && cloudData.advancedTags.mbtiType) {
                 console.log('[syncDataFromCloud] 🎨 检测到云端MBTI数据，应用常亮灯颜色:', cloudData.advancedTags.mbtiType);
@@ -926,6 +974,11 @@ Page({
             });
           } else {
             console.log('[syncDataFromCloud] 📦 使用本地数据（较新或云端数据不存在）');
+            // 🎯 即使使用本地数据，也要检查数据完整性并设置正确的视图模式
+            if (this.isUserDataComplete()) {
+              console.log('[syncDataFromCloud] 本地数据完整，切换到profile模式');
+              this.setData({ viewMode: 'profile' });
+            }
           }
         }
       },
