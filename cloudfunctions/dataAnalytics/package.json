@@ -1,0 +1,18 @@
+{
+  "name": "dataanalytics",
+  "version": "1.0.0",
+  "description": "Unian数据分析云函数 - 专门用于Un字符串绑定分析、用户统计、朋友关系分析等数据分析需求",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  },
+  "author": "Unian Team",
+  "license": "MIT",
+  "keywords": [
+    "unian",
+    "data-analytics", 
+    "bluetooth-analysis",
+    "user-statistics",
+    "friendship-analysis"
+  ]
+}
