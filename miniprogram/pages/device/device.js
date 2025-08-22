@@ -829,7 +829,7 @@ Page({
     }
   },
   
-  // 页面显示时
+  // 页面显示时 - 🎯 KISS强化扫描保持
   onShow() {
     // 更新tabBar选中状态
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
@@ -839,24 +839,45 @@ Page({
     // 重新初始化设备绑定状态
     this.initDeviceBinding();
     
-    // 如果在扫描界面且没有连接设备，启动智能扫描流程
-    // 🔥 增加用户主动断开检查：避免用户断开连接后立即自动重连
-    // ⚡ 新增：检查用户主动断开标志，避免用户断开后的误重连
-    if (this.data.showScanView && !this.data.connected && !this.data._forceDisconnecting && !this.data.userDisconnected) {
+    // 🎯 KISS修复：强制在扫描页面时启动扫描，简化条件检查
+    if (this.data.showScanView) {
+      console.log('📱 [页面显示] 强制启动扫描流程，确保扫描持续进行');
+      
       setTimeout(() => {
-        this.startIntelligentFlow();
-      }, 300); // 给页面足够时间初始化
+        // 如果已连接，不启动扫描；否则必须启动扫描
+        if (!this.data.connected) {
+          this.startIntelligentFlow();
+          
+          // 🔍 启动扫描状态监控，确保扫描不会意外停止
+          this.startScanningMonitor();
+        }
+      }, 300);
     }
   },
   
-  // 页面隐藏时
+  // 页面隐藏时 - 🎯 保留节能但支持快速恢复
   onHide() {
+    // 🔋 记录扫描状态以便恢复
+    this._wasScanning = this.data.scanning;
+    this._scanViewActive = this.data.showScanView;
+    
+    console.log('📱 [页面隐藏] 记录扫描状态:', {
+      wasScanning: this._wasScanning,
+      scanViewActive: this._scanViewActive
+    });
+    
+    // 停止扫描状态监控
+    this.stopScanningMonitor();
+    
     // 停止所有扫描以节省电量
     this.stopAllScanning();
   },
   
   // 页面卸载时
   onUnload() {
+    // 停止扫描状态监控
+    this.stopScanningMonitor();
+    
     // 清理所有定时器和监听器
     this.stopContinuousScan();
     
@@ -1293,7 +1314,7 @@ Page({
   },
 
   // ===== 蓝牙扫描功能 =====
-  // 开始持续扫描
+  // 开始持续扫描 - 🎯 KISS增强保持机制
   startContinuousScan() {
     console.log('🔄 [扫描] 开始持续扫描');
     this.setData({ scanning: true });
@@ -1304,11 +1325,19 @@ Page({
     // 开始蓝牙扫描
     this.startScan();
     
-    // 设置周期性重启扫描（每15秒重启一次，保持扫描新鲜度）
+    // 🎯 简化周期性重启扫描条件，强化扫描保持
     this._continuousScanTimer = setInterval(() => {
-      if (this.data.scanning && this.data.showScanView && !this.data.connected) {
+      // KISS简化：只要在扫描页面且未连接，就保持扫描
+      if (this.data.showScanView && !this.data.connected) {
         console.log('🔄 [扫描] 周期性重启扫描');
         this.restartScan();
+        
+        // 🔍 额外检查：如果扫描状态异常，强制修复
+        if (!this.data.scanning) {
+          console.log('⚠️ [扫描] 检测到扫描状态异常，强制恢复');
+          this.setData({ scanning: true });
+          this.startScan();
+        }
       }
     }, 15000);
   },
@@ -1339,11 +1368,69 @@ Page({
       clearInterval(this._deviceUpdateTimer);
       this._deviceUpdateTimer = null;
     }
+    if (this._scanningMonitorTimer) {
+      clearInterval(this._scanningMonitorTimer);
+      this._scanningMonitorTimer = null;
+    }
+  },
+
+  // 🎯 新增：扫描状态实时监控 - KISS核心修复功能
+  startScanningMonitor() {
+    console.log('👁️ [监控] 启动扫描状态监控');
+    
+    // 停止可能存在的监控
+    this.stopScanningMonitor();
+    
+    // 每3秒检查一次扫描状态
+    this._scanningMonitorTimer = setInterval(() => {
+      this.ensureScanningInScanView();
+    }, 3000);
+  },
+
+  // 停止扫描状态监控
+  stopScanningMonitor() {
+    if (this._scanningMonitorTimer) {
+      clearInterval(this._scanningMonitorTimer);
+      this._scanningMonitorTimer = null;
+      console.log('👁️ [监控] 扫描状态监控已停止');
+    }
+  },
+
+  // 🎯 确保扫描页面时始终保持扫描状态 - KISS核心逻辑
+  ensureScanningInScanView() {
+    // 只在扫描页面且未连接时进行检查
+    if (!this.data.showScanView || this.data.connected) {
+      return;
+    }
+
+    // 检查扫描状态是否异常
+    if (!this.data.scanning) {
+      console.log('🔧 [监控] 检测到扫描异常停止，自动恢复扫描');
+      this.startContinuousScan();
+      return;
+    }
+
+    // 检查连续扫描定时器是否丢失
+    if (!this._continuousScanTimer) {
+      console.log('🔧 [监控] 检测到扫描定时器丢失，重新启动');
+      this.startContinuousScan();
+      return;
+    }
+
+    // 状态正常，记录监控信息
+    console.log('✅ [监控] 扫描状态正常:', {
+      scanning: this.data.scanning,
+      devicesCount: this.data.devices.length,
+      timerActive: !!this._continuousScanTimer
+    });
   },
 
   // 🚨 清理所有定时器和异步操作（强制断开连接时使用）
   clearAllTimers() {
     console.log('🧹 [强制断开] 开始清理所有定时器和异步操作');
+    
+    // 停止扫描状态监控
+    this.stopScanningMonitor();
     
     // 清理扫描相关定时器
     this.clearScanTimers();
@@ -1673,10 +1760,14 @@ Page({
     if (this.data.userDisconnected) {
       console.log('🔄 [resetToScan] 用户主动断开，等待用户选择操作');
       // 用户主动断开，不自动重连，等待用户选择
+      // 🔍 但仍需启动扫描监控，确保用户手动连接时扫描正常
+      this.startScanningMonitor();
     } else {
       console.log('🔄 [resetToScan] 系统断开，开始智能搜索');
       // 🚀 系统异常断开，使用智能流程自动重连
       this.startIntelligentFlow();
+      // 🔍 启动扫描监控，确保扫描持续进行
+      this.startScanningMonitor();
     }
   },
 

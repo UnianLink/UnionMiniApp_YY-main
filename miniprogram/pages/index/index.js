@@ -813,12 +813,10 @@ Page({
 
   // 🔧 KISS原则：简单的数据完整性检查
   isUserDataComplete() {
-    const { userInfo, advancedTags } = this.data;
+    const { advancedTags } = this.data;
     
-    // 检查基础用户信息
-    if (!userInfo || !userInfo.openid) {
-      return false;
-    }
+    // 🎯 优化：基于实际问卷数据判断完整性，不依赖openid
+    // 这样有问卷数据的用户可以直接显示名片页，避免重复填写
     
     // 检查标签数据完整性
     const totalSelectedTags = (advancedTags.professionalTags?.length || 0) + 
@@ -826,17 +824,19 @@ Page({
                              (advancedTags.personalityTags?.length || 0) + 
                              (advancedTags.quirkyTags?.length || 0);
     
-    // 检查基本个人信息
-    const hasBasicInfo = !!(advancedTags.displayName && totalSelectedTags > 0);
+    // 检查基本个人信息：显示名称 + 至少4个标签
+    const hasDisplayName = !!(advancedTags.displayName && advancedTags.displayName.trim());
+    const hasEnoughTags = totalSelectedTags >= 4;
+    const isComplete = hasDisplayName && hasEnoughTags;
     
-    console.log('[isUserDataComplete] 数据完整性检查:', {
-      hasUserInfo: !!(userInfo && userInfo.openid),
+    console.log('[isUserDataComplete] 数据完整性检查（优化版）:', {
+      hasDisplayName,
       totalSelectedTags,
-      hasBasicInfo,
-      isComplete: hasBasicInfo
+      hasEnoughTags,
+      isComplete
     });
     
-    return hasBasicInfo;
+    return isComplete;
   },
 
   // 🔧 KISS原则：简化后的登录状态检查
