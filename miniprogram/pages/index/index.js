@@ -446,29 +446,56 @@ Page({
           console.error(`[initAdvancedTagsFromConfig] ❌ 最终标签数量${finalTagCount}超过60限制，系统可能出现问题`);
         }
         
-        // 🔧 清除旧的本地存储数据，避免config.js标签干扰
-        console.log('[initAdvancedTagsFromConfig] 🧹 清除旧的本地存储数据');
+        // 🔧 KISS修复：检查现有用户数据，避免无条件删除
+        console.log('[initAdvancedTagsFromConfig] 🔍 检查现有用户数据');
+        let existingUserData = null;
         try {
-          wx.removeStorageSync('advancedTags');
-          console.log('[initAdvancedTagsFromConfig] ✅ 本地存储数据清除成功');
-        } catch (clearError) {
-          console.warn('[initAdvancedTagsFromConfig] ⚠️ 清除本地存储失败:', clearError);
+          existingUserData = wx.getStorageSync('advancedTags');
+          console.log('[initAdvancedTagsFromConfig] 📦 现有数据状态:', {
+            hasData: !!existingUserData,
+            hasValidStructure: existingUserData && existingUserData.professionalTags,
+            totalTags: existingUserData ? (
+              (existingUserData.professionalTags?.length || 0) +
+              (existingUserData.interestTags?.length || 0) +
+              (existingUserData.personalityTags?.length || 0) +
+              (existingUserData.quirkyTags?.length || 0)
+            ) : 0
+          });
+        } catch (error) {
+          console.warn('[initAdvancedTagsFromConfig] ⚠️ 读取现有数据失败:', error);
         }
         
-        // 🔄 重置所有标签选择为空，确保从外部配置开始
-        const cleanAdvancedTags = {
-          professionalTags: [],
-          interestTags: [],
-          personalityTags: [],
-          quirkyTags: [],
-          threshold: Config.advancedTagsConfig.threshold.default,
-          updateTime: new Date().toISOString()
-        };
+        // 🎯 智能数据处理：保留有效用户数据，只重置配置相关部分
+        let advancedTags;
+        if (existingUserData && existingUserData.professionalTags && 
+            (existingUserData.professionalTags.length > 0 || existingUserData.interestTags?.length > 0 ||
+             existingUserData.personalityTags?.length > 0 || existingUserData.quirkyTags?.length > 0)) {
+          // 有有效用户数据，保留用户选择，只更新必要的配置
+          console.log('[initAdvancedTagsFromConfig] ✅ 保留现有用户数据，仅更新配置');
+          advancedTags = {
+            ...existingUserData,
+            // 确保阈值使用配置默认值（如果用户没有设置）
+            threshold: existingUserData.threshold || Config.advancedTagsConfig.threshold.default,
+            updateTime: existingUserData.updateTime || new Date().toISOString()
+          };
+        } else {
+          // 无有效用户数据，初始化空状态
+          console.log('[initAdvancedTagsFromConfig] 🆕 初始化新用户数据');
+          advancedTags = {
+            professionalTags: [],
+            interestTags: [],
+            personalityTags: [],
+            quirkyTags: [],
+            threshold: Config.advancedTagsConfig.threshold.default,
+            updateTime: new Date().toISOString()
+          };
+        }
         
         console.log('[initAdvancedTagsFromConfig] 🔥 初始化阈值:', {
           配置默认值: Config.advancedTagsConfig.threshold.default,
-          清理后阈值: cleanAdvancedTags.threshold,
-          阈值类型: typeof cleanAdvancedTags.threshold
+          最终阈值: advancedTags.threshold,
+          阈值类型: typeof advancedTags.threshold,
+          数据来源: existingUserData ? '保留用户数据' : '新建数据'
         });
         
         // 初始化当前分类
@@ -480,17 +507,20 @@ Page({
         });
         
         console.log('[initAdvancedTagsFromConfig] 🎉 外部配置设置完成，标签数量:', finalTagCount);
-        console.log('[initAdvancedTagsFromConfig] 🧽 清空所有标签选择，重新开始');
+        const userDataStatus = existingUserData && (existingUserData.professionalTags?.length > 0 || 
+          existingUserData.interestTags?.length > 0 || existingUserData.personalityTags?.length > 0 || 
+          existingUserData.quirkyTags?.length > 0) ? '保留用户数据' : '初始化新数据';
+        console.log('[initAdvancedTagsFromConfig] 📊 数据处理结果:', userDataStatus);
         
         this.setData({
           tagOptions,
           currentCategory,
           currentStepConfig: stepConfigs[0] || null,
           totalSteps: stepConfigs.length,
-          advancedTags: cleanAdvancedTags
+          advancedTags: advancedTags
         }, () => {
           this.refreshAllTagsActive();
-          // 保存清空后的数据到本地存储
+          // 保存更新后的数据到本地存储
           this.saveAdvancedTags();
         });
         

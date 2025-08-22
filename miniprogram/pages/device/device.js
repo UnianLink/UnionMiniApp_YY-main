@@ -3072,8 +3072,8 @@ Page({
         return;
       }
       
-      // 🔒 [KISS原则] 使用ACK确认发送
-      await this.sendCommandWithAck(command);
+      // 🔧 [KISS修复] 确认消息无需等待ACK，直接发送
+      await this.writeToBle(commandStr);
       
       console.log('✅ 碰一碰列表确认发送成功');
       
@@ -3687,31 +3687,7 @@ Page({
             return;
             
           case 'touch_list_ack_response':
-            // 🔧 [KISS修复] 特殊处理touch_list_ack的ACK响应
-            if (this.data.waitingForAck && this.data.pendingCommand === 'touch_list_ack') {
-              console.log('🔒 [特殊ACK] 收到touch_list_ack_response，清除ACK状态');
-              
-              // 清理ACK处理器
-              if (this.currentAckHandler) {
-                if (this.currentAckHandler.timeout) {
-                  clearTimeout(this.currentAckHandler.timeout);
-                }
-                if (this.currentAckHandler.resolve) {
-                  this.currentAckHandler.resolve(jsonData);
-                }
-                this.currentAckHandler = null;
-              }
-              
-              // 重置ACK等待状态
-              this.setData({ waitingForAck: false, pendingCommand: null });
-              
-              // 处理队列中的下一个命令
-              this.processCommandQueue();
-              
-              console.log('✅ [特殊ACK] ACK处理完成，已解锁');
-            }
-            
-            // 原有显示逻辑保持不变
+            // 🔧 [KISS简化] 硬件确认收到touch_list_ack，仅记录日志
             if (jsonData.status === 'success') {
               console.log('✅ 硬件确认碰一碰列表已清空');
               this.addNotification('✅ 碰一碰列表已清空');
