@@ -3754,7 +3754,7 @@ Page({
               
               // 显示成功提示
               wx.showToast({
-                title: '蓝牙名称更新成功',
+                title: '新的社交信号已发给设备',
                 icon: 'success',
                 duration: 2000
               });

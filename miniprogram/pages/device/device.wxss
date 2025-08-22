@@ -594,10 +594,10 @@ page {
   flex-shrink: 0;
 }
 
-/* 可滚动内容区域 */
+/* 可滚动内容区域 - 为小程序底部导航栏预留空间 */
 .scrollable-content {
   flex: 1;
-  height: calc(100vh - 120rpx);
+  height: calc(100vh - 100rpx);
   padding: 0 32rpx;
 }
 
@@ -1195,12 +1195,13 @@ page {
   border-top: 1rpx solid rgba(255, 255, 255, 0.1);
 }
 
-/* 底部安全区域占位 */
+/* 底部安全区域占位 - 确保按钮不被小程序底部导航栏挡住 */
 .bottom-safe-area {
-  height: calc(env(safe-area-inset-bottom) + 32rpx);
-  min-height: 32rpx;
+  height: calc(env(safe-area-inset-bottom) + 100rpx);
+  min-height: 100rpx;
   width: 100%;
 }
+
 
 .disconnect-button {
   background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);

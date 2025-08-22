@@ -252,15 +252,18 @@
       </view>
       
       <!-- 简化的通信日志 -->
-      <view class="section" wx:if="{{connected && messages.length > 0}}">
+      <view class="section" wx:if="{{connected}}">
         <view class="section-header">
           <text class="section-title">通信日志</text>
-          <button class="clear-button" bindtap="clearMessages" size="mini">清除</button>
+          <button class="clear-button" bindtap="clearMessages" size="mini">清除日志</button>
         </view>
-        <view class="msg-list">
+        <view wx:if="{{messages.length > 0}}" class="msg-list">
           <view wx:for="{{messages}}" wx:key="index" class="msg-item">
             <text>{{item}}</text>
           </view>
+        </view>
+        <view wx:else class="no-messages">
+          <text class="no-msg-text">暂无通信日志</text>
         </view>
       </view>
 
@@ -274,11 +277,11 @@
       </view>
 
       <!-- 断开连接按钮 -->
-      <view class="bottom-actions">
+      <view class="bottom-actions" wx:if="{{connected}}">
         <button class="disconnect-button" bindtap="disconnect" type="warn">断开连接</button>
       </view>
-      
-      <!-- 底部安全区域占位 -->
+
+      <!-- 底部安全区域占位 - 确保不被小程序导航栏挡住 -->
       <view class="bottom-safe-area"></view>
     </scroll-view>
   </view>
