@@ -2,17 +2,9 @@
 <view class="container">
   <!-- 主内容区域 -->
   <view class="content">
-    <!-- 未登录状态 -->
-    <block wx:if="{{!hasUserInfo}}">
-      <view class="login-section">
-        <view class="welcome-title">{{texts.welcomeTitle}}</view>
-        <view class="welcome-desc">{{texts.welcomeDesc}}</view>
-        <button class="login-btn" bindtap="login">{{texts.loginButton}}</button>
-      </view>
-    </block>
-
-    <!-- 已登录状态 -->
-    <block wx:else>
+    <!-- 🎯 KISS静默登录：移除强制登录界面，直接显示功能 -->
+    <!-- 用户感知：完全匿名使用 -->
+    <!-- 技术实现：后台静默获取身份标识 -->
       
       <!-- 个人名片视图 -->
       <view wx:if="{{viewMode === 'profile'}}" class="profile-card-view">
@@ -493,7 +485,6 @@
           </button>
         </view>
       </view>
-    </block>
   </view>
   
   <!-- 浮动编辑按钮 (仅在个人名片视图显示) -->

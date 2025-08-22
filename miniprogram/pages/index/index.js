@@ -268,14 +268,14 @@ Page({
       return;
     }
     
-    // 🎯 正常情况：统一的初始化流程
-    console.log('[Index] 正常加载页面，开始统一初始化');
+    // 🎯 KISS静默登录：页面加载时立即开始初始化
+    console.log('[Index] 正常加载页面，开始静默身份识别');
     this.initTextConfig();
     this.initAdvancedTagsFromConfig();
     this.initMBTIOptions();
     
-    // 关键：统一调用checkLoginStatus，让它自动决定显示什么视图
-    this.checkLoginStatus();
+    // 🎯 核心改进：静默登录 + 数据检查
+    this.silentLogin();
   },
 
   /**
@@ -840,41 +840,118 @@ Page({
   },
 
   // 🔧 KISS原则：简化后的登录状态检查
-  checkLoginStatus() {
-    console.log('[checkLoginStatus] 开始检查登录状态');
+  // 🎯 KISS静默登录：用户无感知的身份识别和数据同步
+  silentLogin() {
+    console.log('[silentLogin] 开始静默身份识别，用户完全无感知');
     
-    // 首先加载本地数据
+    // 首先加载本地数据，让用户立即看到内容
     this.loadAdvancedTags();
     
-    const userInfo = wx.getStorageSync('userInfo');
-    if (userInfo && userInfo.openid) {
-      this.setData({
-        hasUserInfo: true,
-        userInfo: userInfo
-      });
-      
-      // 🎯 关键改进：立即检查数据完整性并设置正确的视图模式
-      if (this.isUserDataComplete()) {
-        console.log('[checkLoginStatus] 用户数据完整，切换到profile模式');
-        this.setData({ viewMode: 'profile' });
-      } else {
-        console.log('[checkLoginStatus] 用户数据不完整，保持questionnaire模式');
-        this.setData({ viewMode: 'questionnaire' });
+    // 检查本地是否有数据，设置初始视图
+    const hasLocalData = this.isUserDataComplete();
+    
+    // 🎯 设置基础用户信息（静默模式）
+    this.setData({
+      hasUserInfo: true,  // 静默模式下视为有用户信息
+      userInfo: {
+        nickName: '匿名用户',
+        avatarUrl: '',
+        ...this.data.userInfo  // 保留可能存在的其他信息
+      },
+      viewMode: hasLocalData ? 'profile' : 'questionnaire',
+      silentMode: true  // 标识静默模式
+    });
+    
+    console.log('[silentLogin] 用户界面已显示，开始后台身份识别');
+    
+    // 后台静默获取身份标识
+    wx.login({
+      success: (res) => {
+        if (res.code) {
+          console.log('[silentLogin] 获取到登录凭证，调用云函数获取身份');
+          this.getOpenIdSilently(res.code);
+        } else {
+          console.warn('[silentLogin] 获取登录凭证失败，降级到本地模式');
+          this.fallbackToLocalMode();
+        }
+      },
+      fail: (error) => {
+        console.error('[silentLogin] wx.login失败，降级到本地模式:', error);
+        this.fallbackToLocalMode();
       }
-      
-      // 同步云端数据（会在syncDataFromCloud中再次检查并切换视图）
-      this.syncDataFromCloud();
-      
-    } else {
-      console.log('[Index] 用户未登录，显示问卷视图');
-      this.setData({
-        hasUserInfo: false,
-        viewMode: 'questionnaire'
-      });
-    }
+    });
     
     // 初始化当前步骤的分类
     this.initStepCategory(this.data.currentStep);
+  },
+
+  // 🎯 静默获取openid（用户无感知）
+  getOpenIdSilently(code) {
+    console.log('[getOpenIdSilently] 静默调用云函数获取身份标识');
+    
+    wx.cloud.callFunction({
+      name: 'login',
+      data: { code: code },
+      success: (res) => {
+        console.log('[getOpenIdSilently] 云函数调用成功:', res.result);
+        
+        if (res.result && res.result.openid) {
+          const openid = res.result.openid;
+          
+          // 保存身份标识到本地存储
+          wx.setStorageSync('openid', openid);
+          
+          // 更新状态（用户仍感觉匿名）
+          this.setData({
+            hasIdentity: true,     // 技术上有身份
+            silentMode: true,      // 用户感觉静默
+            openid: openid
+          });
+          
+          console.log('[getOpenIdSilently] ✅ 身份识别成功，开始数据同步');
+          
+          // 开始智能数据同步
+          this.smartDataSync();
+          
+        } else {
+          console.warn('[getOpenIdSilently] 云函数返回格式异常，降级到本地模式');
+          this.fallbackToLocalMode();
+        }
+      },
+      fail: (error) => {
+        console.error('[getOpenIdSilently] 云函数调用失败，降级到本地模式:', error);
+        this.fallbackToLocalMode();
+      }
+    });
+  },
+
+  // 🎯 智能数据同步（有身份时云端，无身份时本地）
+  smartDataSync() {
+    console.log('[smartDataSync] 开始智能数据同步');
+    
+    const openid = this.data.openid || wx.getStorageSync('openid');
+    
+    if (openid) {
+      console.log('[smartDataSync] 有身份标识，使用云端同步');
+      this.syncDataFromCloud();
+    } else {
+      console.log('[smartDataSync] 无身份标识，使用本地模式');
+      this.fallbackToLocalMode();
+    }
+  },
+
+  // 🎯 降级到本地模式（网络问题时的兜底）
+  fallbackToLocalMode() {
+    console.log('[fallbackToLocalMode] 降级到本地存储模式');
+    
+    this.setData({
+      hasIdentity: false,
+      silentMode: true,
+      localOnlyMode: true  // 标识纯本地模式
+    });
+    
+    // 用户界面保持不变，只是数据不会云端同步
+    console.log('[fallbackToLocalMode] 本地模式已激活，用户体验不受影响');
   },
 
   // 保存高级标签数据到本地
@@ -1651,38 +1728,58 @@ Page({
     return newFormatString;
   },
 
-  // 提交表单
+  // 提交表单 - 🎯 KISS适配静默登录
   async submitForm() {
     if (!this.validateAdvancedStep()) {
       return;
     }
     
-    if (!this.data.hasUserInfo) {
-      wx.showToast({
-        title: this.data.texts.loginRequired || '请先登录',
-        icon: 'none'
-      });
-      return;
-    }
+    // 🎯 获取身份标识（静默登录模式）
+    let currentOpenId = this.data.openid || wx.getStorageSync('openid');
     
-    // 检查用户信息和openid
-    console.log('[submitForm] 用户信息检查:', {
-      hasUserInfo: this.data.hasUserInfo,
-      userInfo: this.data.userInfo,
-      openid: this.data.userInfo.openid
+    console.log('[submitForm] 🔍 身份标识检查:', {
+      silentMode: this.data.silentMode,
+      hasIdentity: this.data.hasIdentity,
+      openidFromData: this.data.openid,
+      openidFromStorage: wx.getStorageSync('openid'),
+      finalOpenId: currentOpenId
     });
     
-    if (!this.data.userInfo.openid) {
-      console.error('[submitForm] openid不存在，尝试重新登录');
-      wx.showToast({
-        title: '登录状态异常，请重新登录',
-        icon: 'none'
-      });
-      this.setData({
-        hasUserInfo: false,
-        userInfo: {}
-      });
-      return;
+    // 🎯 如果没有身份标识，尝试快速获取（用户仍无感知）
+    if (!currentOpenId) {
+      console.log('[submitForm] 无身份标识，尝试快速获取');
+      
+      try {
+        const loginRes = await new Promise((resolve, reject) => {
+          wx.login({
+            success: resolve,
+            fail: reject
+          });
+        });
+        
+        if (loginRes.code) {
+          const cloudRes = await wx.cloud.callFunction({
+            name: 'login',
+            data: { code: loginRes.code }
+          });
+          
+          if (cloudRes.result && cloudRes.result.openid) {
+            currentOpenId = cloudRes.result.openid;
+            wx.setStorageSync('openid', currentOpenId);
+            this.setData({ openid: currentOpenId, hasIdentity: true });
+            console.log('[submitForm] ✅ 快速获取身份成功');
+          }
+        }
+      } catch (error) {
+        console.warn('[submitForm] 快速获取身份失败，使用本地模式:', error);
+      }
+    }
+    
+    // 🎯 如果仍然没有身份标识，使用匿名提交模式
+    if (!currentOpenId) {
+      console.log('[submitForm] 无法获取身份，启用匿名提交模式');
+      currentOpenId = 'anonymous_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      this.setData({ localOnlyMode: true });
     }
     
     this.setData({ isSubmitting: true });
@@ -1722,11 +1819,12 @@ Page({
       };
     }
     
-    // 准备提交数据 - 确保数据结构完整
+    // 准备提交数据 - 🎯 使用静默获取的身份标识
     const submitData = {
-      openid: this.data.userInfo.openid,
+      openid: currentOpenId,
       userInfo: {
-        ...this.data.userInfo
+        ...this.data.userInfo,
+        openid: currentOpenId
       },
       advancedTags: {
         professionalTags: this.data.advancedTags.professionalTags || [],
@@ -1777,19 +1875,11 @@ Page({
       
       console.log('[submitForm] 🆔 开始分配唯一ID，调用云函数allocateUniqueId');
       
-      // 检查登录态
-      if (!submitData.openid || !this.data.userInfo.openid) {
-        console.warn('[submitForm] ⚠️ 用户登录态无效，先尝试重新获取登录信息');
-        
-        // 尝试重新获取用户信息
-        try {
-          await this.getUserInfo();
-          submitData.openid = this.data.userInfo.openid;
-        } catch (loginError) {
-          console.error('[submitForm] ❌ 重新获取用户信息失败:', loginError);
-          this.handleUniqueIdFailure(submitData, tagEncoding, newFormatData);
-          return;
-        }
+      // 🎯 检查身份标识（静默登录模式）
+      if (!submitData.openid) {
+        console.warn('[submitForm] ⚠️ 身份标识缺失，使用降级方案');
+        this.handleUniqueIdFailure(submitData, tagEncoding, newFormatData);
+        return;
       }
       
       console.log('[submitForm] 📊 唯一ID分配参数:', {
