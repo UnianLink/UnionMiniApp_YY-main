@@ -524,10 +524,10 @@ const tagThemes = {
       { name: 'ISFJ守护者', color: '#92B8FF', description: '温暖贴心，乐于助人' },
       { name: 'ESTJ总经理', color: '#92B8FF', description: '组织能力强，执行力佳' },//vv
       { name: 'ESFJ执政官', color: '#92B8FF', description: '社交达人，关心他人' },
-      { name: 'ISTP手工匠', color: '#FFE484', description: '动手能力强，逻辑清晰' },
-      { name: 'ISFP探险家', color: '#FFE484', description: '艺术天赋，追求自由' },
-      { name: 'ESTP实践者', color: '#FFE484', description: '行动力强，适应性佳' },
-      { name: 'ESFP表演者', color: '#FFE484', description: '活泼开朗，富有感染力' }
+      { name: 'ISTP手工匠', color: '#F2DA70', description: '动手能力强，逻辑清晰' },
+      { name: 'ISFP探险家', color: '#F2DA70', description: '艺术天赋，追求自由' },
+      { name: 'ESTP实践者', color: '#F2DA70', description: '行动力强，适应性佳' },
+      { name: 'ESFP表演者', color: '#F2DA70', description: '活泼开朗，富有感染力' }
     ]
   },
   

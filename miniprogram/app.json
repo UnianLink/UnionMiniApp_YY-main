@@ -47,8 +47,20 @@
   "requiredPrivateInfos": [],
   
   "permission": {
+    "scope.bluetooth": {
+      "desc": "用于连接UnionLink智能设备,实现蓝牙社交匹配功能"
+    },
+    "scope.userInfo": {
+      "desc": "用于微信登录和创建个人社交档案"
+    },
+    "scope.writePhotosAlbum": {
+      "desc": "用于选择相册图片上传个人头像和二维码"
+    },
+    "scope.camera": {
+      "desc": "用于拍照上传个人头像和二维码图片"
+    },
     "scope.userLocation": {
-      "desc": "您的位置信息将用于显示您的当前位置"
+      "desc": "用于搜索并连接附近的UnionLink智能设备"
     }
   }
 } 
