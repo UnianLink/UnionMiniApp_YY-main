@@ -25,6 +25,61 @@ class BleMessagePreprocessor {
       processSteps.push('清理空白字符');
     }
 
+    // 🚨 [JSON格式错乱修复] 检测和修复混合JSON消息
+    const multiJsonPattern = /\{"type":"[^"]*\{"type":/g;
+    if (multiJsonPattern.test(cleanMessage)) {
+      console.warn('🚨 检测到JSON消息混合，尝试提取第一个完整JSON');
+      processSteps.push('检测到消息混合');
+      
+      // 尝试提取第一个完整的JSON
+      try {
+        const firstBracePos = cleanMessage.indexOf('{');
+        if (firstBracePos >= 0) {
+          let braceCount = 0;
+          let endPos = -1;
+          let inString = false;
+          let escaped = false;
+          
+          for (let i = firstBracePos; i < cleanMessage.length; i++) {
+            const char = cleanMessage[i];
+            
+            if (escaped) {
+              escaped = false;
+              continue;
+            }
+            
+            if (char === '\\' && inString) {
+              escaped = true;
+              continue;
+            }
+            
+            if (char === '"' && !escaped) {
+              inString = !inString;
+            } else if (!inString) {
+              if (char === '{') {
+                braceCount++;
+              } else if (char === '}') {
+                braceCount--;
+                if (braceCount === 0) {
+                  endPos = i;
+                  break;
+                }
+              }
+            }
+          }
+          
+          if (endPos > firstBracePos) {
+            const extractedJson = cleanMessage.substring(firstBracePos, endPos + 1);
+            console.log('🔧 提取的JSON:', extractedJson);
+            cleanMessage = extractedJson;
+            processSteps.push('提取第一个完整JSON');
+          }
+        }
+      } catch (error) {
+        console.error('❌ 提取JSON失败:', error);
+      }
+    }
+
     // 2. 修复明显的双引号问题（处理v6.0.0的错误修复输出）
     if (cleanMessage.includes('"type":""')) {
       // 处理类似 {"type":""touch_list_ 的情况

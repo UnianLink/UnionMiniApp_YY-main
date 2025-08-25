@@ -40,6 +40,9 @@ Page({
     pendingCommand: null, // 待确认命令
     commandQueue: [], // 命令队列，确保串行处理
     
+    // 🔧 [KISS修复] 心跳与业务命令隔离机制
+    heartbeatPaused: false, // 业务命令执行时暂停心跳
+    
     // ===== 颜色方案编辑 =====
     colorNear: '#FF0000', // 近距离颜色
     colorMid: '#00FF00',  // 中距离颜色
@@ -1069,8 +1072,15 @@ Page({
           return;
         }
         
-        // 使用原有的writeToBle函数
-        this.writeToBle(message, '握手协议消息').then(resolve).catch(reject);
+        // 🔧 [KISS修复] 统一使用ACK确认发送，解析JSON字符串为对象
+        try {
+          const messageObj = JSON.parse(message);
+          this.sendCommandWithAck(messageObj, BLE_CONFIG.CRITICAL_TIMEOUT_MS)
+            .then(resolve).catch(reject);
+        } catch (error) {
+          console.error('握手协议消息解析失败:', error);
+          reject(error);
+        }
       });
     };
     
@@ -1192,8 +1202,93 @@ Page({
     }, 3000);
   },
 
+  // ===== 蓝牙权限检查 =====
+  checkBluetoothPermission(callback) {
+    console.log('🔐 [权限检查] 开始检查蓝牙权限');
+    
+    wx.getSetting({
+      success: (res) => {
+        console.log('🔐 [权限检查] 当前权限状态:', res.authSetting);
+        
+        if (res.authSetting['scope.bluetooth'] === undefined) {
+          // 从未申请过权限，需要主动申请
+          console.log('🔐 [权限检查] 首次申请蓝牙权限');
+          wx.authorize({
+            scope: 'scope.bluetooth',
+            success: () => {
+              console.log('✅ [权限检查] 蓝牙权限申请成功');
+              if (typeof callback === 'function') callback(true);
+            },
+            fail: (err) => {
+              console.log('❌ [权限检查] 蓝牙权限申请被拒绝:', err);
+              this.showBluetoothPermissionModal();
+              if (typeof callback === 'function') callback(false);
+            }
+          });
+        } else if (res.authSetting['scope.bluetooth'] === true) {
+          // 已经授权
+          console.log('✅ [权限检查] 蓝牙权限已授权');
+          if (typeof callback === 'function') callback(true);
+        } else {
+          // 权限被拒绝，需要引导用户手动开启
+          console.log('❌ [权限检查] 蓝牙权限被拒绝，需要手动开启');
+          this.showBluetoothPermissionModal();
+          if (typeof callback === 'function') callback(false);
+        }
+      },
+      fail: (err) => {
+        console.error('❌ [权限检查] 获取设置失败:', err);
+        if (typeof callback === 'function') callback(false);
+      }
+    });
+  },
+
+  // 显示蓝牙权限引导弹窗
+  showBluetoothPermissionModal() {
+    wx.showModal({
+      title: '需要蓝牙权限',
+      content: 'UnionLink需要蓝牙权限来连接智能设备，实现社交匹配功能。请在授权管理中开启蓝牙权限。',
+      confirmText: '去设置',
+      cancelText: '暂不',
+      success: (res) => {
+        if (res.confirm) {
+          wx.openSetting({
+            success: (settingRes) => {
+              console.log('🔧 [设置页面] 用户设置结果:', settingRes.authSetting);
+              if (settingRes.authSetting['scope.bluetooth']) {
+                console.log('✅ [设置页面] 用户开启了蓝牙权限');
+                wx.showToast({
+                  title: '权限已开启',
+                  icon: 'success'
+                });
+              } else {
+                console.log('❌ [设置页面] 用户未开启蓝牙权限');
+              }
+            }
+          });
+        }
+      }
+    });
+  },
+
   // ===== 蓝牙适配器管理 =====
   ensureAdapter(cb) {
+    console.log('🔧 [适配器] 开始确保蓝牙适配器');
+    
+    // 首先检查蓝牙权限
+    this.checkBluetoothPermission((hasPermission) => {
+      if (!hasPermission) {
+        console.log('❌ [适配器] 蓝牙权限检查失败，无法初始化');
+        return;
+      }
+      
+      console.log('✅ [适配器] 蓝牙权限检查通过，开始初始化适配器');
+      this.initBluetoothAdapter(cb);
+    });
+  },
+
+  // 初始化蓝牙适配器
+  initBluetoothAdapter(cb) {
     wx.openBluetoothAdapter({
       success: () => {
         // 设置蓝牙可用状态
@@ -1234,48 +1329,71 @@ Page({
           cb();
         }
         } else {
-          console.error('openBluetoothAdapter fail', e);
+          console.error('🚫 [适配器] 蓝牙适配器初始化失败:', e);
+          
+          // 根据具体错误码提供精确提示
+          let errorMessage = '蓝牙适配器初始化失败';
+          let userAction = '';
+          
+          if (e.errCode === 10001) {
+            errorMessage = '手机蓝牙未开启';
+            userAction = '请在手机系统设置中开启蓝牙功能';
+          } else if (e.errCode === 10004) {
+            // 这种情况理论上不应该出现，因为我们已经检查过权限
+            errorMessage = '蓝牙权限异常';
+            userAction = '请重新授权蓝牙权限';
+          } else {
+            errorMessage = '蓝牙适配器不可用';
+            userAction = '请检查设备蓝牙功能是否正常';
+          }
           
           // 设置错误状态，但不阻止页面显示
           this.setData({
             bluetoothAvailable: false,
             scanning: false,
-            errorMessage: '蓝牙未开启或未授权'
+            errorMessage: errorMessage
           });
           
-          // 显示非阻塞式提示
-          wx.showToast({
-            title: '请开启蓝牙',
-            icon: 'none',
-            duration: 3000
-          });
-          
-          // 如果在真机环境，显示更详细的引导
-          if (e.errCode !== 10001) { // 10001是模拟器错误码
-            setTimeout(() => {
-              // 标记弹窗显示状态
-              this.setData({ bluetoothModalVisible: true });
-              
-              // 启动蓝牙状态监听器
-              this.setupBluetoothStateListener();
-              
-              wx.showModal({
-                title: '蓝牙未开启',
-                content: '请先打开系统蓝牙',
-                showCancel: true,
-                cancelText: '稍后再试',
-                confirmText: '去设置',
-                success: (res) => {
-                  // 用户手动关闭弹窗时，清除弹窗状态
-                  this.setData({ bluetoothModalVisible: false });
-                  
-                  if (res.confirm) {
-                    // 尝试打开系统设置
-                    wx.openSetting();
-                  }
+          // 根据错误类型显示不同的操作指引
+          if (e.errCode === 10001) {
+            // 蓝牙未开启，提示用户开启系统蓝牙
+            wx.showModal({
+              title: '手机蓝牙未开启',
+              content: '请在手机系统设置中开启蓝牙功能，然后返回小程序重试',
+              confirmText: '我知道了',
+              showCancel: false
+            });
+          } else if (e.errCode === 10004) {
+            // 权限问题，引导到设置页面
+            wx.showModal({
+              title: '蓝牙权限异常',
+              content: '蓝牙权限可能存在异常，请重新授权',
+              confirmText: '重新授权',
+              cancelText: '稍后再试',
+              success: (res) => {
+                if (res.confirm) {
+                  // 重新检查权限
+                  this.checkBluetoothPermission((hasPermission) => {
+                    if (hasPermission) {
+                      this.initBluetoothAdapter(cb);
+                    }
+                  });
                 }
-              });
-            }, 500);
+              }
+            });
+          } else {
+            // 其他错误
+            wx.showModal({
+              title: '蓝牙功能异常',
+              content: errorMessage + '，可能是设备不支持蓝牙或蓝牙功能异常',
+              confirmText: '我知道了',
+              showCancel: false
+            });
+          }
+          
+          // 启动蓝牙状态监听器（如果需要）
+          if (e.errCode !== 10001 && this.setupBluetoothStateListener) {
+            this.setupBluetoothStateListener();
           }
         }
       }
@@ -2124,8 +2242,8 @@ Page({
       const commandStr = JSON.stringify(command);
       console.log('🚀 [测试] 发送测试命令:', commandStr);
       
-      // 直接发送，不经过复杂的编码生成逻辑
-      await this.writeToBle(commandStr);
+      // 🔧 [KISS修复] 统一使用ACK确认发送，使用现有配置
+      await this.sendCommandWithAck(command, BLE_CONFIG.CRITICAL_TIMEOUT_MS);
       
       console.log('✅ [测试] 简化发送成功');
       wx.showToast({
@@ -2695,8 +2813,8 @@ Page({
         return false;
       }
       
-      // 发送给硬件
-      await this.writeToBle(commandStr);
+      // 🔧 [KISS修复] 统一使用ACK确认发送，使用现有配置
+      await this.sendCommandWithAck(command, BLE_CONFIG.CRITICAL_TIMEOUT_MS);
       
       console.log('✅ Un字符串同步命令发送成功');
       
@@ -3163,8 +3281,8 @@ Page({
         return;
       }
       
-      // 🔧 [KISS修复] 确认消息无需等待ACK，直接发送
-      await this.writeToBle(commandStr);
+      // 🔧 [KISS修复] 统一使用ACK确认发送，消除双路径冲突
+      await this.sendCommandWithAck(command, BLE_CONFIG.CRITICAL_TIMEOUT_MS);
       
       console.log('✅ 碰一碰列表确认发送成功');
       
@@ -3712,8 +3830,13 @@ Page({
           }
           this.currentAckHandler = null;
           
-          // 重置ACK等待状态
-          this.setData({ waitingForAck: false, pendingCommand: null });
+          // 🔧 [KISS修复] 业务命令完成时恢复心跳
+          this.setData({ 
+            waitingForAck: false, 
+            pendingCommand: null,
+            heartbeatPaused: false 
+          });
+          console.log('💓 [心跳控制] 业务命令完成，恢复心跳');
           
           // 处理队列中的下一个命令
           this.processCommandQueue();
@@ -4636,17 +4759,23 @@ Page({
       input: '' 
     });
     
-    // 发送给硬件
-    this.writeToBle(msg, () => {
-      console.log('消息发送成功:', msg);
-    }).catch(error => {
-      console.error('消息发送失败:', error);
-      // 记录发送失败
-      const failMessage = `❌ 发送失败: ${msg}`;
-      this.setData({ 
-        messages: this.data.messages.concat(failMessage)
+    // 🔧 [KISS修复] 统一使用ACK确认发送，包装成命令对象
+    const debugCommand = {
+      type: 'debug_message',
+      content: msg
+    };
+    
+    this.sendCommandWithAck(debugCommand, BLE_CONFIG.CRITICAL_TIMEOUT_MS)
+      .then(() => {
+        console.log('消息发送成功:', msg);
+      }).catch(error => {
+        console.error('消息发送失败:', error);
+        // 记录发送失败
+        const failMessage = `❌ 发送失败: ${msg}`;
+        this.setData({ 
+          messages: this.data.messages.concat(failMessage)
+        });
       });
-    });
   },
 
   // 颜色输入框处理
@@ -4669,10 +4798,18 @@ Page({
     }
     // 去掉'#'并拼接
     const hexStr = colors.map(c => c.replace('#', '').toUpperCase()).join(''); // 18字符
-    const payload = 'unchangecolor' + hexStr;
-    this.writeToBle(payload, () => {
-      this.setData({ messages: this.data.messages.concat('发送颜色: ' + payload) });
-    });
+    // 🔧 [KISS修复] 统一使用ACK确认发送，包装成命令对象  
+    const colorTestCommand = {
+      type: 'test_color_change',
+      payload: 'unchangecolor' + hexStr
+    };
+    
+    this.sendCommandWithAck(colorTestCommand, BLE_CONFIG.CRITICAL_TIMEOUT_MS)
+      .then(() => {
+        this.setData({ messages: this.data.messages.concat('发送颜色: ' + colorTestCommand.payload) });
+      }).catch(error => {
+        console.error('颜色测试发送失败:', error);
+      });
   },
 
   // 测试中文消息显示
@@ -4884,13 +5021,15 @@ Page({
       return this.queueCommand(command, timeout);
     }
 
-    // 设置ACK等待状态
+    // 🔧 [KISS修复] 业务命令开始时暂停心跳 - 避免JSON混合
     this.setData({ 
+      heartbeatPaused: true,
       waitingForAck: true, 
       pendingCommand: command 
     });
 
     console.log('🔒 [ACK锁] 开始发送命令并等待ACK:', JSON.stringify(command));
+    console.log('💤 [心跳控制] 暂停心跳，避免与业务命令冲突');
 
     return new Promise((resolve, reject) => {
       const commandStr = JSON.stringify(command);
@@ -4899,7 +5038,13 @@ Page({
       const ackTimeout = setTimeout(() => {
         if (this.data.waitingForAck && this.data.pendingCommand === command) {
           console.warn('⚠️ [ACK锁] 命令ACK超时，重置状态');
-          this.setData({ waitingForAck: false, pendingCommand: null });
+          // 🔧 [KISS修复] 超时时也要恢复心跳
+          this.setData({ 
+            waitingForAck: false, 
+            pendingCommand: null,
+            heartbeatPaused: false 
+          });
+          console.log('💓 [心跳控制] 命令超时，恢复心跳');
           this.processCommandQueue(); // 处理队列中的下一个命令
           reject(new Error('命令确认超时'));
         }
@@ -4921,7 +5066,13 @@ Page({
         .catch(error => {
           console.error('❌ [ACK锁] 命令发送失败:', error);
           clearTimeout(ackTimeout);
-          this.setData({ waitingForAck: false, pendingCommand: null });
+          // 🔧 [KISS修复] 发送失败时也要恢复心跳
+          this.setData({ 
+            waitingForAck: false, 
+            pendingCommand: null,
+            heartbeatPaused: false 
+          });
+          console.log('💓 [心跳控制] 命令发送失败，恢复心跳');
           this.processCommandQueue();
           reject(error);
         });
@@ -5361,10 +5512,14 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
     const readyMessage = JSON.stringify(readyCommand);
     console.log('📤 发送正确格式的就绪信号:', readyMessage);
     
-    this.writeToBle(readyMessage, () => {
-      console.log('已发送设备就绪信号');
-      wx.showToast({ title: '连接完成，等待设备消息', icon: 'success' });
-    });
+    // 🔧 [KISS修复] 统一使用ACK确认发送，使用现有配置
+    this.sendCommandWithAck(readyCommand, BLE_CONFIG.CRITICAL_TIMEOUT_MS)
+      .then(() => {
+        console.log('已发送设备就绪信号');
+        wx.showToast({ title: '连接完成，等待设备消息', icon: 'success' });
+      }).catch(error => {
+        console.error('就绪信号发送失败:', error);
+      });
   },
 
   /**
@@ -5879,8 +6034,8 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
       const commandStr = JSON.stringify(colorCommand);
       console.log('🎨 [智能发送时机] 发送MBTI颜色命令:', commandStr);
       
-      // 发送给硬件
-      await this.writeToBle(commandStr);
+      // 🔧 [KISS修复] 统一使用ACK确认发送，使用现有配置
+      await this.sendCommandWithAck(colorCommand, BLE_CONFIG.CRITICAL_TIMEOUT_MS);
       
       // 🎯 设置等待硬件确认状态，而不是立即认为成功
       this.setData({ waitingForColorResponse: true });
@@ -5959,8 +6114,12 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
       setTimeout(() => {
         // 发送清空缓冲区命令（如果硬件支持）
         this.clearHardwareBuffer().then(() => {
-          // 重传消息
-          return this.writeToBle(this.data.lastSentMessage.content, null, true);
+          // 🔧 [KISS修复] 重传也使用ACK确认发送
+          const retryCommand = {
+            type: 'retry_message',
+            content: this.data.lastSentMessage.content
+          };
+          return this.sendCommandWithAck(retryCommand, BLE_CONFIG.CRITICAL_TIMEOUT_MS);
         }).then(() => {
           console.log('✅ [重传机制] 重传成功');
           resolve();

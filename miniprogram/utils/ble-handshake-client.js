@@ -865,6 +865,12 @@ class BleHandshakeClient {
   async sendHeartbeat() {
     if (!this.deviceReady) return;
     
+    // 🔧 [KISS修复] 检查心跳是否暂停 - 避免与业务命令冲突
+    if (this.pageInstance && this.pageInstance.data && this.pageInstance.data.heartbeatPaused) {
+      console.log('💤 心跳已暂停，等待业务命令完成');
+      return;
+    }
+    
     try {
       // 🔧 [KISS] 简化心跳消息 - 移除timestamp避免分片截断
       const heartbeatMessage = {

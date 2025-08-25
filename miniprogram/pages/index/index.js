@@ -1278,6 +1278,20 @@ Page({
                 });
               }
         });
+      },
+      fail: (error) => {
+        console.log('选择二维码图片失败:', error);
+        if (error.errMsg.includes('cancel')) return;
+        
+        wx.showModal({
+          title: '权限提示',
+          content: '上传二维码需要相册和摄像头权限，请在设置中开启',
+          confirmText: '去设置',
+          cancelText: '取消',
+          success: (res) => {
+            if (res.confirm) wx.openSetting();
+          }
+        });
       }
     });
   },
@@ -2276,6 +2290,20 @@ Page({
               icon: 'none'
           });
         }
+        });
+      },
+      fail: (error) => {
+        console.log('选择头像失败:', error);
+        if (error.errMsg.includes('cancel')) return;
+        
+        wx.showModal({
+          title: '权限提示',
+          content: '上传头像需要相册和摄像头权限，请在设置中开启',
+          confirmText: '去设置', 
+          cancelText: '取消',
+          success: (res) => {
+            if (res.confirm) wx.openSetting();
+          }
         });
       }
     });
