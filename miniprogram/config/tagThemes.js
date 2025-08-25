@@ -514,20 +514,20 @@ const tagThemes = {
     options: [
       { name: 'INTJ战略家', color: '#E695FF', description: '独立思考，追求完美' },//ll
       { name: 'INTP逻辑家', color: '#E695FF', description: '理性分析，热爱真理' },//yy
-      { name: 'ENTJ指挥官', color: '#D240FF', description: '天生领袖，目标明确' },
-      { name: 'ENTP辩论家', color: '#D240FF', description: '创新思维，善于辩论' },//jx
-      { name: 'INFJ提倡者', color: '#A2FFBE', description: '理想主义，富有洞察力' },
-      { name: 'INFP调停者', color: '#A2FFBE', description: '价值驱动，追求和谐' },
-      { name: 'ENFJ教育家', color: '#1EFF61', description: '关爱他人，善于激励' },
-      { name: 'ENFP活动家', color: '#1EFF61', description: '热情洋溢，富有创意' },//pp
+      { name: 'ENTJ指挥官', color: '#E695FF', description: '天生领袖，目标明确' },
+      { name: 'ENTP辩论家', color: '#E695FF', description: '创新思维，善于辩论' },//jx
+      { name: 'INFJ提倡者', color: '#86EB8E', description: '理想主义，富有洞察力' },
+      { name: 'INFP调停者', color: '#86EB8E', description: '价值驱动，追求和谐' },
+      { name: 'ENFJ教育家', color: '#86EB8E', description: '关爱他人，善于激励' },
+      { name: 'ENFP活动家', color: '#86EB8E', description: '热情洋溢，富有创意' },//pp
       { name: 'ISTJ检查员', color: '#92B8FF', description: '务实可靠，注重细节' },
       { name: 'ISFJ守护者', color: '#92B8FF', description: '温暖贴心，乐于助人' },
-      { name: 'ESTJ总经理', color: '#387EFF', description: '组织能力强，执行力佳' },//vv
-      { name: 'ESFJ执政官', color: '#387EFF', description: '社交达人，关心他人' },
+      { name: 'ESTJ总经理', color: '#92B8FF', description: '组织能力强，执行力佳' },//vv
+      { name: 'ESFJ执政官', color: '#92B8FF', description: '社交达人，关心他人' },
       { name: 'ISTP手工匠', color: '#FFE484', description: '动手能力强，逻辑清晰' },
       { name: 'ISFP探险家', color: '#FFE484', description: '艺术天赋，追求自由' },
-      { name: 'ESTP实践者', color: '#FEBA1A', description: '行动力强，适应性佳' },
-      { name: 'ESFP表演者', color: '#FEBA1A', description: '活泼开朗，富有感染力' }
+      { name: 'ESTP实践者', color: '#FFE484', description: '行动力强，适应性佳' },
+      { name: 'ESFP表演者', color: '#FFE484', description: '活泼开朗，富有感染力' }
     ]
   },
   
