@@ -2007,6 +2007,9 @@ Page({
       console.log('🔍🔍🔍 [重要调试] ===== 开始检查并发送16字节Un字符串给硬件 =====');
       console.log('🔍 [调试] 函数被调用时间:', new Date().toLocaleTimeString());
       
+      // 显示数据同步弹窗（首次连接场景）
+      this.showSyncModal('正在向设备发送您的标签信息，请稍等...');
+      
       // ✅ 首先验证BLE连接状态
       const { connected, rxServiceId, rxCharId } = this.data;
       console.log('🔍 [BLE验证] 连接状态:', connected);
@@ -2014,6 +2017,7 @@ Page({
       
       if (!connected) {
         console.error('❌ [BLE验证] 设备未连接，无法发送Un字符串');
+        this.hideSyncModal(); // 隐藏同步弹窗
         wx.showToast({
           title: '设备未连接',
           icon: 'error',
@@ -2024,6 +2028,7 @@ Page({
       
       if (!rxServiceId || !rxCharId) {
         console.error('❌ [BLE验证] BLE特征值未就绪，无法发送Un字符串');
+        this.hideSyncModal(); // 隐藏同步弹窗
         wx.showToast({
           title: 'BLE特征未就绪',
           icon: 'error',
@@ -2191,9 +2196,17 @@ Page({
         duration: 1000
       });
       
+      // 延迟隐藏同步弹窗，让用户看到更新完成
+      setTimeout(() => {
+        this.hideSyncModal();
+      }, 1500);
+      
     } catch (error) {
       console.error('❌ [调试] 发送16字节Un字符串失败:', error);
       console.error('❌ [调试] 错误详情:', JSON.stringify(error));
+      
+      // 隐藏同步弹窗
+      this.hideSyncModal();
       
       // 显示错误提示
       wx.showToast({
