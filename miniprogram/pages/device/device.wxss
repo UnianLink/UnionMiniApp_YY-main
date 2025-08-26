@@ -1878,3 +1878,131 @@ page {
   line-height: 1.4;
   display: block;
 }
+
+/* ===== 碰一碰提示区域美化样式 ===== */
+.touch-tip-section {
+  margin-top: 24rpx;
+  padding: 0 4rpx;
+}
+
+.touch-tip-content {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+  border: 1rpx solid rgba(102, 126, 234, 0.3);
+  border-radius: 20rpx;
+  padding: 24rpx;
+  display: flex;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(10rpx);
+  transition: all 0.3s ease;
+  box-shadow: 0 4rpx 20rpx rgba(102, 126, 234, 0.1);
+}
+
+.touch-tip-content:active {
+  transform: scale(0.98);
+  box-shadow: 0 2rpx 10rpx rgba(102, 126, 234, 0.2);
+}
+
+/* 背景光效 */
+.touch-tip-content::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(102, 126, 234, 0.05) 0%, transparent 70%);
+  animation: breathe 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes breathe {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.1);
+  }
+}
+
+.tip-icon {
+  font-size: 48rpx;
+  margin-right: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80rpx;
+  height: 80rpx;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+  border-radius: 50%;
+  animation: sparkle 2.5s ease-in-out infinite;
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes sparkle {
+  0%, 100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.05);
+    filter: brightness(1.2);
+  }
+}
+
+.tip-message {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  position: relative;
+  z-index: 1;
+}
+
+.tip-text {
+  font-size: 28rpx;
+  color: #e1e8f0;
+  font-weight: 500;
+  letter-spacing: 0.5rpx;
+  line-height: 1.4;
+}
+
+.tip-action {
+  font-size: 26rpx;
+  color: #667eea;
+  font-weight: 600;
+  padding: 8rpx 16rpx;
+  background: rgba(102, 126, 234, 0.1);
+  border: 1rpx solid rgba(102, 126, 234, 0.3);
+  border-radius: 14rpx;
+  align-self: flex-start;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  letter-spacing: 0.5rpx;
+}
+
+.tip-action:active {
+  transform: scale(0.95);
+  background: rgba(102, 126, 234, 0.2);
+  color: #8fa8ff;
+}
+
+/* 添加微妙的边框动画 */
+.touch-tip-content {
+  animation: borderGlow 4s ease-in-out infinite;
+}
+
+@keyframes borderGlow {
+  0%, 100% {
+    border-color: rgba(102, 126, 234, 0.3);
+    box-shadow: 0 4rpx 20rpx rgba(102, 126, 234, 0.1);
+  }
+  50% {
+    border-color: rgba(118, 75, 162, 0.4);
+    box-shadow: 0 6rpx 30rpx rgba(118, 75, 162, 0.15);
+  }
+}

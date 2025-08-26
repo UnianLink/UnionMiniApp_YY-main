@@ -6377,6 +6377,24 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
     }
   },
 
+  // 跳转到朋友页面
+  goToFriendsPage() {
+    console.log('🔗 跳转到朋友页面');
+    wx.switchTab({
+      url: '/pages/connect/connect',
+      success: () => {
+        console.log('✅ 成功跳转到朋友页面');
+      },
+      fail: (err) => {
+        console.error('❌ 跳转朋友页面失败:', err);
+        wx.showToast({
+          title: '跳转失败',
+          icon: 'error'
+        });
+      }
+    });
+  },
+
   // ===== 页面生命周期 =====
   onUnload() {
     console.log('🔧 [页面卸载] 清理蓝牙监听器和同步定时器');

@@ -1441,7 +1441,7 @@ page {
   padding: 8rpx 16rpx;
 }
 
-/* 第3步：单选标签模式 */
+/* 第3步：多选标签模式（性格特质可选2-3个） */
 .all-tags-section {
   margin-top: 20rpx;
 }
@@ -1852,4 +1852,40 @@ page {
 .modal-confirm-btn:active {
   transform: scale(0.98);
   filter: brightness(0.9);
+}
+
+/* 设备绑定提示样式 */
+.device-binding-tip {
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.1) 0%, rgba(139, 195, 74, 0.1) 100%);
+  border: 2rpx solid rgba(76, 175, 80, 0.3);
+}
+
+.binding-tip-content {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.tip-icon {
+  font-size: 48rpx;
+  flex-shrink: 0;
+}
+
+.tip-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.tip-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #4CAF50;
+}
+
+.tip-subtitle {
+  font-size: 26rpx;
+  color: #81C784;
+  opacity: 0.9;
 }

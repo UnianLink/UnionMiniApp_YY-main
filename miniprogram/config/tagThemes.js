@@ -76,9 +76,9 @@ const tagThemes = {
           maxSelect: 10,
           required: true,
           tags: [
-            '前端开发', '后端开发', '人工智能', '数据科学', '网络安全',
-            '嵌入式开发', '机器人', 'UI设计', '产品设计', '游戏设计',
-            '产品经理', '项目管理', '心理学', '法律咨询', '创新创业'
+            '软件开发', '硬件开发', '人工智能', '数据科学', '网络安全',
+            '商业与金融', '教育学', '心理学', '艺术与设计', '法律',
+            '产品经理', '管理与经营', '新媒体', '人文社科', '创新创业'
           ]
         },
         {
@@ -98,7 +98,7 @@ const tagThemes = {
           name: '性格特质',
           color: 'neutral',
           maxSelect: 6,
-          required: false,
+          required: true,
           tags: [
             '外向型', '内向型', '理性型', '感性型', '直觉型', '感知型',
             '思考型', '情感型', '判断型', '计划型', '独立型', '协作型'
@@ -541,8 +541,8 @@ const tagThemes = {
       0: {
         id: 0,
         title: '🧠 选择你的MBTI性格类型',
-        subtitle: '决定设备常亮灯颜色',
-        description: '这将决定你的设备常亮灯颜色，不影响兴趣匹配算法',
+        subtitle: ' ',
+        description: ' ',
         type: 'mbti', // 🆕 MBTI专用步骤类型
         required: false,
         skipable: true // 可以跳过
@@ -571,8 +571,8 @@ const tagThemes = {
         subtitle: '选择最符合你性格特征的类型',
         description: ' ',
         minTags: 1,
-        maxTags: 1,
-        minTotalTags: this.meta.minTotalTags, // 添加总标签最小值验证
+        maxTags: -1,
+        //minTotalTags: this.meta.minTotalTags, // 添加总标签最小值验证
         categories: theme.categories.filter(cat => cat.id === 'personality' || cat.color === 'neutral')
       },
       4: {

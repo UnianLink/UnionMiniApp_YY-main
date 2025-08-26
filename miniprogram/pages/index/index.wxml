@@ -125,6 +125,17 @@
             </view>
           </view>
 
+          <!-- 设备绑定提示 -->
+          <view class="info-item device-binding-tip">
+            <view class="binding-tip-content">
+              <view class="tip-icon">📱💎</view>
+              <view class="tip-text">
+                <text class="tip-title">请把设备贴在您的手机背面</text>
+                <text class="tip-subtitle">然后到[设备]页面绑定并同步数据~</text>
+              </view>
+            </view>
+          </view>
+
         </view>
 
         <!-- 操作按钮区域 -->

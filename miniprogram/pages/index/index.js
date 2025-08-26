@@ -25,7 +25,7 @@ Page({
     advancedTags: {
       professionalTags: [],
       interestTags: [],
-      personalityTags: [],  // 现在只包含非MBTI性格标签
+      personalityTags: [],  // 性格特质标签（多选，建议2-3个）
       quirkyTags: [],
       threshold: (() => {
         try {
@@ -1171,7 +1171,7 @@ Page({
     });
   },
 
-  // 性格标签切换（MBTI单选）
+  // 性格标签切换（多选，建议2-3个）
   onPersonalityTagToggle(e) {
     const value = e.currentTarget.dataset.value;
     let tags = [...this.data.advancedTags.personalityTags];
@@ -1180,8 +1180,8 @@ Page({
     if (index > -1) {
       tags.splice(index, 1);
     } else {
-      // 单选：清空之前的选择，只保留当前选择
-      tags = [value];
+      // 多选：支持选择多个性格特质（建议2-3个）
+      tags.push(value);
     }
     
     this.setData({
@@ -1563,7 +1563,7 @@ Page({
     const userSelectedTags = [
       ...(this.data.advancedTags.professionalTags || []),
       ...(this.data.advancedTags.interestTags || []),
-      ...(this.data.advancedTags.personalityTags || []), // 现在只包含非MBTI性格标签
+      ...(this.data.advancedTags.personalityTags || []), // 性格特质标签（多选）
       ...(this.data.advancedTags.quirkyTags || [])
     ];
     
