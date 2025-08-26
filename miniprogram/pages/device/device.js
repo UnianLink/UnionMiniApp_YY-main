@@ -110,6 +110,7 @@ Page({
     syncProgress: 0, // 同步进度（0-100）
     syncCountdown: 20, // 同步倒计时（秒）
     syncTimer: null, // 同步定时器
+    suppressOtherPopups: false, // 是否抑制其他弹窗显示
     
     // ===== BLE数据完整性校验相关状态 =====
     lastSentMessage: null, // 最后发送的消息（用于重传）
@@ -122,6 +123,54 @@ Page({
       retryCount: 0,
       errorCount: 0
     }
+  },
+
+  // ===== 弹窗抑制管理方法 =====
+  
+  /**
+   * 安全显示Toast - 在同步期间抑制显示
+   */
+  safeShowToast(options) {
+    if (this.data.suppressOtherPopups) {
+      console.log('[弹窗抑制] 阻止Toast显示:', options.title);
+      // 可以选择将消息添加到通知列表中
+      if (options.title) {
+        this.addNotification(`⏸️ ${options.title}`);
+      }
+      return;
+    }
+    wx.showToast(options);
+  },
+
+  /**
+   * 安全显示Modal - 在同步期间抑制显示
+   */
+  safeShowModal(options) {
+    if (this.data.suppressOtherPopups) {
+      console.log('[弹窗抑制] 阻止Modal显示:', options.title);
+      // 可以选择将重要消息添加到通知列表中
+      if (options.title && options.content) {
+        this.addNotification(`⏸️ ${options.title}: ${options.content.substring(0, 50)}...`);
+      }
+      return Promise.resolve({ confirm: false, cancel: true });
+    }
+    return new Promise((resolve) => {
+      wx.showModal({
+        ...options,
+        success: resolve
+      });
+    });
+  },
+
+  /**
+   * 安全显示Loading - 在同步期间抑制显示
+   */
+  safeShowLoading(options) {
+    if (this.data.suppressOtherPopups) {
+      console.log('[弹窗抑制] 阻止Loading显示:', options.title);
+      return;
+    }
+    wx.showLoading(options);
   },
 
   // ===== 设备绑定管理工具函数 =====
@@ -2018,7 +2067,7 @@ Page({
       if (!connected) {
         console.error('❌ [BLE验证] 设备未连接，无法发送Un字符串');
         this.hideSyncModal(); // 隐藏同步弹窗
-        wx.showToast({
+        this.safeShowToast({
           title: '设备未连接',
           icon: 'error',
           duration: 2000
@@ -2029,7 +2078,7 @@ Page({
       if (!rxServiceId || !rxCharId) {
         console.error('❌ [BLE验证] BLE特征值未就绪，无法发送Un字符串');
         this.hideSyncModal(); // 隐藏同步弹窗
-        wx.showToast({
+        this.safeShowToast({
           title: 'BLE特征未就绪',
           icon: 'error',
           duration: 2000
@@ -2189,8 +2238,8 @@ Page({
         }
       }, 8000); // 8秒超时（用户协议规定）
       
-      // 暂时显示发送中状态
-      wx.showToast({
+      // 暂时显示发送中状态 - 使用安全方法避免覆盖同步弹窗
+      this.safeShowToast({
         title: '正在更新蓝牙名称...',
         icon: 'loading',
         duration: 1000
@@ -2209,7 +2258,7 @@ Page({
       this.hideSyncModal();
       
       // 显示错误提示
-      wx.showToast({
+      this.safeShowToast({
         title: '发送失败',
         icon: 'error',
         duration: 2000
@@ -3253,7 +3302,7 @@ Page({
       console.error('❌ 数据刷新过程中发生异常:', error);
       this.addNotification(`❌ 刷新异常: ${error.message || '未知错误'}`);
       
-      wx.showToast({
+      this.safeShowToast({
         title: '刷新异常',
         icon: 'error',
         duration: 2000
@@ -6251,12 +6300,13 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
   showSyncModal(message = '正在与设备同步数据，请稍等...') {
     console.log('[Sync Modal] 显示同步弹窗:', message);
     
-    // 重置同步状态
+    // 重置同步状态并启用弹窗抑制
     this.setData({
       showSyncModal: true,
       syncModalMessage: message,
       syncProgress: 0,
-      syncCountdown: 20
+      syncCountdown: 20,
+      suppressOtherPopups: true // 启用弹窗抑制
     });
     
     // 清除之前的定时器
@@ -6300,12 +6350,13 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
       clearInterval(this.data.syncTimer);
     }
     
-    // 隐藏弹窗并重置状态
+    // 隐藏弹窗并重置状态，禁用弹窗抑制
     this.setData({
       showSyncModal: false,
       syncTimer: null,
       syncProgress: 0,
-      syncCountdown: 20
+      syncCountdown: 20,
+      suppressOtherPopups: false // 禁用弹窗抑制
     });
   },
 
