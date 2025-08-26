@@ -142,12 +142,25 @@ async function handleAdvancedTags(event, openid) {
       };
     }
     
-    bluetoothName = `Un${encodedTags}`;
-    console.log('[handleAdvancedTags] 新格式蓝牙名称:', bluetoothName);
+    // 🔧 关键修复：检查encodedTags是否已包含Un前缀，避免重复添加
+    if (encodedTags && encodedTags.startsWith('Un')) {
+      bluetoothName = encodedTags; // 已包含Un前缀，直接使用
+      console.log('[handleAdvancedTags] ✅ 新格式蓝牙名称（已含Un前缀）:', bluetoothName);
+    } else {
+      bluetoothName = `Un${encodedTags}`; // 未包含前缀，需要添加
+      console.log('[handleAdvancedTags] ✅ 新格式蓝牙名称（添加Un前缀）:', bluetoothName);
+    }
   } else {
     // 旧格式：前3页编码应该是14字符左右
     expectedLength = 14;
-    bluetoothName = encodedTags ? `Un${encodedTags}` : '';
+    // 🔧 关键修复：检查encodedTags是否已包含Un前缀，避免重复添加
+    if (encodedTags && encodedTags.startsWith('Un')) {
+      bluetoothName = encodedTags; // 已包含Un前缀，直接使用
+      console.log('[handleAdvancedTags] ✅ 旧格式蓝牙名称（已含Un前缀）:', bluetoothName);
+    } else {
+      bluetoothName = encodedTags ? `Un${encodedTags}` : '';
+      console.log('[handleAdvancedTags] ✅ 旧格式蓝牙名称（添加Un前缀）:', bluetoothName);
+    }
     console.log('[handleAdvancedTags] 🔄 使用旧格式兼容模式');
   }
   
@@ -155,6 +168,15 @@ async function handleAdvancedTags(event, openid) {
     console.warn('[handleAdvancedTags] 编码长度异常:', encodedTags.length, '期望10-25字符范围');
   } else if (encodedTags) {
     console.log('[handleAdvancedTags] ✅ 编码长度正常:', encodedTags.length, '字符');
+  
+  // 🛡️ 数据验证：检查是否存在双Un前缀问题
+  if (bluetoothName && bluetoothName.match(/^UnUn/)) {
+    console.error('[handleAdvancedTags] ⚠️ 检测到可能的双Un前缀问题:', bluetoothName);
+    console.error('[handleAdvancedTags] ⚠️ 原始encodedTags:', encodedTags);
+    // 自动修复
+    bluetoothName = bluetoothName.substring(2); // 移除多余的Un前缀
+    console.log('[handleAdvancedTags] 🔧 自动修复为:', bluetoothName);
+  }
   }
 
   // 构建保存数据
@@ -230,7 +252,14 @@ async function handleAdvancedTags(event, openid) {
     if (queryResult.data.length > 0) {
       // 更新现有数据
       const docId = queryResult.data[0]._id;
+      const existingUser = queryResult.data[0];
       console.log('[handleAdvancedTags] 更新现有数据, docId:', docId);
+      console.log('[handleAdvancedTags] 🔍 现有用户数据:');
+      console.log('  - 当前bluetoothName:', existingUser.bluetoothName);
+      console.log('  - 当前encodedTags:', existingUser.encodedTags);
+      console.log('[handleAdvancedTags] 🚀 准备更新为:');
+      console.log('  - 新bluetoothName:', saveData.bluetoothName);
+      console.log('  - 新encodedTags:', saveData.encodedTags);
       
       const updateResult = await collection.doc(docId).update({
         data: {

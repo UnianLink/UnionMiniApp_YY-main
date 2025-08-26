@@ -59,20 +59,41 @@ exports.main = async (event, context) => {
     console.log('[syncTouchList] 待查询设备:', deviceNames);
     
     // 3. 批量查询数据库中的用户
+    // 🔧 关键修复：支持匹配正确格式和错误格式（双Un前缀）的设备名
+    const correctedDeviceNames = deviceNames.map(name => name.startsWith('UnUn') ? name : `Un${name}`);
+    
     const usersRes = await db.collection('users_adv')
-      .where({
-        bluetoothName: _.in(deviceNames)
-      })
+      .where(_.or([
+        { bluetoothName: _.in(deviceNames) },        // 匹配硬件上报的正确格式
+        { bluetoothName: _.in(correctedDeviceNames) }, // 匹配数据库中可能的错误格式 
+        { encodedTags: _.in(deviceNames) }           // 备用：通过encodedTags字段匹配
+      ]))
       .get();
     
     console.log('[syncTouchList] 查询到已注册用户:', usersRes.data.length);
     
     // 4. 构建设备名到用户的映射
+    // 🔧 关键修复：建立正确格式设备名到用户的映射关系
     const deviceToUserMap = {};
     usersRes.data.forEach(user => {
-      if (user.bluetoothName) {
-        deviceToUserMap[user.bluetoothName] = user;
-      }
+      // 为每个硬件上报的设备名建立映射关系
+      deviceNames.forEach(deviceName => {
+        // 情况1：直接匹配bluetoothName
+        if (user.bluetoothName === deviceName) {
+          deviceToUserMap[deviceName] = user;
+          console.log('[syncTouchList] ✅ 直接匹配:', deviceName, '->', user.bluetoothName);
+        }
+        // 情况2：匹配错误格式的bluetoothName（双Un前缀）
+        else if (user.bluetoothName === `Un${deviceName}`) {
+          deviceToUserMap[deviceName] = user;
+          console.log('[syncTouchList] 🔧 修复匹配（双Un前缀）:', deviceName, '->', user.bluetoothName);
+        }
+        // 情况3：通过encodedTags字段匹配
+        else if (user.encodedTags === deviceName) {
+          deviceToUserMap[deviceName] = user;
+          console.log('[syncTouchList] ✅ 通过encodedTags匹配:', deviceName, '->', user.encodedTags);
+        }
+      });
     });
     
     // 5. 处理每个碰一碰设备
@@ -265,9 +286,13 @@ async function establishMutualFriendships(currentUser, matchedUsers) {
     console.log('[establishMutualFriendships] 开始建立双向朋友关系，匹配用户数:', matchedUsers.length);
     
     for (const matchedUser of matchedUsers) {
-      // 获取对方的完整用户信息
+      // 🔧 关键修复：获取对方的完整用户信息，支持多种匹配方式
       const friendRes = await db.collection('users_adv')
-        .where({ bluetoothName: matchedUser.deviceName })
+        .where(_.or([
+          { bluetoothName: matchedUser.deviceName },          // 直接匹配
+          { bluetoothName: `Un${matchedUser.deviceName}` },   // 匹配错误格式（双Un前缀）
+          { encodedTags: matchedUser.deviceName }             // 通过encodedTags匹配
+        ]))
         .limit(1)
         .get();
       
