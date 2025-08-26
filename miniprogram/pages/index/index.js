@@ -1936,7 +1936,10 @@ Page({
       openid: currentOpenId,
       userInfo: {
         ...this.data.userInfo,
-        openid: currentOpenId
+        openid: currentOpenId,
+        // 🖼️ 头像存储修复：确保头像关键字段被包含在提交中
+        avatarFileID: this.data.userInfo.avatarFileID || null,
+        customAvatar: this.data.userInfo.customAvatar || false
       },
       advancedTags: {
         professionalTags: this.data.advancedTags.professionalTags || [],
@@ -2261,9 +2264,10 @@ Page({
             if (loginRes.result && loginRes.result.openid) {
               userInfo.openid = loginRes.result.openid;
             
-              // 生成默认头像
-              if (!userInfo.avatarUrl || userInfo.avatarUrl.indexOf('132.232.99.205') > -1) {
-                userInfo.avatarUrl = `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${encodeURIComponent(userInfo.nickName || 'default')}`;
+              // 🎨 生成美观的默认头像
+              if (!userInfo.avatarUrl || userInfo.avatarUrl.indexOf('132.232.99.205') > -1 || userInfo.avatarUrl.includes('bottts-neutral')) {
+                const seed = userInfo.nickName || 'default';
+                userInfo.avatarUrl = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4&radius=50`;
                 userInfo.customAvatar = false;
               }
               
@@ -2519,9 +2523,10 @@ Page({
         console.log('[Index] 头像URL已刷新');
       } else {
         console.warn('[Index] 无法获取头像URL，切换到默认头像');
+        const seed = this.data.userInfo.nickName || 'default';
         const updatedUserInfo = {
           ...this.data.userInfo,
-          avatarUrl: `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${this.data.userInfo.nickName || 'default'}`,
+          avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4&radius=50`,
           customAvatar: false
         };
         
@@ -2541,9 +2546,10 @@ Page({
     if (!userInfo.customAvatar || !userInfo.avatarFileID) {
       // 没有自定义头像，确保使用默认头像
       if (!userInfo.avatarUrl || userInfo.avatarUrl.startsWith('cloud://')) {
+        const seed = userInfo.nickName || 'default';
         const updatedUserInfo = {
           ...userInfo,
-          avatarUrl: `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${userInfo.nickName || 'default'}`,
+          avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4&radius=50`,
           customAvatar: false
         };
         this.setData({ userInfo: updatedUserInfo });

@@ -80,10 +80,10 @@
               <view class="track-artist">{{item.subtitle || item.theme || '用户名片'}}</view>
               <!-- 匹配的标签 -->
               <view class="track-tags matched-tags" wx:if="{{item.isMatched && item.matchedTags && item.matchedTags.length > 0}}">
-                <view class="tag matched" wx:for="{{item.matchedTags}}" wx:for-item="feature" wx:key="*this" wx:if="{{index < 3}}">
+                <view class="tag matched" wx:for="{{item.matchedTags}}" wx:for-item="feature" wx:key="*this" wx:if="{{index < 5}}">
                   {{feature}}
                 </view>
-                <view class="tag-more" wx:if="{{item.matchedTags.length > 3}}">+{{item.matchedTags.length - 3}}</view>
+                <view class="tag-more" wx:if="{{item.matchedTags.length > 5}}">+{{item.matchedTags.length - 5}}</view>
               </view>
               <!-- 普通用户标签 -->
               <view class="track-tags" wx:elif="{{item.details && item.details.features && item.details.features.length > 0}}">
@@ -117,11 +117,11 @@
             <view class="user-detail-subtitle">UnionLink 数字身份</view>
             <view class="user-detail-stats" wx:if="{{selectedUserDetail.matchScore}}">匹配度: {{selectedUserDetail.matchScore}}个共同标签</view>
             <view class="user-detail-stats" wx:else>{{selectedUserDetail.totalTags}}个标签 · 阈值{{selectedUserDetail.threshold}}</view>
-            <!-- 碰一碰时间 -->
-            <view class="touch-time" wx:if="{{selectedUserDetail.firstTouchTime}}">
+            <!-- 碰一碰时间 - 暂时隐藏避免显示异常 -->
+            <!-- <view class="touch-time" wx:if="{{selectedUserDetail.firstTouchTime}}">
               <text class="touch-time-label">首次碰一碰: </text>
               <text class="touch-time-value">{{selectedUserDetail.firstTouchTime}}</text>
-            </view>
+            </view> -->
           </view>
         </view>
         <!-- 标签信息 -->
@@ -130,28 +130,28 @@
           <view class="tag-section" wx:if="{{selectedUserDetail.professionalTags.length > 0}}">
             <view class="tag-section-title">专业领域</view>
             <view class="tag-list">
-              <view class="tag-item" wx:for="{{selectedUserDetail.professionalTags}}" wx:key="*this">{{item}}</view>
+              <view class="tag-item {{item.isMatched ? 'matched' : ''}}" wx:for="{{selectedUserDetail.professionalTags}}" wx:key="name">{{item.name}}</view>
             </view>
           </view>
           <!-- 兴趣爱好标签 -->
           <view class="tag-section" wx:if="{{selectedUserDetail.interestTags.length > 0}}">
             <view class="tag-section-title">兴趣爱好</view>
             <view class="tag-list">
-              <view class="tag-item" wx:for="{{selectedUserDetail.interestTags}}" wx:key="*this">{{item}}</view>
+              <view class="tag-item {{item.isMatched ? 'matched' : ''}}" wx:for="{{selectedUserDetail.interestTags}}" wx:key="name">{{item.name}}</view>
             </view>
           </view>
           <!-- 性格标签 -->
           <view class="tag-section" wx:if="{{selectedUserDetail.personalityTags.length > 0}}">
             <view class="tag-section-title">性格特征</view>
             <view class="tag-list">
-              <view class="tag-item" wx:for="{{selectedUserDetail.personalityTags}}" wx:key="*this">{{item}}</view>
+              <view class="tag-item {{item.isMatched ? 'matched' : ''}}" wx:for="{{selectedUserDetail.personalityTags}}" wx:key="name">{{item.name}}</view>
             </view>
           </view>
           <!-- 彩蛋标签 -->
           <view class="tag-section" wx:if="{{selectedUserDetail.quirkyTags.length > 0}}">
             <view class="tag-section-title">个性彩蛋</view>
             <view class="tag-list">
-              <view class="tag-item" wx:for="{{selectedUserDetail.quirkyTags}}" wx:key="*this">{{item}}</view>
+              <view class="tag-item {{item.isMatched ? 'matched' : ''}}" wx:for="{{selectedUserDetail.quirkyTags}}" wx:key="name">{{item.name}}</view>
             </view>
           </view>
         </view>

@@ -102,6 +102,12 @@ Page({
     texts: {} // 文字配置
   },
 
+  // 🖼️ 生成美观的默认头像URL
+  getDefaultAvatarUrl(seed = 'friend') {
+    const encodedSeed = encodeURIComponent(seed);
+    return `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodedSeed}&backgroundColor=b6e3f4&radius=50`;
+  },
+
   /**
    * Lifecycle function--Called when page load
    */
@@ -1013,14 +1019,28 @@ Page({
       personalTagsTextLength: cardInfoStatus.personalTagsText.length
     });
     
+    // 🎨 获取当前用户标签用于高亮显示匹配标签
+    const currentUserTags = this.getCurrentUserTags();
+    const matchedTagsSet = new Set(userData.matchedTags || []);
+    
+    // 为标签添加匹配状态标识
+    const addMatchStatusToTags = (tags) => {
+      return (tags || []).map(tag => ({
+        name: tag,
+        isMatched: matchedTagsSet.has(tag)
+      }));
+    };
+
     // 构建用户详细信息
     const userDetail = {
       name: userData.displayName || userData.advancedTags?.displayName || userData.userInfo?.nickName || '未知用户',
-      avatarUrl: userData.avatarUrl || userData.userInfo?.avatarUrl || '/images/default-avatar.jpg',
-      professionalTags: userData.advancedTags?.professionalTags || [],
-      interestTags: userData.advancedTags?.interestTags || [],
-      personalityTags: userData.advancedTags?.personalityTags || [],
-      quirkyTags: userData.advancedTags?.quirkyTags || [],
+      // 🖼️ 头像修复：优先使用服务器存储的头像，fallback到美观默认头像
+      avatarUrl: userData.avatarUrl || userData.userInfo?.avatarUrl || this.getDefaultAvatarUrl(userData.userInfo?.nickName || '朋友'),
+      // 为每类标签添加匹配状态
+      professionalTags: addMatchStatusToTags(userData.advancedTags?.professionalTags),
+      interestTags: addMatchStatusToTags(userData.advancedTags?.interestTags),
+      personalityTags: addMatchStatusToTags(userData.advancedTags?.personalityTags),
+      quirkyTags: addMatchStatusToTags(userData.advancedTags?.quirkyTags),
       contactInfo: userData.advancedTags?.contactInfo || '',
       personalTagsText: userData.advancedTags?.personalTagsText || '',
       threshold: userData.advancedTags?.threshold || 3,
@@ -1031,6 +1051,14 @@ Page({
       matchedTags: userData.matchedTags,
       firstTouchTime: this.formatTouchTime(userData.firstTouchTime)
     };
+    
+    console.log('[ConnectPage] 标签匹配状态:', {
+      matchedTags: userData.matchedTags,
+      professionalMatches: userDetail.professionalTags.filter(t => t.isMatched).length,
+      interestMatches: userDetail.interestTags.filter(t => t.isMatched).length,
+      personalityMatches: userDetail.personalityTags.filter(t => t.isMatched).length,
+      quirkyMatches: userDetail.quirkyTags.filter(t => t.isMatched).length
+    });
     
     // 🔍 验证构建后的用户详细信息
     console.log('[ConnectPage] 构建后的用户详细信息验证:');
@@ -1752,9 +1780,37 @@ Page({
       console.log('✅ 朋友详情:', friends.map(f => ({ name: f.friendDeviceName, openid: f.friendOpenid })));
         
         // 将朋友数据转换为匹配用户格式，保持UI兼容性
+        // 获取当前用户的所有标签用于匹配度计算
+        const currentUserTags = this.getCurrentUserTags();
+        console.log('[ConnectPage] 当前用户标签:', currentUserTags);
+        
         const matchedFriends = friends.map(friend => {
           // 判断是否为未注册设备
           const isUnregistered = friend.isUnregistered || friend.deviceOnly || !friend.friendOpenid;
+          
+          // 重新计算匹配度和匹配标签
+          let recalculatedMatchScore = 0;
+          let recalculatedMatchedTags = [];
+          
+          if (!isUnregistered && friend.friendUserInfo) {
+            // 获取朋友的所有标签
+            const friendTags = [
+              ...(friend.friendUserInfo.professionalTags || []),
+              ...(friend.friendUserInfo.interestTags || []),
+              ...(friend.friendUserInfo.personalityTags || []),
+              ...(friend.friendUserInfo.quirkyTags || [])
+            ];
+            
+            // 计算共同标签
+            recalculatedMatchedTags = currentUserTags.filter(tag => friendTags.includes(tag));
+            recalculatedMatchScore = recalculatedMatchedTags.length;
+            
+            console.log(`[ConnectPage] 重新计算匹配度 - ${friend.friendUserInfo?.displayName}:`, {
+              friendTags: friendTags.length,
+              matchedTags: recalculatedMatchedTags,
+              matchScore: recalculatedMatchScore
+            });
+          }
           
           return {
             openid: friend.friendOpenid || 'unregistered',
@@ -1762,11 +1818,12 @@ Page({
               `${friend.friendDeviceName} (未注册)` : 
               (friend.friendUserInfo?.displayName || friend.friendUserInfo?.nickName || '未知用户'),
             deviceName: friend.friendDeviceName,
+            // 🖼️ 头像修复：优先使用朋友的存储头像，fallback到美观默认头像
             avatarUrl: isUnregistered ? 
-              '/images/default-unregistered.png' : 
-              (friend.friendUserInfo?.avatarUrl || ''),
-            matchScore: friend.matchScore || 0,
-            matchedTags: friend.matchedTags || [],
+              this.getDefaultAvatarUrl('unregistered') : 
+              (friend.friendUserInfo?.avatarUrl || this.getDefaultAvatarUrl(friend.friendUserInfo?.nickName || friend.friendUserInfo?.displayName || 'friend')),
+            matchScore: recalculatedMatchScore,
+            matchedTags: recalculatedMatchedTags,
             firstTouchTime: friend.firstMeetTime || friend.lastMeetTime,
             meetCount: friend.meetCount || 1,
             isFromDatabase: true, // 标识这是从数据库加载的
@@ -1929,7 +1986,8 @@ Page({
               (friend.matchedTags ? friend.matchedTags.slice(0, 3).join(' · ') : '暂无标签'),
             theme: isUnregistered ? '未注册设备' : '碰一碰朋友',
             color: this.getUserThemeColor(index),
-            avatarUrl: friend.avatarUrl || '/images/default-avatar.jpg',
+            // 🖼️ 头像修复：使用美观的默认头像
+            avatarUrl: friend.avatarUrl || this.getDefaultAvatarUrl(friend.name || 'friend'),
             userData: friend,
             isMatched: !isUnregistered,
             isUnregistered: isUnregistered,
@@ -2034,7 +2092,8 @@ Page({
           description: '使用设备与朋友碰一碰，即可在这里看到匹配的朋友',
           theme: '提示',
           color: '#999999',
-          avatarUrl: '/images/default-avatar.jpg',
+          // 🖼️ 头像修复：使用美观的默认头像
+          avatarUrl: this.getDefaultAvatarUrl('empty'),
           userData: null,
           isMatched: false,
           isEmpty: true,
@@ -3671,6 +3730,41 @@ ${JSON.stringify(tribeMembers, null, 2)}
         hour: '2-digit',
         minute: '2-digit'
       });
+    }
+  },
+
+  /**
+   * 获取当前用户的所有标签
+   */
+  getCurrentUserTags: function() {
+    try {
+      // 从本地存储获取用户标签数据
+      const advancedTags = wx.getStorageSync('advancedTags');
+      if (!advancedTags) {
+        console.warn('[ConnectPage] 未找到当前用户标签数据');
+        return [];
+      }
+
+      // 合并所有类型的标签
+      const allTags = [
+        ...(advancedTags.professionalTags || []),
+        ...(advancedTags.interestTags || []),
+        ...(advancedTags.personalityTags || []),
+        ...(advancedTags.quirkyTags || [])
+      ];
+
+      console.log('[ConnectPage] 获取到当前用户标签:', {
+        professionalTags: advancedTags.professionalTags?.length || 0,
+        interestTags: advancedTags.interestTags?.length || 0,
+        personalityTags: advancedTags.personalityTags?.length || 0,
+        quirkyTags: advancedTags.quirkyTags?.length || 0,
+        total: allTags.length
+      });
+
+      return allTags;
+    } catch (error) {
+      console.error('[ConnectPage] 获取当前用户标签失败:', error);
+      return [];
     }
   }
 })

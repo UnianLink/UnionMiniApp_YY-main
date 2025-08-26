@@ -1881,3 +1881,13 @@
   color: rgba(255, 255, 255, 0.5);
   line-height: 1.4;
 }
+
+/* 匹配标签高亮样式 */
+.tag-item.matched {
+  background: linear-gradient(135deg, #7b68ee, #00d4ff) !important;
+  color: #ffffff !important;
+  font-weight: bold;
+  border: 2rpx solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4rpx 12rpx rgba(123, 104, 238, 0.3);
+  transform: scale(1.05);
+}

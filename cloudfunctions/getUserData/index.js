@@ -7,6 +7,44 @@ cloud.init({
 
 const db = cloud.database();
 
+// 🖼️ 头像配置管理
+const AvatarConfig = {
+  // 🎨 获取美观的默认头像URL
+  getDefaultAvatarUrl(seed = 'default', userInfo = {}) {
+    // 使用adventurer风格，比bottts-neutral更美观
+    const style = 'adventurer';
+    const encodedSeed = encodeURIComponent(seed);
+    
+    // 根据用户信息选择背景色
+    let backgroundColor = 'b6e3f4'; // 默认浅蓝色
+    if (userInfo.personalityTags) {
+      const personality = userInfo.personalityTags.join('').toLowerCase();
+      if (personality.includes('enfp') || personality.includes('开朗')) {
+        backgroundColor = 'ffd93d'; // 阳光黄
+      } else if (personality.includes('intj') || personality.includes('内向')) {
+        backgroundColor = 'c084fc'; // 优雅紫
+      } else if (personality.includes('创意')) {
+        backgroundColor = 'fb7185'; // 创意粉
+      }
+    }
+    
+    return `https://api.dicebear.com/7.x/${style}/svg?seed=${encodedSeed}&backgroundColor=${backgroundColor}&radius=50`;
+  },
+  
+  // 🔄 检查头像是否需要更新
+  needsRefresh(avatarUrl) {
+    if (!avatarUrl) return true;
+    
+    const oldPatterns = [
+      '132.232.99.205',
+      'bottts-neutral', // 旧的机器人风格
+      'robohash'
+    ];
+    
+    return oldPatterns.some(pattern => avatarUrl.includes(pattern));
+  }
+};
+
 /**
  * 获取用户数据
  * 支持获取原有问卷数据和高级标签数据
@@ -92,9 +130,10 @@ async function getAdvancedTagsData(openid, includeFriends = false) {
     if (result.data.length > 0) {
       const userData = result.data[0];
       
-      // 处理头像URL
+      // 🖼️ 头像存储修复：处理头像URL和FileID
       if (userData.userInfo && userData.userInfo.avatarFileID) {
         try {
+          console.log('[getUserData] 🖼️ 发现用户自定义头像FileID:', userData.userInfo.avatarFileID);
           const tempUrlResult = await cloud.getTempFileURL({
             fileList: [userData.userInfo.avatarFileID]
           });
@@ -103,11 +142,31 @@ async function getAdvancedTagsData(openid, includeFriends = false) {
             const fileInfo = tempUrlResult.fileList[0];
             if (fileInfo.status === 0) {
               userData.userInfo.avatarUrl = fileInfo.tempFileURL;
+              console.log('[getUserData] ✅ 头像临时URL生成成功');
+            } else {
+              console.warn('[getUserData] ⚠️ 头像临时URL生成失败，状态:', fileInfo.status);
             }
           }
         } catch (urlError) {
-          console.warn('[getUserData] 获取头像URL失败:', urlError);
-          // 继续使用原有的头像URL
+          console.warn('[getUserData] ❌ 获取头像URL失败:', urlError);
+          // 继续使用原有的头像URL，确保customAvatar标记正确
+          if (!userData.userInfo.avatarUrl || userData.userInfo.avatarUrl.startsWith('cloud://')) {
+            // 如果没有有效的URL，生成美观的默认头像但保留customAvatar标记
+            userData.userInfo.avatarUrl = AvatarConfig.getDefaultAvatarUrl(
+              userData.userInfo.nickName || userData.advancedTags?.displayName || 'default',
+              userData.advancedTags
+            );
+            console.log('[getUserData] 🎭 使用美观默认头像作为fallback');
+          }
+        }
+      } else if (userData.userInfo && !userData.userInfo.customAvatar) {
+        // 🎭 用户使用默认头像，确保URL正确且美观
+        if (!userData.userInfo.avatarUrl || AvatarConfig.needsRefresh(userData.userInfo.avatarUrl)) {
+          userData.userInfo.avatarUrl = AvatarConfig.getDefaultAvatarUrl(
+            userData.userInfo.nickName || userData.advancedTags?.displayName || 'default',
+            userData.advancedTags
+          );
+          console.log('[getUserData] 🎭 设置美观默认头像URL');
         }
       }
       
@@ -168,9 +227,10 @@ async function getOriginalQuestionnaireData(openid, includeFriends = false) {
     if (result.data.length > 0) {
       const userData = result.data[0];
       
-      // 处理头像URL
+      // 🖼️ 头像存储修复：处理头像URL和FileID（原有问卷数据）
       if (userData.userInfo && userData.userInfo.avatarFileID) {
         try {
+          console.log('[getUserData] 🖼️ 发现原有问卷用户自定义头像FileID:', userData.userInfo.avatarFileID);
           const tempUrlResult = await cloud.getTempFileURL({
             fileList: [userData.userInfo.avatarFileID]
           });
@@ -179,11 +239,31 @@ async function getOriginalQuestionnaireData(openid, includeFriends = false) {
             const fileInfo = tempUrlResult.fileList[0];
             if (fileInfo.status === 0) {
               userData.userInfo.avatarUrl = fileInfo.tempFileURL;
+              console.log('[getUserData] ✅ 原有问卷头像临时URL生成成功');
+            } else {
+              console.warn('[getUserData] ⚠️ 原有问卷头像临时URL生成失败，状态:', fileInfo.status);
             }
           }
         } catch (urlError) {
-          console.warn('[getUserData] 获取头像URL失败:', urlError);
-          // 继续使用原有的头像URL
+          console.warn('[getUserData] ❌ 获取原有问卷头像URL失败:', urlError);
+          // 继续使用原有的头像URL，确保customAvatar标记正确
+          if (!userData.userInfo.avatarUrl || userData.userInfo.avatarUrl.startsWith('cloud://')) {
+            // 如果没有有效的URL，生成美观的默认头像但保留customAvatar标记
+            userData.userInfo.avatarUrl = AvatarConfig.getDefaultAvatarUrl(
+              userData.userInfo.nickName || 'default',
+              userData.questionnaire
+            );
+            console.log('[getUserData] 🎭 原有问卷使用美观默认头像作为fallback');
+          }
+        }
+      } else if (userData.userInfo && !userData.userInfo.customAvatar) {
+        // 🎭 原有问卷用户使用默认头像，确保URL正确且美观
+        if (!userData.userInfo.avatarUrl || AvatarConfig.needsRefresh(userData.userInfo.avatarUrl)) {
+          userData.userInfo.avatarUrl = AvatarConfig.getDefaultAvatarUrl(
+            userData.userInfo.nickName || 'default',
+            userData.questionnaire
+          );
+          console.log('[getUserData] 🎭 原有问卷设置美观默认头像URL');
         }
       }
       
