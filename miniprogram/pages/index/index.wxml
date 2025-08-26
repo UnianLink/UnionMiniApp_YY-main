@@ -147,7 +147,24 @@
             <image class="user-avatar" src="{{userInfo.customAvatar && userInfo.avatarUrl ? userInfo.avatarUrl : 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=' + (advancedTags.displayName || userInfo.nickName || 'default')}}"></image>
             <view class="avatar-upload-tip">{{texts.avatarUploadTip}}</view>
           </view>
-          <view class="user-name">{{advancedTags.displayName || userInfo.nickName || '微信用户'}}</view>
+          <!-- 昵称编辑区域 -->
+          <view class="user-name-container">
+            <view wx:if="{{!editingNickname}}" class="user-name-display" bindtap="startEditNickname">
+              <text class="user-name">{{advancedTags.displayName || userInfo.nickName || '匿名用户'}}</text>
+              <text class="edit-hint">✏️ 点击修改昵称</text>
+            </view>
+            <view wx:else class="user-name-edit">
+              <input class="nickname-input" 
+                     placeholder="请输入昵称" 
+                     value="{{tempNickname}}" 
+                     bindinput="onNicknameInput"
+                     bindblur="saveNickname"
+                     bindconfirm="saveNickname"
+                     maxlength="20"
+                     focus="{{editingNickname}}"/>
+              <text class="save-hint">👆 输入完成后点击空白处保存</text>
+            </view>
+          </view>
         </view>
 
         <!-- 进度条 -->

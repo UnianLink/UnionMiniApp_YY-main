@@ -285,4 +285,27 @@
       <view class="bottom-safe-area"></view>
     </scroll-view>
   </view>
+
+  <!-- 数据同步弹窗 -->
+  <view wx:if="{{showSyncModal}}" class="sync-modal-container">
+    <view class="sync-modal-overlay" bindtap="hideSyncModal"></view>
+    <view class="sync-modal">
+      <view class="sync-modal-header">
+        <text class="sync-modal-title">🔄 数据同步中</text>
+      </view>
+      <view class="sync-modal-content">
+        <view class="sync-animation">
+          <view class="sync-spinner"></view>
+        </view>
+        <text class="sync-modal-message">{{syncModalMessage || '正在与设备同步数据，请稍等...'}}</text>
+        <view class="sync-progress-bar">
+          <view class="sync-progress" style="width: {{syncProgress}}%"></view>
+        </view>
+        <text class="sync-countdown">预计剩余时间：{{syncCountdown}} 秒</text>
+      </view>
+      <view class="sync-modal-footer">
+        <text class="sync-tip">⚠️ 同步期间请勿关闭小程序或断开设备连接</text>
+      </view>
+    </view>
+  </view>
 </view>

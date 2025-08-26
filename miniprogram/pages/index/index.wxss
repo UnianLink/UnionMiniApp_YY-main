@@ -104,6 +104,65 @@ page {
   margin-top: 50rpx;
 }
 
+/* 昵称编辑区域样式 */
+.user-name-container {
+  margin-top: 50rpx;
+  min-height: 80rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.user-name-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+}
+
+.user-name-display .user-name {
+  font-size: 36rpx;
+  font-weight: bold;
+  margin: 0;
+}
+
+.edit-hint {
+  font-size: 24rpx;
+  color: #888;
+  margin-top: 10rpx;
+  transition: color 0.3s ease;
+}
+
+.user-name-edit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.nickname-input {
+  width: 300rpx;
+  height: 60rpx;
+  background-color: #1a1a1a;
+  border: 2rpx solid #333;
+  border-radius: 8rpx;
+  padding: 0 20rpx;
+  font-size: 32rpx;
+  color: #fff;
+  text-align: center;
+  transition: border-color 0.3s ease;
+}
+
+.nickname-input:focus {
+  border-color: #007aff;
+}
+
+.save-hint {
+  font-size: 22rpx;
+  color: #666;
+  margin-top: 10rpx;
+}
+
 /* 进度条 */
 .progress-bar {
   width: 100%;

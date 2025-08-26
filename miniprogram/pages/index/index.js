@@ -118,6 +118,10 @@ Page({
       3: '', // 性格当前分类
       4: ''  // 彩蛋当前分类
     },
+    
+    // 昵称编辑相关
+    editingNickname: false, // 是否正在编辑昵称
+    tempNickname: '', // 临时昵称内容
   },
 
   onShow: function() {
@@ -2307,6 +2311,80 @@ Page({
         });
       }
     });
+  },
+
+  // 昵称编辑相关方法
+  startEditNickname() {
+    console.log('[Index] 开始编辑昵称');
+    const currentName = this.data.advancedTags.displayName || this.data.userInfo.nickName || '';
+    
+    this.setData({
+      editingNickname: true,
+      tempNickname: currentName
+    });
+  },
+
+  onNicknameInput(e) {
+    this.setData({
+      tempNickname: e.detail.value
+    });
+  },
+
+  saveNickname() {
+    console.log('[Index] 保存昵称:', this.data.tempNickname);
+    
+    const trimmedNickname = this.data.tempNickname.trim();
+    
+    // 验证昵称长度
+    if (trimmedNickname.length === 0) {
+      wx.showToast({
+        title: '昵称不能为空',
+        icon: 'none',
+        duration: 2000
+      });
+      return;
+    }
+    
+    if (trimmedNickname.length > 20) {
+      wx.showToast({
+        title: '昵称长度不能超过20字符',
+        icon: 'none',
+        duration: 2000
+      });
+      return;
+    }
+    
+    // 简单敏感词过滤（可根据需要扩展）
+    const sensitiveWords = ['管理员', '系统', '客服'];
+    const hasSensitiveWord = sensitiveWords.some(word => trimmedNickname.includes(word));
+    
+    if (hasSensitiveWord) {
+      wx.showToast({
+        title: '昵称包含敏感词，请重新输入',
+        icon: 'none',
+        duration: 2000
+      });
+      return;
+    }
+    
+    // 保存昵称到advancedTags.displayName
+    this.setData({
+      'advancedTags.displayName': trimmedNickname,
+      editingNickname: false,
+      tempNickname: ''
+    });
+    
+    // 触发标签刷新以重新编码
+    this.refreshAllTags();
+    
+    // 显示保存成功提示
+    wx.showToast({
+      title: '昵称已更新',
+      icon: 'success',
+      duration: 1500
+    });
+    
+    console.log('[Index] 昵称已保存:', trimmedNickname);
   },
 
   // 获取云存储文件的临时访问URL

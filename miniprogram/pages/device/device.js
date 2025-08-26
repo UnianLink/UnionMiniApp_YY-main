@@ -104,6 +104,13 @@ Page({
     bluetoothModalVisible: false, // 蓝牙弹窗是否显示
     blockOtherDevices: false, // 是否阻止连接其他设备
     
+    // ===== 数据同步弹窗状态 =====
+    showSyncModal: false, // 是否显示同步弹窗
+    syncModalMessage: '正在与设备同步数据，请稍等...', // 同步弹窗消息
+    syncProgress: 0, // 同步进度（0-100）
+    syncCountdown: 20, // 同步倒计时（秒）
+    syncTimer: null, // 同步定时器
+    
     // ===== BLE数据完整性校验相关状态 =====
     lastSentMessage: null, // 最后发送的消息（用于重传）
     retryCount: 0, // 当前重传次数
@@ -3129,8 +3136,9 @@ Page({
     try {
       console.log('🔄 开始刷新设备数据...');
       
-      // 设置刷新状态
+      // 设置刷新状态并显示同步弹窗
       this.setData({ isRefreshingData: true });
+      this.showSyncModal('正在与设备同步数据，请稍等...');
       
       // 显示开始刷新的提示
       this.addNotification('🔄 开始刷新数据...');
@@ -3238,8 +3246,9 @@ Page({
         duration: 2000
       });
     } finally {
-      // 恢复刷新状态
+      // 恢复刷新状态并隐藏同步弹窗
       this.setData({ isRefreshingData: false });
+      this.hideSyncModal();
       console.log('🔄 数据刷新过程结束');
     }
   },
@@ -6225,15 +6234,100 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
     console.log('📊 [传输统计] 统计已重置');
   },
 
+  // ===== 数据同步弹窗方法 =====
+  showSyncModal(message = '正在与设备同步数据，请稍等...') {
+    console.log('[Sync Modal] 显示同步弹窗:', message);
+    
+    // 重置同步状态
+    this.setData({
+      showSyncModal: true,
+      syncModalMessage: message,
+      syncProgress: 0,
+      syncCountdown: 20
+    });
+    
+    // 清除之前的定时器
+    if (this.data.syncTimer) {
+      clearInterval(this.data.syncTimer);
+    }
+    
+    // 开始倒计时和进度条
+    const timer = setInterval(() => {
+      const currentCountdown = this.data.syncCountdown;
+      const currentProgress = this.data.syncProgress;
+      
+      if (currentCountdown > 0) {
+        // 更新倒计时和进度条
+        const newCountdown = currentCountdown - 1;
+        const newProgress = Math.min(((20 - newCountdown) / 20) * 100, 95); // 最多到95%，避免100%后还没同步完成
+        
+        this.setData({
+          syncCountdown: newCountdown,
+          syncProgress: newProgress
+        });
+      } else {
+        // 倒计时结束，显示继续等待提示
+        this.setData({
+          syncModalMessage: '同步时间较长，请继续耐心等待...',
+          syncCountdown: 0,
+          syncProgress: 95
+        });
+      }
+    }, 1000);
+    
+    // 保存定时器引用
+    this.setData({ syncTimer: timer });
+  },
+
+  hideSyncModal() {
+    console.log('[Sync Modal] 隐藏同步弹窗');
+    
+    // 清除定时器
+    if (this.data.syncTimer) {
+      clearInterval(this.data.syncTimer);
+    }
+    
+    // 隐藏弹窗并重置状态
+    this.setData({
+      showSyncModal: false,
+      syncTimer: null,
+      syncProgress: 0,
+      syncCountdown: 20
+    });
+  },
+
+  updateSyncProgress(progress, message) {
+    if (this.data.showSyncModal) {
+      console.log('[Sync Modal] 更新同步进度:', progress, message);
+      this.setData({
+        syncProgress: Math.min(progress, 100),
+        syncModalMessage: message || this.data.syncModalMessage
+      });
+      
+      // 如果进度达到100%，稍等一下再隐藏弹窗
+      if (progress >= 100) {
+        setTimeout(() => {
+          this.hideSyncModal();
+        }, 1000);
+      }
+    }
+  },
+
   // ===== 页面生命周期 =====
   onUnload() {
-    console.log('🔧 [页面卸载] 清理蓝牙监听器');
+    console.log('🔧 [页面卸载] 清理蓝牙监听器和同步定时器');
     
     // 清理蓝牙状态监听器
     if (this._bluetoothStateListenerSetup) {
       wx.offBluetoothAdapterStateChange();
       this._bluetoothStateListenerSetup = false;
       console.log('✅ [页面卸载] 蓝牙状态监听器已清理');
+    }
+    
+    // 清理同步弹窗定时器
+    if (this.data.syncTimer) {
+      clearInterval(this.data.syncTimer);
+      console.log('✅ [页面卸载] 同步弹窗定时器已清理');
     }
   }
 });
