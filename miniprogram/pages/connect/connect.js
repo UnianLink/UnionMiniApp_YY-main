@@ -102,10 +102,10 @@ Page({
     texts: {} // 文字配置
   },
 
-  // 🖼️ 生成美观的默认头像URL
+  // 🖼️ 获取统一的默认头像URL
   getDefaultAvatarUrl(seed = 'friend') {
-    const encodedSeed = encodeURIComponent(seed);
-    return `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodedSeed}&backgroundColor=b6e3f4&radius=50`;
+    // 统一使用本地默认头像，不再动态生成
+    return '/assets/default-avatar.svg';
   },
 
   /**

@@ -128,6 +128,15 @@ Page({
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().updateSelected('/pages/index/index');
     }
+    
+    // 🖼️ 头像修复：页面显示时检查头像状态
+    setTimeout(() => {
+      const currentUserInfo = this.data.userInfo;
+      if (currentUserInfo && currentUserInfo.customAvatar && currentUserInfo.avatarFileID) {
+        console.log('[onShow] 🖼️ 检查用户头像状态');
+        this.checkAndRefreshAvatar(currentUserInfo);
+      }
+    }, 200);
   },
 
   /**
@@ -280,6 +289,15 @@ Page({
     
     // 🎯 核心改进：静默登录 + 数据检查
     this.silentLogin();
+    
+    // 🖼️ 头像修复：页面加载完成后进行头像状态初始检查
+    setTimeout(() => {
+      console.log('[onLoad] 🖼️ 执行头像状态初始检查');
+      const userInfo = this.data.userInfo || wx.getStorageSync('userInfo');
+      if (userInfo && userInfo.customAvatar && userInfo.avatarFileID) {
+        this.checkAndRefreshAvatar(userInfo);
+      }
+    }, 1000);
   },
 
   /**
@@ -854,16 +872,37 @@ Page({
     // 检查本地是否有数据，设置初始视图
     const hasLocalData = this.isUserDataComplete();
     
-    // 🎯 设置基础用户信息（静默模式）
+    // 🖼️ 头像修复：优先使用本地存储的用户信息，避免覆盖头像数据
+    const localUserInfo = wx.getStorageSync('userInfo') || {};
+    console.log('[silentLogin] 🖼️ 检查本地用户信息:', {
+      hasLocalUserInfo: !!localUserInfo.nickName,
+      hasAvatarUrl: !!localUserInfo.avatarUrl,
+      hasAvatarFileID: !!localUserInfo.avatarFileID,
+      customAvatar: localUserInfo.customAvatar
+    });
+    
+    // 🎯 设置基础用户信息（静默模式），优先保留本地头像信息
+    const initialUserInfo = {
+      nickName: localUserInfo.nickName || '匿名用户',
+      avatarUrl: localUserInfo.avatarUrl || '',
+      avatarFileID: localUserInfo.avatarFileID || null,
+      customAvatar: localUserInfo.customAvatar || false,
+      ...localUserInfo,  // 保留本地存储的完整信息
+      ...this.data.userInfo  // 保留可能存在的其他信息
+    };
+    
     this.setData({
       hasUserInfo: true,  // 静默模式下视为有用户信息
-      userInfo: {
-        nickName: '匿名用户',
-        avatarUrl: '',
-        ...this.data.userInfo  // 保留可能存在的其他信息
-      },
+      userInfo: initialUserInfo,
       viewMode: hasLocalData ? 'profile' : 'questionnaire',
       silentMode: true  // 标识静默模式
+    });
+    
+    console.log('[silentLogin] 🖼️ 初始化用户信息完成:', {
+      nickName: initialUserInfo.nickName,
+      hasAvatarUrl: !!initialUserInfo.avatarUrl,
+      hasAvatarFileID: !!initialUserInfo.avatarFileID,
+      customAvatar: initialUserInfo.customAvatar
     });
     
     console.log('[silentLogin] 用户界面已显示，开始后台身份识别');
@@ -941,6 +980,15 @@ Page({
     } else {
       console.log('[smartDataSync] 无身份标识，使用本地模式');
       this.fallbackToLocalMode();
+      
+      // 🖼️ 头像修复：即使是本地模式，也要检查本地头像数据
+      setTimeout(() => {
+        const currentUserInfo = this.data.userInfo;
+        if (currentUserInfo) {
+          console.log('[smartDataSync] 🖼️ 本地模式下检查用户头像数据');
+          this.checkAndRefreshAvatar(currentUserInfo);
+        }
+      }, 500);
     }
   },
 
@@ -1113,12 +1161,39 @@ Page({
             }
             
             console.log('[syncDataFromCloud] ✅ 使用云端数据（更新），标签数:', totalCloudTags);
+            
+            // 🖼️ 头像修复：构建完整的userInfo数据，包含头像信息
+            let updatedUserInfo = { ...this.data.userInfo };
+            if (cloudData.userInfo) {
+              console.log('[syncDataFromCloud] 🖼️ 发现云端用户信息，同步头像数据');
+              updatedUserInfo = {
+                ...updatedUserInfo,
+                ...cloudData.userInfo,
+                // 确保头像关键字段被正确同步
+                avatarUrl: cloudData.userInfo.avatarUrl || updatedUserInfo.avatarUrl,
+                avatarFileID: cloudData.userInfo.avatarFileID || updatedUserInfo.avatarFileID,
+                customAvatar: cloudData.userInfo.customAvatar !== undefined ? cloudData.userInfo.customAvatar : updatedUserInfo.customAvatar
+              };
+              console.log('[syncDataFromCloud] 🖼️ 头像数据同步完成:', {
+                hasAvatarUrl: !!updatedUserInfo.avatarUrl,
+                hasAvatarFileID: !!updatedUserInfo.avatarFileID,
+                customAvatar: updatedUserInfo.customAvatar
+              });
+            }
+            
             this.setData({
-              advancedTags: { ...this.data.advancedTags, ...cloudData.advancedTags }
+              advancedTags: { ...this.data.advancedTags, ...cloudData.advancedTags },
+              userInfo: updatedUserInfo  // 🖼️ 头像修复：同步用户信息包括头像数据
             }, () => {
               this.refreshAllTagsActive();
               this.updateTotalSelectedTags(); // 🎯 强制重新计算
               this.saveAdvancedTags();
+              
+              // 🖼️ 头像修复：同步userInfo到本地存储
+              wx.setStorageSync('userInfo', updatedUserInfo);
+              
+              // 🖼️ 头像修复：检查并刷新头像URL
+              this.checkAndRefreshAvatar(updatedUserInfo);
               
               // 🎯 KISS原则关键改进：云端数据同步后立即检查并切换视图模式
               if (this.isUserDataComplete()) {
@@ -1141,6 +1216,13 @@ Page({
             if (this.isUserDataComplete()) {
               console.log('[syncDataFromCloud] 本地数据完整，切换到profile模式');
               this.setData({ viewMode: 'profile' });
+            }
+            
+            // 🖼️ 头像修复：即使使用本地数据，也要检查和刷新头像
+            const currentUserInfo = this.data.userInfo;
+            if (currentUserInfo) {
+              console.log('[syncDataFromCloud] 🖼️ 检查本地用户头像数据');
+              this.checkAndRefreshAvatar(currentUserInfo);
             }
           }
         }
@@ -2264,10 +2346,9 @@ Page({
             if (loginRes.result && loginRes.result.openid) {
               userInfo.openid = loginRes.result.openid;
             
-              // 🎨 生成美观的默认头像
-              if (!userInfo.avatarUrl || userInfo.avatarUrl.indexOf('132.232.99.205') > -1 || userInfo.avatarUrl.includes('bottts-neutral')) {
-                const seed = userInfo.nickName || 'default';
-                userInfo.avatarUrl = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4&radius=50`;
+              // 🎨 使用统一的默认头像
+              if (!userInfo.avatarUrl || userInfo.avatarUrl.indexOf('132.232.99.205') > -1 || userInfo.avatarUrl.includes('bottts-neutral') || userInfo.avatarUrl.includes('dicebear')) {
+                userInfo.avatarUrl = '/assets/default-avatar.svg';
                 userInfo.customAvatar = false;
               }
               
@@ -2526,7 +2607,7 @@ Page({
         const seed = this.data.userInfo.nickName || 'default';
         const updatedUserInfo = {
           ...this.data.userInfo,
-          avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4&radius=50`,
+          avatarUrl: '/assets/default-avatar.svg',
           customAvatar: false
         };
         
@@ -2549,7 +2630,7 @@ Page({
         const seed = userInfo.nickName || 'default';
         const updatedUserInfo = {
           ...userInfo,
-          avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4&radius=50`,
+          avatarUrl: '/assets/default-avatar.svg',
           customAvatar: false
         };
         this.setData({ userInfo: updatedUserInfo });

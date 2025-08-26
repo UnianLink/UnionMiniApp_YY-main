@@ -63,7 +63,7 @@
       <view class="business-card">
         <!-- 固定头部区域 -->
         <view class="card-header">
-          <image class="card-avatar" src="{{selectedCommunity.themeAvatar || '/assets/default-avatar.png'}}"></image>
+          <image class="card-avatar" src="{{selectedCommunity.themeAvatar || '/assets/default-avatar.svg'}}"></image>
           <view class="card-basic-info">
             <view class="card-name">{{selectedCommunity.name || texts.unknownCommunity}}</view>
             <view class="card-position">{{selectedCommunity.themeName || texts.unknownTheme}}</view>
@@ -87,7 +87,7 @@
                   class="member-item"
                   bindtap="viewUserProfile"
                   data-openid="{{item.openid}}">
-                  <image class="member-avatar" src="{{item.userInfo.avatarUrl || '/assets/default-avatar.png'}}" mode="aspectFill"></image>
+                  <image class="member-avatar" src="{{item.userInfo.avatarUrl || '/assets/default-avatar.svg'}}" mode="aspectFill"></image>
                   <view class="member-name">{{item.userInfo.nickName || texts.anonymousUser}}</view>
                 </view>
               </view>

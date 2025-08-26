@@ -12,7 +12,7 @@
         <!-- 名片头部 -->
         <view class="profile-header">
           <view class="profile-avatar-container">
-            <image class="profile-avatar" src="{{userInfo.customAvatar && userInfo.avatarUrl ? userInfo.avatarUrl : 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=' + (advancedTags.displayName || userInfo.nickName || 'default')}}"></image>
+            <image class="profile-avatar" src="{{userInfo.customAvatar && userInfo.avatarUrl ? userInfo.avatarUrl : '/assets/default-avatar.svg'}}"></image>
           </view>
           <view class="profile-info">
             <view class="profile-name">{{advancedTags.displayName || userInfo.nickName || '微信用户'}}</view>
@@ -155,7 +155,7 @@
         <!-- 顶部用户信息 -->
         <view class="user-header">
           <view class="avatar-container" bindtap="uploadAvatar">
-            <image class="user-avatar" src="{{userInfo.customAvatar && userInfo.avatarUrl ? userInfo.avatarUrl : 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=' + (advancedTags.displayName || userInfo.nickName || 'default')}}"></image>
+            <image class="user-avatar" src="{{userInfo.customAvatar && userInfo.avatarUrl ? userInfo.avatarUrl : '/assets/default-avatar.svg'}}"></image>
             <view class="avatar-upload-tip">{{texts.avatarUploadTip}}</view>
           </view>
           <!-- 昵称编辑区域 -->

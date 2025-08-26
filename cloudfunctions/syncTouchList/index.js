@@ -487,7 +487,7 @@ async function addUnmatchedDevicesAsFriends(currentUser, unmatchedDevices) {
         friendUserInfo: {
           displayName: device.deviceName, // 直接使用Un字符串作为显示名
           nickName: `${device.deviceName} (未注册)`, // 添加未注册标记
-          avatarUrl: '/images/default-unregistered.png', // 未注册设备专用头像
+          avatarUrl: '/assets/default-avatar.svg', // 统一使用默认头像
           isRegistered: false // 明确标记为未注册
         },
         firstMeetTime: new Date(device.firstTouchTime),

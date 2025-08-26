@@ -7,28 +7,12 @@ cloud.init({
 
 const db = cloud.database();
 
-// 🖼️ 头像配置管理
+// 🖼️ 头像配置管理 - 简化版
 const AvatarConfig = {
-  // 🎨 获取美观的默认头像URL
+  // 🎨 获取统一的默认头像URL
   getDefaultAvatarUrl(seed = 'default', userInfo = {}) {
-    // 使用adventurer风格，比bottts-neutral更美观
-    const style = 'adventurer';
-    const encodedSeed = encodeURIComponent(seed);
-    
-    // 根据用户信息选择背景色
-    let backgroundColor = 'b6e3f4'; // 默认浅蓝色
-    if (userInfo.personalityTags) {
-      const personality = userInfo.personalityTags.join('').toLowerCase();
-      if (personality.includes('enfp') || personality.includes('开朗')) {
-        backgroundColor = 'ffd93d'; // 阳光黄
-      } else if (personality.includes('intj') || personality.includes('内向')) {
-        backgroundColor = 'c084fc'; // 优雅紫
-      } else if (personality.includes('创意')) {
-        backgroundColor = 'fb7185'; // 创意粉
-      }
-    }
-    
-    return `https://api.dicebear.com/7.x/${style}/svg?seed=${encodedSeed}&backgroundColor=${backgroundColor}&radius=50`;
+    // 统一使用本地默认头像，不再动态生成
+    return '/assets/default-avatar.svg';
   },
   
   // 🔄 检查头像是否需要更新
@@ -36,8 +20,10 @@ const AvatarConfig = {
     if (!avatarUrl) return true;
     
     const oldPatterns = [
-      '132.232.99.205',
-      'bottts-neutral', // 旧的机器人风格
+      '132.232.99.205',   // 旧的服务器地址
+      'bottts-neutral',   // 旧的机器人风格
+      'dicebear.com',     // DiceBear动态头像
+      'api.dicebear'      // DiceBear API
       'robohash'
     ];
     
