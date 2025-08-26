@@ -25,7 +25,7 @@ const DeviceSelectionConfig = {
    * - 设置过高(如-30dBm)：只有贴得很近才识别，可能漏检
    * - 推荐值：-40dBm，适合典型硬件功率
    */
-  RSSI_PROXIMITY_THRESHOLD: -55,
+  RSSI_PROXIMITY_THRESHOLD: -50,
 
   /**
    * 候选设备最小RSSI值
@@ -67,7 +67,7 @@ const DeviceSelectionConfig = {
    * - 设置过长(如8000ms)：用户等待时间过长，体验差
    * - 推荐值：4000ms，给足够时间收集稳定数据
    */
-  RSSI_STABLE_TIME: 2000,
+  RSSI_STABLE_TIME: 3000,
 
   /**
    * 最小置信度阈值（0-1之间）
