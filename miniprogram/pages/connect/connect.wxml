@@ -156,17 +156,17 @@
           </view>
         </view>
         <!-- 联系信息 -->
-        <view class="user-detail-contact" wx:if="{{selectedUserDetail.contactInfo}}">
+        <view class="user-detail-contact" wx:if="{{selectedUserDetail.contactInfo && selectedUserDetail.contactInfo.trim() !== ''}}">
           <view class="contact-title">联系方式</view>
           <view class="contact-info">{{selectedUserDetail.contactInfo}}</view>
         </view>
         <!-- 个性标签 -->
-        <view class="user-detail-personal" wx:if="{{selectedUserDetail.personalTagsText}}">
+        <view class="user-detail-personal" wx:if="{{selectedUserDetail.personalTagsText && selectedUserDetail.personalTagsText.trim() !== ''}}">
           <view class="personal-title">个性标签</view>
           <view class="personal-text">{{selectedUserDetail.personalTagsText}}</view>
         </view>
         <!-- 微信二维码 -->
-        <view class="user-detail-qrcode" wx:if="{{selectedUserDetail.qrCodeUrl}}">
+        <view class="user-detail-qrcode" wx:if="{{selectedUserDetail.qrCodeUrl && selectedUserDetail.qrCodeUrl.trim() !== ''}}">
           <view class="qrcode-title">微信二维码</view>
           <view class="qrcode-container">
             <image class="qrcode-image" 
@@ -177,6 +177,13 @@
                    show-menu-by-longpress="true"></image>
           </view>
           <view class="qrcode-hint">长按二维码可直接添加好友</view>
+        </view>
+        
+        <!-- 名片信息缺失提示（当没有任何名片信息时显示）-->
+        <view class="card-empty-hint" wx:if="{{(!selectedUserDetail.contactInfo || selectedUserDetail.contactInfo.trim() === '') && (!selectedUserDetail.personalTagsText || selectedUserDetail.personalTagsText.trim() === '') && (!selectedUserDetail.qrCodeUrl || selectedUserDetail.qrCodeUrl.trim() === '')}}">
+          <view class="empty-hint-icon">💌</view>
+          <view class="empty-hint-text">该朋友还未完善名片信息</view>
+          <view class="empty-hint-sub">联系方式、个人介绍和微信二维码暂未设置</view>
         </view>
       </view>
     </view>

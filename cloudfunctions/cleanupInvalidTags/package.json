@@ -1,0 +1,9 @@
+{
+  "name": "cleanupInvalidTags",
+  "version": "1.0.0",
+  "description": "清理用户数据中的无效标签",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.1"
+  }
+}

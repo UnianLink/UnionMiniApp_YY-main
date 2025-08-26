@@ -993,6 +993,26 @@ Page({
       return;
     }
     
+    // 🔍 增强数据完整性验证和调试日志
+    console.log('[ConnectPage] 原始用户数据结构验证:');
+    console.log('- userData存在:', !!userData);
+    console.log('- advancedTags存在:', !!userData.advancedTags);
+    console.log('- userInfo存在:', !!userData.userInfo);
+    
+    // 验证名片关键信息
+    const cardInfoStatus = {
+      contactInfo: userData.advancedTags?.contactInfo || '',
+      personalTagsText: userData.advancedTags?.personalTagsText || '',
+      qrCodeUrl: userData.advancedTags?.qrCodeUrl || ''
+    };
+    console.log('[ConnectPage] 名片关键信息状态:', {
+      hasContactInfo: !!cardInfoStatus.contactInfo,
+      hasPersonalTagsText: !!cardInfoStatus.personalTagsText,
+      hasQrCodeUrl: !!cardInfoStatus.qrCodeUrl,
+      contactInfoLength: cardInfoStatus.contactInfo.length,
+      personalTagsTextLength: cardInfoStatus.personalTagsText.length
+    });
+    
     // 构建用户详细信息
     const userDetail = {
       name: userData.displayName || userData.advancedTags?.displayName || userData.userInfo?.nickName || '未知用户',
@@ -1009,8 +1029,25 @@ Page({
       // 碰一碰相关信息
       matchScore: userData.matchScore,
       matchedTags: userData.matchedTags,
-      firstTouchTime: userData.firstTouchTime
+      firstTouchTime: this.formatTouchTime(userData.firstTouchTime)
     };
+    
+    // 🔍 验证构建后的用户详细信息
+    console.log('[ConnectPage] 构建后的用户详细信息验证:');
+    console.log('- 名片信息完整性:', {
+      hasContactInfo: !!userDetail.contactInfo,
+      hasPersonalTagsText: !!userDetail.personalTagsText, 
+      hasQrCodeUrl: !!userDetail.qrCodeUrl,
+      contactInfoContent: userDetail.contactInfo ? userDetail.contactInfo.substring(0, 50) + '...' : '空',
+      personalTagsTextContent: userDetail.personalTagsText ? userDetail.personalTagsText.substring(0, 50) + '...' : '空',
+      qrCodeUrlContent: userDetail.qrCodeUrl ? '有URL' : '无URL'
+    });
+    console.log('- 标签信息完整性:', {
+      professionalTagsCount: userDetail.professionalTags.length,
+      interestTagsCount: userDetail.interestTags.length,
+      personalityTagsCount: userDetail.personalityTags.length,
+      quirkyTagsCount: userDetail.quirkyTags.length
+    });
     
     // 处理二维码URL（如果是云存储文件ID）
     if (userData.advancedTags?.qrCodeUrl && userData.advancedTags.qrCodeUrl.startsWith('cloud://')) {
@@ -1029,6 +1066,19 @@ Page({
       } catch (urlError) {
         console.warn('[ConnectPage] 获取二维码URL失败:', urlError);
       }
+    }
+    
+    // 🚨 名片信息完整性检查和警告
+    const missingCardInfo = [];
+    if (!userDetail.contactInfo) missingCardInfo.push('联系方式');
+    if (!userDetail.personalTagsText) missingCardInfo.push('个人介绍');
+    if (!userDetail.qrCodeUrl) missingCardInfo.push('微信二维码');
+    
+    if (missingCardInfo.length > 0) {
+      console.warn('[ConnectPage] 朋友名片信息不完整，缺少:', missingCardInfo.join(', '));
+      console.warn('[ConnectPage] 这可能导致朋友详情页面显示不全的问题');
+    } else {
+      console.log('[ConnectPage] ✅ 朋友名片信息完整，所有关键字段都存在');
     }
     
     // 显示用户详细信息弹窗
@@ -1722,7 +1772,24 @@ Page({
             isFromDatabase: true, // 标识这是从数据库加载的
             isRegistered: !isUnregistered, // 标识注册状态
             isUnregistered: isUnregistered, // 标识是否为未注册设备
-            friendType: isUnregistered ? 'device' : 'user' // 朋友类型：设备或用户
+            friendType: isUnregistered ? 'device' : 'user', // 朋友类型：设备或用户
+            // 🔥 新增：添加完整的名片信息，兼容showUserDetail函数的期望结构
+            advancedTags: isUnregistered ? null : {
+              displayName: friend.friendUserInfo?.displayName || '未设置昵称',
+              contactInfo: friend.friendUserInfo?.contactInfo || '',
+              personalTagsText: friend.friendUserInfo?.personalTagsText || '',
+              qrCodeUrl: friend.friendUserInfo?.qrCodeUrl || '',
+              professionalTags: friend.friendUserInfo?.professionalTags || [],
+              interestTags: friend.friendUserInfo?.interestTags || [],
+              personalityTags: friend.friendUserInfo?.personalityTags || [],
+              quirkyTags: friend.friendUserInfo?.quirkyTags || [],
+              threshold: friend.friendUserInfo?.threshold || 3
+            },
+            userInfo: isUnregistered ? null : {
+              avatarUrl: friend.friendUserInfo?.avatarUrl || '',
+              nickName: friend.friendUserInfo?.nickName || ''
+            },
+            totalTags: friend.friendUserInfo?.totalTags || 0
           };
         });
         
@@ -3552,6 +3619,58 @@ ${JSON.stringify(tribeMembers, null, 2)}
     } catch (error) {
       console.error('[ConnectPage] 设备名称解码失败:', error);
       return [];
+    }
+  },
+
+  /**
+   * 格式化碰一碰时间显示
+   */
+  formatTouchTime: function(timestamp) {
+    if (!timestamp) return '未知时间';
+    
+    // 处理可能的时间戳格式
+    let date;
+    if (typeof timestamp === 'string') {
+      date = new Date(timestamp);
+    } else if (typeof timestamp === 'number') {
+      // 如果时间戳小于1000000000000，说明是秒级时间戳，需要转换为毫秒
+      date = new Date(timestamp < 1000000000000 ? timestamp * 1000 : timestamp);
+    } else if (timestamp instanceof Date) {
+      date = timestamp;
+    } else {
+      return '时间格式错误';
+    }
+    
+    // 检查是否是有效时间（排除1970年等异常时间）
+    if (isNaN(date.getTime()) || date.getFullYear() < 2020) {
+      return '时间异常';
+    }
+    
+    // 格式化为用户友好的时间显示
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) {
+      // 今天
+      return `今天 ${date.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'})}`;
+    } else if (diffDays === 1) {
+      // 昨天
+      return `昨天 ${date.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'})}`;
+    } else if (diffDays < 7) {
+      // 一周内
+      const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+      const weekday = weekdays[date.getDay()];
+      return `周${weekday} ${date.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'})}`;
+    } else {
+      // 超过一周，显示具体日期
+      return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
     }
   }
 })

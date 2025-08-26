@@ -310,7 +310,18 @@ async function establishMutualFriendships(currentUser, matchedUsers) {
         friendUserInfo: {
           displayName: friendUser.advancedTags?.displayName || '未设置昵称',
           avatarUrl: friendUser.userInfo?.avatarUrl || '',
-          nickName: friendUser.userInfo?.nickName || ''
+          nickName: friendUser.userInfo?.nickName || '',
+          // 🔥 新增：保存完整名片信息
+          contactInfo: friendUser.advancedTags?.contactInfo || '',
+          personalTagsText: friendUser.advancedTags?.personalTagsText || '',
+          qrCodeUrl: friendUser.advancedTags?.qrCodeUrl || '',
+          // 保存标签信息用于详情显示
+          professionalTags: friendUser.advancedTags?.professionalTags || [],
+          interestTags: friendUser.advancedTags?.interestTags || [],
+          personalityTags: friendUser.advancedTags?.personalityTags || [],
+          quirkyTags: friendUser.advancedTags?.quirkyTags || [],
+          totalTags: friendUser.selectedTags?.length || 0,
+          threshold: friendUser.advancedTags?.threshold || 3
         },
         firstMeetTime: new Date(matchedUser.firstTouchTime),
         matchScore: matchedUser.matchScore,
@@ -324,7 +335,18 @@ async function establishMutualFriendships(currentUser, matchedUsers) {
         friendUserInfo: {
           displayName: currentUser.advancedTags?.displayName || '未设置昵称',
           avatarUrl: currentUser.userInfo?.avatarUrl || '',
-          nickName: currentUser.userInfo?.nickName || ''
+          nickName: currentUser.userInfo?.nickName || '',
+          // 🔥 新增：保存完整名片信息
+          contactInfo: currentUser.advancedTags?.contactInfo || '',
+          personalTagsText: currentUser.advancedTags?.personalTagsText || '',
+          qrCodeUrl: currentUser.advancedTags?.qrCodeUrl || '',
+          // 保存标签信息用于详情显示
+          professionalTags: currentUser.advancedTags?.professionalTags || [],
+          interestTags: currentUser.advancedTags?.interestTags || [],
+          personalityTags: currentUser.advancedTags?.personalityTags || [],
+          quirkyTags: currentUser.advancedTags?.quirkyTags || [],
+          totalTags: currentUser.selectedTags?.length || 0,
+          threshold: currentUser.advancedTags?.threshold || 3
         },
         firstMeetTime: new Date(matchedUser.firstTouchTime),
         matchScore: matchedUser.matchScore,

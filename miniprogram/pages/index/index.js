@@ -968,9 +968,61 @@ Page({
     }
   },
 
+  // 🧹 检查并清理无效标签数据
+  cleanupInvalidTags() {
+    console.log('🧹 检查并清理无效标签数据');
+    
+    try {
+      const savedData = wx.getStorageSync('advancedTags');
+      if (savedData) {
+        // 从配置中获取有效标签列表
+        const Config = require('../../utils/config.js');
+        const allConfigTags = Config.advancedTagsConfig.encoding.getAllTagsList();
+        const validTags = new Set(allConfigTags);
+        
+        let hasInvalidTags = false;
+        const cleanedData = { ...savedData };
+        
+        ['professionalTags', 'interestTags', 'personalityTags', 'quirkyTags'].forEach(field => {
+          if (cleanedData[field]) {
+            const originalLength = cleanedData[field].length;
+            cleanedData[field] = cleanedData[field].filter(tag => validTags.has(tag));
+            
+            if (cleanedData[field].length !== originalLength) {
+              hasInvalidTags = true;
+              console.log(`🧹 清理 ${field}: ${originalLength} -> ${cleanedData[field].length}`);
+            }
+          }
+        });
+        
+        if (hasInvalidTags) {
+          wx.setStorageSync('advancedTags', cleanedData);
+          console.log('✅ 无效标签已清理');
+          
+          // 显示用户友好提示
+          wx.showModal({
+            title: '标签数据更新',
+            content: '检测到旧版本标签，已自动清理。建议重新选择标签以获得最佳匹配效果。',
+            showCancel: false,
+            confirmText: '知道了'
+          });
+          
+          return true; // 返回true表示进行了清理
+        }
+      }
+      return false; // 返回false表示无需清理
+    } catch (error) {
+      console.error('❌ 清理无效标签失败:', error);
+      return false;
+    }
+  },
+
   // 从本地加载高级标签数据
   loadAdvancedTags() {
     try {
+      // 🧹 先清理无效标签
+      this.cleanupInvalidTags();
+      
       const savedData = wx.getStorageSync('advancedTags');
       if (savedData) {
         // 🔍 验证本地数据是否来自新配置系统
@@ -1550,8 +1602,50 @@ Page({
     }
   },
 
+  // 🔍 验证用户标签与配置的一致性
+  validateTagsAgainstConfig() {
+    console.log('🔍 验证用户标签与配置的一致性');
+    
+    try {
+      // 获取当前配置的所有标签
+      const Config = require('../../utils/config.js');
+      const allConfigTags = Config.advancedTagsConfig.encoding.getAllTagsList();
+      const validTags = new Set(allConfigTags);
+      
+      // 检查用户选择的标签
+      const userSelectedTags = [
+        ...(this.data.advancedTags.professionalTags || []),
+        ...(this.data.advancedTags.interestTags || []),
+        ...(this.data.advancedTags.personalityTags || []),
+        ...(this.data.advancedTags.quirkyTags || [])
+      ];
+      
+      const invalidTags = userSelectedTags.filter(tag => !validTags.has(tag));
+      
+      if (invalidTags.length > 0) {
+        console.warn('⚠️ 检测到无效标签:', invalidTags);
+        console.log('💡 可用标签列表前10个:', allConfigTags.slice(0, 10), '...');
+        
+        // 自动清理无效标签
+        this.cleanupInvalidTags();
+        
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('❌ 标签验证失败:', error);
+      return false;
+    }
+  },
+
   // 生成标签编码（支持动态标签数量，最多60个）
   generateTagsEncoding() {
+    // 🔍 先验证标签有效性
+    if (!this.validateTagsAgainstConfig()) {
+      console.warn('⚠️ 标签验证失败，编码可能不准确');
+    }
+    
     const encoding = Config.advancedTagsConfig.encoding;
     
     // 🎯 关键修改：直接使用getAllTagsList()，它会自动使用外部配置
