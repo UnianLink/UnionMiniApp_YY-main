@@ -99,7 +99,11 @@ Page({
       '#ff69b4', // 亮春樱落霞 - 改为热粉色
       '#00ff7f'  // 亮宝石绿 - 改为春绿色
     ],
-    texts: {} // 文字配置
+    texts: {}, // 文字配置
+    // 新增：分离显示相关数据
+    registeredUserCards: [],        // 注册用户卡片数据
+    unregisteredUserCards: [],      // 未注册设备卡片数据
+    showUnregisteredDevices: false  // 是否显示未注册设备列表
   },
 
   // 🖼️ 获取统一的默认头像URL
@@ -938,10 +942,21 @@ Page({
    */
   onUserCardTap: function(e) {
     const index = e.currentTarget.dataset.index;
-    const card = this.data.userCards[index];
+    const section = e.currentTarget.dataset.section;
+    let card;
+    
+    // 根据section选择正确的数据源
+    if (section === 'registered') {
+      card = this.data.registeredUserCards[index];
+    } else if (section === 'unregistered') {
+      card = this.data.unregisteredUserCards[index];
+    } else {
+      // 兼容旧的数据结构
+      card = this.data.userCards[index];
+    }
     
     if (!card) {
-      console.error('[ConnectPage] 用户卡片不存在，索引:', index);
+      console.error('[ConnectPage] 用户卡片不存在，索引:', index, '分区:', section);
       return;
     }
     
@@ -1109,6 +1124,87 @@ Page({
       console.log('[ConnectPage] ✅ 朋友名片信息完整，所有关键字段都存在');
     }
     
+    // 🔍 新增：名片信息实时补充机制（安全修复：解决朋友名片显示不完整问题）
+    const hasCompleteCardInfo = !!(
+      userDetail.contactInfo || 
+      userDetail.personalTagsText || 
+      userDetail.qrCodeUrl
+    );
+    
+    // 如果名片信息不完整且有朋友的openid，尝试获取最新信息
+    if (!hasCompleteCardInfo && userData.openid) {
+      try {
+        console.log('[ConnectPage] 🔍 检测到名片信息不完整，尝试获取朋友最新信息');
+        console.log('[ConnectPage] 🔍 朋友openid:', userData.openid);
+        
+        const latestInfo = await wx.cloud.callFunction({
+          name: 'getUserData',
+          data: { 
+            openid: userData.openid,
+            dataType: 'advanced' 
+          }
+        });
+        
+        if (latestInfo.result?.success && latestInfo.result?.data?.advancedTags) {
+          const latestTags = latestInfo.result.data.advancedTags;
+          console.log('[ConnectPage] 🔍 获取到朋友最新名片信息:', {
+            hasContactInfo: !!latestTags.contactInfo,
+            hasPersonalTagsText: !!latestTags.personalTagsText,
+            hasQrCodeUrl: !!latestTags.qrCodeUrl
+          });
+          
+          // 只更新缺失的字段，保持原有数据优先
+          if (!userDetail.contactInfo && latestTags.contactInfo) {
+            userDetail.contactInfo = latestTags.contactInfo;
+            console.log('[ConnectPage] ✅ 补充联系方式信息');
+          }
+          if (!userDetail.personalTagsText && latestTags.personalTagsText) {
+            userDetail.personalTagsText = latestTags.personalTagsText;
+            console.log('[ConnectPage] ✅ 补充个人介绍信息');
+          }
+          if (!userDetail.qrCodeUrl && latestTags.qrCodeUrl) {
+            userDetail.qrCodeUrl = latestTags.qrCodeUrl;
+            console.log('[ConnectPage] ✅ 补充二维码信息');
+            
+            // 处理云存储URL转换
+            if (latestTags.qrCodeUrl.startsWith('cloud://')) {
+              try {
+                const tempUrlResult = await wx.cloud.getTempFileURL({
+                  fileList: [latestTags.qrCodeUrl]
+                });
+                
+                if (tempUrlResult.fileList && tempUrlResult.fileList.length > 0) {
+                  const fileInfo = tempUrlResult.fileList[0];
+                  if (fileInfo.status === 0) {
+                    userDetail.qrCodeUrl = fileInfo.tempFileURL;
+                    console.log('[ConnectPage] ✅ 二维码云存储URL转换成功');
+                  }
+                }
+              } catch (urlError) {
+                console.warn('[ConnectPage] ⚠️ 二维码URL转换失败:', urlError);
+                // 继续使用原始URL
+              }
+            }
+          }
+          
+          console.log('[ConnectPage] ✅ 成功补充朋友名片信息，现在信息完整性:', {
+            hasContactInfo: !!userDetail.contactInfo,
+            hasPersonalTagsText: !!userDetail.personalTagsText,
+            hasQrCodeUrl: !!userDetail.qrCodeUrl
+          });
+        } else {
+          console.log('[ConnectPage] ⚠️ 未能获取到朋友的有效名片信息，使用原有数据');
+        }
+      } catch (error) {
+        console.warn('[ConnectPage] ⚠️ 获取朋友最新名片信息失败，使用原有数据:', error);
+        // 继续使用原有数据，不影响正常流程
+      }
+    } else if (hasCompleteCardInfo) {
+      console.log('[ConnectPage] ✅ 朋友名片信息已完整，无需额外查询');
+    } else {
+      console.log('[ConnectPage] ⚠️ 朋友未注册或缺少openid，无法获取最新信息');
+    }
+    
     // 显示用户详细信息弹窗
     this.setData({
       showUserDetailModal: true,
@@ -1125,6 +1221,15 @@ Page({
     this.setData({
       showUserDetailModal: false,
       selectedUserDetail: null
+    });
+  },
+
+  /**
+   * 切换未注册设备列表显示状态
+   */
+  toggleUnregisteredDevices: function() {
+    this.setData({
+      showUnregisteredDevices: !this.data.showUnregisteredDevices
     });
   },
 
@@ -1146,396 +1251,7 @@ Page({
     });
   },
 
-  /**
-   * 二维码长按处理
-   */
-  onQRCodeLongPress: function(e) {
-    console.log('[ConnectPage] 二维码长按事件:', e);
-    
-    const qrCodeUrl = this.data.selectedUserDetail.qrCodeUrl;
-    if (!qrCodeUrl) {
-      wx.showToast({
-        title: '二维码不可用',
-        icon: 'none'
-      });
-      return;
-    }
 
-    // 先识别二维码内容
-    this.recognizeQRCodeContent(qrCodeUrl);
-  },
-
-  /**
-   * 识别二维码内容并显示相应选项
-   */
-  recognizeQRCodeContent: function(qrCodeUrl) {
-    console.log('[ConnectPage] 开始识别二维码内容:', qrCodeUrl);
-    
-    wx.showLoading({
-      title: '识别中...'
-    });
-
-    // 由于微信小程序的限制，我们使用一个更实用的方法
-    // 直接显示微信二维码的操作菜单，模拟识别成功
-    setTimeout(() => {
-      wx.hideLoading();
-      
-      // 模拟识别到微信二维码
-      const mockQRContent = 'weixin://dl/business/?t=abc123';
-      this.handleQRCodeContent(mockQRContent);
-    }, 800);
-  },
-
-
-
-  /**
-   * 处理识别到的二维码内容
-   */
-  handleQRCodeContent: function(qrContent) {
-    console.log('[ConnectPage] 处理二维码内容:', qrContent);
-    
-    // 检查是否是微信名片二维码
-    if (qrContent.includes('weixin://') || qrContent.includes('wxwork://') || 
-        qrContent.includes('wechat://') || qrContent.includes('微信')) {
-      // 微信相关二维码
-      this.showWeChatQRCodeMenu(qrContent);
-    } else if (qrContent.includes('http://') || qrContent.includes('https://')) {
-      // 网页链接
-      this.showWebLinkMenu(qrContent);
-    } else {
-      // 其他内容
-      this.showOtherContentMenu(qrContent);
-    }
-  },
-
-  /**
-   * 显示微信二维码操作菜单
-   */
-  showWeChatQRCodeMenu: function(qrContent) {
-    const userDetail = this.data.selectedUserDetail;
-    const userName = userDetail.name || '未知用户';
-    
-    wx.showActionSheet({
-      itemList: [`添加${userName}为好友`, '保存二维码', '复制微信号', '转发给朋友'],
-      success: (res) => {
-        switch (res.tapIndex) {
-          case 0: // 添加好友
-            this.openWeChatProfile(qrContent);
-            break;
-          case 1: // 保存二维码
-            this.saveQRCodeImage();
-            break;
-          case 2: // 复制微信号
-            this.copyWeChatId(qrContent);
-            break;
-          case 3: // 转发给朋友
-            this.shareQRCode();
-            break;
-        }
-      },
-      fail: (err) => {
-        console.log('[ConnectPage] 用户取消微信二维码操作');
-      }
-    });
-  },
-
-  /**
-   * 显示网页链接操作菜单
-   */
-  showWebLinkMenu: function(qrContent) {
-    wx.showActionSheet({
-      itemList: ['打开链接', '保存二维码', '复制链接', '转发给朋友'],
-      success: (res) => {
-        switch (res.tapIndex) {
-          case 0: // 打开链接
-            this.openWebLink(qrContent);
-            break;
-          case 1: // 保存二维码
-            this.saveQRCodeImage();
-            break;
-          case 2: // 复制链接
-            this.copyWebLink(qrContent);
-            break;
-          case 3: // 转发给朋友
-            this.shareQRCode();
-            break;
-        }
-      },
-      fail: (err) => {
-        console.log('[ConnectPage] 用户取消网页链接操作');
-      }
-    });
-  },
-
-  /**
-   * 显示其他内容操作菜单
-   */
-  showOtherContentMenu: function(qrContent) {
-    wx.showActionSheet({
-      itemList: ['复制内容', '保存二维码', '转发给朋友'],
-      success: (res) => {
-        switch (res.tapIndex) {
-          case 0: // 复制内容
-            this.copyQRContent(qrContent);
-            break;
-          case 1: // 保存二维码
-            this.saveQRCodeImage();
-            break;
-          case 2: // 转发给朋友
-            this.shareQRCode();
-            break;
-        }
-      },
-      fail: (err) => {
-        console.log('[ConnectPage] 用户取消其他内容操作');
-      }
-    });
-  },
-
-  /**
-   * 显示默认操作菜单（识别失败时）
-   */
-  showDefaultQRCodeMenu: function() {
-    wx.showActionSheet({
-      itemList: ['保存图片', '转发给朋友'],
-      success: (res) => {
-        switch (res.tapIndex) {
-          case 0: // 保存图片
-            this.saveQRCodeImage();
-            break;
-          case 1: // 转发给朋友
-            this.shareQRCode();
-            break;
-        }
-      },
-      fail: (err) => {
-        console.log('[ConnectPage] 用户取消默认操作');
-      }
-    });
-  },
-
-  /**
-   * 打开微信名片
-   */
-  openWeChatProfile: function(qrContent) {
-    console.log('[ConnectPage] 打开微信名片:', qrContent);
-    
-    // 提取微信号
-    let wechatId = '';
-    
-    // 尝试从不同格式中提取微信号
-    if (qrContent.includes('weixin://')) {
-      // 微信二维码格式
-      const match = qrContent.match(/weixin:\/\/[^\/]+\/([^\/\?]+)/);
-      if (match) {
-        wechatId = match[1];
-      }
-    } else if (qrContent.includes('微信号：') || qrContent.includes('微信：')) {
-      // 文本格式
-      const match = qrContent.match(/[微信]号?[：:]\s*([a-zA-Z0-9_-]+)/);
-      if (match) {
-        wechatId = match[1];
-      }
-    }
-    
-    if (wechatId) {
-      // 显示微信号信息并提供添加好友选项
-      const userDetail = this.data.selectedUserDetail;
-      const userName = userDetail.name || '未知用户';
-      
-      wx.showActionSheet({
-        itemList: [`添加${userName}为好友`, '复制微信号', '保存二维码'],
-        success: (res) => {
-          switch (res.tapIndex) {
-            case 0: // 添加好友
-              this.addWeChatFriend(wechatId, userName);
-              break;
-            case 1: // 复制微信号
-              this.copyWeChatId(qrContent);
-              break;
-            case 2: // 保存二维码
-              this.saveQRCodeImage();
-              break;
-          }
-        },
-        fail: (err) => {
-          console.log('[ConnectPage] 用户取消添加好友操作');
-        }
-      });
-    } else {
-      // 如果无法提取微信号，显示二维码内容
-      wx.showModal({
-        title: '二维码内容',
-        content: qrContent,
-        confirmText: '复制内容',
-        cancelText: '取消',
-        success: (res) => {
-          if (res.confirm) {
-            this.copyQRContent(qrContent);
-          }
-        }
-      });
-    }
-  },
-
-  /**
-   * 添加微信好友
-   */
-  addWeChatFriend: function(wechatId, userName) {
-    console.log('[ConnectPage] 添加微信好友:', wechatId, userName);
-    
-    // 复制微信号到剪贴板
-    wx.setClipboardData({
-      data: wechatId,
-      success: () => {
-        // 显示添加好友指导
-        wx.showModal({
-          title: `添加${userName}为好友`,
-          content: `微信号已复制到剪贴板\n\n请按以下步骤操作：\n1. 打开微信\n2. 点击右上角"+"号\n3. 选择"添加朋友"\n4. 粘贴微信号\n5. 发送好友请求`,
-          confirmText: '知道了',
-          showCancel: false,
-          success: (res) => {
-            if (res.confirm) {
-              wx.showToast({
-                title: '微信号已复制',
-                icon: 'success'
-              });
-            }
-          }
-        });
-      },
-      fail: (err) => {
-        console.error('[ConnectPage] 复制微信号失败:', err);
-        wx.showToast({
-          title: '复制失败，请手动复制',
-          icon: 'none'
-        });
-      }
-    });
-  },
-
-  /**
-   * 复制微信号
-   */
-  copyWeChatId: function(qrContent) {
-    // 从二维码内容中提取微信号
-    let wechatId = '';
-    
-    // 尝试从不同格式中提取微信号
-    if (qrContent.includes('weixin://')) {
-      // 微信二维码格式
-      const match = qrContent.match(/weixin:\/\/[^\/]+\/([^\/\?]+)/);
-      if (match) {
-        wechatId = match[1];
-      }
-    } else if (qrContent.includes('微信号：') || qrContent.includes('微信：')) {
-      // 文本格式
-      const match = qrContent.match(/[微信]号?[：:]\s*([a-zA-Z0-9_-]+)/);
-      if (match) {
-        wechatId = match[1];
-      }
-    }
-    
-    if (wechatId) {
-      wx.setClipboardData({
-        data: wechatId,
-        success: () => {
-          wx.showToast({
-            title: '微信号已复制',
-            icon: 'success'
-          });
-        }
-      });
-    } else {
-      // 如果无法提取微信号，复制整个内容
-      wx.setClipboardData({
-        data: qrContent,
-        success: () => {
-          wx.showToast({
-            title: '内容已复制',
-            icon: 'success'
-          });
-        }
-      });
-    }
-  },
-
-  /**
-   * 打开网页链接
-   */
-  openWebLink: function(qrContent) {
-    console.log('[ConnectPage] 打开网页链接:', qrContent);
-    
-    // 显示确认对话框
-    wx.showModal({
-      title: '打开链接',
-      content: `是否在浏览器中打开以下链接？\n\n${qrContent}`,
-      confirmText: '打开',
-      cancelText: '取消',
-      success: (res) => {
-        if (res.confirm) {
-          // 复制链接到剪贴板，提示用户手动打开
-          wx.setClipboardData({
-            data: qrContent,
-            success: () => {
-              wx.showToast({
-                title: '链接已复制，请在浏览器中打开',
-                icon: 'none',
-                duration: 3000
-              });
-            }
-          });
-        }
-      }
-    });
-  },
-
-  /**
-   * 复制网页链接
-   */
-  copyWebLink: function(qrContent) {
-    wx.setClipboardData({
-      data: qrContent,
-      success: () => {
-        wx.showToast({
-          title: '链接已复制',
-          icon: 'success'
-        });
-      }
-    });
-  },
-
-  /**
-   * 复制二维码内容
-   */
-  copyQRContent: function(qrContent) {
-    wx.setClipboardData({
-      data: qrContent,
-      success: () => {
-        wx.showToast({
-          title: '内容已复制',
-          icon: 'success'
-        });
-      }
-    });
-  },
-
-  /**
-   * 识别二维码（保留原函数用于兼容）
-   */
-  recognizeQRCode: function() {
-    const qrCodeUrl = this.data.selectedUserDetail.qrCodeUrl;
-    if (!qrCodeUrl) {
-      wx.showToast({
-        title: '二维码不可用',
-        icon: 'none'
-      });
-      return;
-    }
-
-    // 调用新的识别函数
-    this.recognizeQRCodeContent(qrCodeUrl);
-  },
 
   /**
    * 保存二维码图片
@@ -2107,8 +1823,16 @@ Page({
       
       console.log('[ConnectPage] 用户名片卡片初始化成功:', displayUsers.length, '个用户');
       
+      // 分离注册用户和未注册设备
+      const registeredUsers = displayUsers.filter(user => !user.isUnregistered);
+      const unregisteredDevices = displayUsers.filter(user => user.isUnregistered);
+      
+      console.log('[ConnectPage] 分离结果:', registeredUsers.length, '个注册用户,', unregisteredDevices.length, '个未注册设备');
+      
       this.setData({
         userCards: displayUsers,
+        registeredUserCards: registeredUsers,
+        unregisteredUserCards: unregisteredDevices,
         isLoading: false
       });
     } catch (error) {

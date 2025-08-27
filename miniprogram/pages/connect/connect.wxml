@@ -53,14 +53,21 @@
       <view class="playlist-container" wx:else>
         <!-- 顶部填充 -->
         <view class="list-padding"></view>
-        <!-- 实现物理滚动效果的轨道 -->
-        <view class="track-wheel" style="transform: translateY({{scrollOffset}}rpx)">
-          <view class="track-item {{index === currentTrackIndex ? 'active' : ''}}" 
-                wx:for="{{userCards}}" 
-                wx:key="index"
-                style="opacity: {{1 - 0.12 * Math.abs(index - currentTrackIndex)}};"
-                data-index="{{index}}"
-                bindtap="onUserCardTap">
+        
+        <!-- 注册用户列表 -->
+        <view wx:if="{{registeredUserCards.length > 0}}">
+          <view class="section-divider">
+            <text class="section-title">注册朋友 ({{registeredUserCards.length}})</text>
+          </view>
+          <!-- 实现物理滚动效果的轨道 - 注册用户 -->
+          <view class="track-wheel registered-users" style="transform: translateY({{scrollOffset}}rpx)">
+            <view class="track-item {{index === currentTrackIndex ? 'active' : ''}}" 
+                  wx:for="{{registeredUserCards}}" 
+                  wx:key="index"
+                  style="opacity: {{1 - 0.12 * Math.abs(index - currentTrackIndex)}};"
+                  data-index="{{index}}"
+                  data-section="registered"
+                  bindtap="onUserCardTap">
             <!-- 大型专辑封面式头像 -->
             <view class="album-cover-container">
               <view class="album-cover-placeholder" wx:if="{{!item.avatarUrl}}" style="background-color: {{item.color || '#6366f1'}}">
@@ -99,8 +106,60 @@
                 <text class="stats-text" wx:else>等待注册</text>
               </view>
             </view>
+            </view>
           </view>
         </view>
+        
+        <!-- 未注册设备列表 (可折叠) -->
+        <view wx:if="{{unregisteredUserCards.length > 0}}" class="unregistered-section">
+          <view class="section-divider collapsible" bindtap="toggleUnregisteredDevices">
+            <text class="section-title">未注册设备 ({{unregisteredUserCards.length}})</text>
+            <view class="collapse-icon {{showUnregisteredDevices ? 'expanded' : 'collapsed'}}">
+              <text>{{showUnregisteredDevices ? '▼' : '▶'}}</text>
+            </view>
+          </view>
+          
+          <view wx:if="{{showUnregisteredDevices}}" class="unregistered-devices-container">
+            <view class="track-wheel unregistered-devices">
+              <view class="track-item unregistered-item" 
+                    wx:for="{{unregisteredUserCards}}" 
+                    wx:key="index"
+                    data-index="{{index}}"
+                    data-section="unregistered"
+                    bindtap="onUserCardTap">
+                <!-- 大型专辑封面式头像 -->
+                <view class="album-cover-container">
+                  <view class="album-cover-placeholder" wx:if="{{!item.avatarUrl}}" style="background-color: {{item.color || '#999'}}">
+                    <text>{{item.name ? item.name[0] : '?'}}</text>
+                  </view>
+                  <image class="album-cover" wx:if="{{item.avatarUrl}}" src="{{item.avatarUrl}}" mode="aspectFill"></image>
+                </view>
+                <view class="track-info">
+                  <view class="track-title-container">
+                    <view class="track-title unregistered">{{item.name || '未知设备'}}</view>
+                    <!-- 未注册标识 -->
+                    <view class="unregistered-badge">
+                      <text class="unregistered-icon">📱</text>
+                      <text class="unregistered-text">未注册</text>
+                    </view>
+                  </view>
+                  <view class="track-artist unregistered">{{item.subtitle || '未注册设备'}}</view>
+                  <!-- 设备信息 -->
+                  <view class="track-tags">
+                    <view class="tag unregistered" wx:if="{{item.deviceName}}">
+                      设备: {{item.deviceName}}
+                    </view>
+                  </view>
+                  <!-- 显示设备状态 -->
+                  <view class="user-stats">
+                    <text class="stats-text unregistered">等待用户注册</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+        
         <!-- 底部填充 -->
         <view class="list-padding"></view>
       </view>
@@ -173,10 +232,9 @@
                    src="{{selectedUserDetail.qrCodeUrl}}" 
                    mode="aspectFit" 
                    binderror="onQRCodeError"
-                   bindlongpress="onQRCodeLongPress"
                    show-menu-by-longpress="true"></image>
           </view>
-          <view class="qrcode-hint">长按二维码可直接添加好友</view>
+          <view class="qrcode-hint">长按二维码保存或识别</view>
         </view>
         
         <!-- 名片信息缺失提示（当没有任何名片信息时显示）-->

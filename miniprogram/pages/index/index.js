@@ -2292,13 +2292,11 @@ Page({
           // 显示编码结果并切换到个人名片视图
           wx.showModal({
             title: '提交成功！🎉',
-            content: `📊 编码统计（前3页）:\n` +
+            content: `📊 编码统计:\n` +
                     `• 前3页标签数: ${tagEncoding.allTagsList.length}\n` +
                     `• 已选标签: ${tagEncoding.selectedTags.length}\n` +
-                    `• 编码长度: ${tagEncoding.encoded.length} 字符\n\n` +
-                    `🔐 你的蓝牙名称(完整16字节):\n${submitData.advancedTags.encodedTags}\n\n` +
-                    `💡 即将切换到个人名片视图！\n` +
-                    `📝 注意：第5页彩蛋标签不参与编码`,
+                    `🔐 你的设备蓝牙:\n${submitData.advancedTags.encodedTags}\n\n` +
+                    `💡 即将切换到个人名片视图！\n`,
             showCancel: false,
             confirmText: '查看名片',
             success: () => {
