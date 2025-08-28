@@ -116,13 +116,13 @@ exports.main = async (event, context) => {
           totalTags: user.selectedTags?.length || 0,
           matchScore: matchScore,
           matchedTags: matchedTags, // 匹配的具体标签
-          firstTouchTime: device.first_touch || Date.now()
+          firstTouchTime: Date.now()  // 🚀 [高速传输优化] 硬件端已简化JSON格式
         });
       } else {
         // 未注册设备
         unmatchedDevices.push({
           deviceName: device.name,
-          firstTouchTime: device.first_touch || Date.now()
+          firstTouchTime: Date.now()  // 🚀 [高速传输优化] 硬件端已简化JSON格式
         });
       }
     }
@@ -220,7 +220,7 @@ async function updateUserTouchList(openid, newDevices) {
       if (!existingDeviceNames.has(device.name)) {
         updatedList.push({
           deviceName: device.name,
-          firstTouchTime: device.first_touch || Date.now()
+          firstTouchTime: Date.now()  // 🚀 [高速传输优化] 硬件端已简化JSON格式
         });
       }
     }
@@ -255,7 +255,7 @@ async function recordTouchEvents(openid, devices, userMap) {
       deviceA: openid, // 当前用户
       deviceB: device.name,
       openidB: userMap[device.name]?.openid || null,
-      touchTime: new Date(device.first_touch || Date.now()),
+      touchTime: new Date(),  // 🚀 [高速传输优化] 硬件端已简化JSON格式，使用当前时间
       status: userMap[device.name] ? 'matched' : 'pending',
       createTime: new Date()
     }));

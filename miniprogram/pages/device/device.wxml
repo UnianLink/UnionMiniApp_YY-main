@@ -125,14 +125,34 @@
           
           <!-- 🔍 等待智能识别状态 -->
           <view wx:elif="{{devices.length > 0 && !recommendedDevice}}" class="smart-waiting">
-            <view class="waiting-animation">
-              <view class="waiting-dot"></view>
-              <view class="waiting-dot"></view>
-              <view class="waiting-dot"></view>
+            <!-- 🎯 简化的KISS绑定模式进度显示 -->
+            <view wx:if="{{bindingScanProgress}}" class="simple-binding-progress">
+              <!-- 进度条 -->
+              <view class="progress-container">
+                <view class="progress-bar">
+                  <view class="progress-fill" style="width: {{bindingScanProgress.progressPercentText}}"></view>
+                </view>
+                <text class="progress-percentage">{{bindingScanProgress.progressPercentText}}</text>
+              </view>
+              
+              <!-- 简化的状态提示 -->
+              <view class="binding-status">
+                <text class="status-message">正在搜寻附近待绑定的友念设备</text>
+                <text class="status-hint">请将设备贴紧手机背后</text>
+              </view>
             </view>
-            <text class="waiting-text">正在智能识别最近的设备...</text>
-            <text class="waiting-subtitle">请将您的设备贴近手机背面</text>
-            <text class="device-count">已发现 {{devices.length}} 个设备，正在分析信号稳定性</text>
+            
+            <!-- 传统等待提示（fallback）-->
+            <view wx:else class="traditional-waiting">
+              <view class="waiting-animation">
+                <view class="waiting-dot"></view>
+                <view class="waiting-dot"></view>
+                <view class="waiting-dot"></view>
+              </view>
+              <text class="waiting-text">正在智能识别最近的设备...</text>
+              <text class="waiting-subtitle">请将您的设备贴近手机背面</text>
+              <text class="device-count">已发现 {{devices.length}} 个设备，正在分析信号稳定性</text>
+            </view>
             
             <!-- 设备分析进度 -->
             <view class="analysis-progress">
@@ -212,8 +232,8 @@
         </view>
         <view class="device-info">
           <text class="info-label">状态：</text>
-          <text class="info-value {{connecting ? 'connecting' : (connected ? 'connected' : 'disconnected')}}">
-            {{connecting ? '🔄 正在连接...' : (connected ? '✅ 已连接' : '❌ 未连接')}}
+          <text class="info-value {{connectionStatusClass}}">
+            {{connectionStatusText}}
           </text>
         </view>
         <view wx:if="{{connected && !deviceReady}}" class="connecting-tip">

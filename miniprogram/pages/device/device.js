@@ -6,6 +6,27 @@ const DeviceSelectionConfig = require('../../config/device-selection-config.js')
 const { calculateCRC32, generateMessageId, validateUTF8String, sanitizeString } = require('../../utils/crc32.js');
 
 Page({
+  /**
+   * 更新连接状态文本（解决WXML三元运算符编译错误）
+   */
+  updateConnectionStatusText() {
+    let statusText = '❌ 未连接';
+    let statusClass = 'disconnected';
+    
+    if (this.data.connecting) {
+      statusText = '🔄 正在连接...';
+      statusClass = 'connecting';
+    } else if (this.data.connected) {
+      statusText = '✅ 已连接';
+      statusClass = 'connected';
+    }
+    
+    this.setData({
+      connectionStatusText: statusText,
+      connectionStatusClass: statusClass
+    });
+  },
+
   data: {
     // ===== 扫描相关 =====
     devices: [], // 扫描到的蓝牙设备列表
@@ -21,6 +42,10 @@ Page({
     messages: [], // 消息收发记录
     notifications: [], // 设备通知记录
     input: '', // 输入框内容
+    
+    // ===== 预计算状态文本（解决WXML编译错误）=====
+    connectionStatusText: '❌ 未连接', // 连接状态文本
+    connectionStatusClass: 'disconnected', // 连接状态样式类
     
     // ===== BLE握手协议相关 =====
     protocolState: '空闲', // 协议状态显示
@@ -390,12 +415,16 @@ Page({
   startDiscoveryFlow() {
     console.log('🔍 开始搜索所有可用设备');
     
+    // 🎯 初始化KISS绑定扫描计时器
+    this.bindingScanStartTime = Date.now();
+    
     this.setData({ 
       boundDevice: null,
       searchingMyDevice: false,
       searchingAllDevices: true,
       blockOtherDevices: false,
-      statusMessage: '正在搜索可用设备...'
+      statusMessage: '🎯 正在寻找最近设备...',
+      bindingScanProgress: null // 清除之前的扫描进度
     });
     
     // 启动连续扫描
@@ -986,6 +1015,7 @@ Page({
             connecting: true,
             connected: false
           });
+          this.updateConnectionStatusText();
           break;
           
         case 'retrying':
@@ -1003,6 +1033,7 @@ Page({
             connecting: true, // 仍在初始化中
             protocolState: stateInfo.message
           });
+          this.updateConnectionStatusText();
           break;
           
         case 'failed':
@@ -1011,6 +1042,7 @@ Page({
             connected: false,
             protocolState: '连接失败'
           });
+          this.updateConnectionStatusText();
           
           wx.showModal({
             title: '连接失败',
@@ -1047,6 +1079,7 @@ Page({
         maxPacketSize: deviceInfo.maxPacketSize,
         protocolState: '设备就绪，开始业务流程'
       });
+      this.updateConnectionStatusText();
       
       // 显示连接成功提示
       wx.showToast({
@@ -1165,6 +1198,7 @@ Page({
         protocolState: '开始连接...',
         connectionAttempt: 0
       });
+      this.updateConnectionStatusText();
       
       // 📌 关键修复：连接前先确保彻底断开之前的连接
       await this.ensureDisconnected(deviceId);
@@ -1360,6 +1394,7 @@ Page({
         wx.onBLEConnectionStateChange((res) => {
           console.log('BLE state change', res);
           this.setData({ connected: res.connected });
+          this.updateConnectionStatusText(); // 更新状态文本
           
           // 如果连接断开，重置就绪状态
           if (!res.connected) {
@@ -1749,7 +1784,7 @@ Page({
             // 按RSSI从高到低排序
             devices.sort((a, b) => (b.RSSI || -999) - (a.RSSI || -999));
             
-            // 🧠 智能设备选择算法
+            // 🧠 智能设备选择算法 (集成KISS绑定逻辑)
             const smartRecommendation = this.smartDeviceSelection(devices);
             
             // 🔄 动态推荐撤回检查
@@ -1835,6 +1870,7 @@ Page({
       connectionAnimation: false, // 停止旋转动画
       showConnectionGuide: false // 隐藏连接引导
     });
+    this.updateConnectionStatusText();
     
     // 🚨 立即停止扫描，防止发现更多设备导致界面混乱
     if (this.data.scanning) {
@@ -2419,7 +2455,7 @@ Page({
           deviceName: device.name,  // 🔧 修复字段名：bluetooth_name -> deviceName
           subtitle: '无共同标签',
           description: tags.length > 0 ? `TA的兴趣: ${tags.slice(0, 3).join(' · ')}` : '暂无标签信息',
-          firstTouchTime: device.first_touch || Date.now(),  // 🔧 修复字段名：timestamp -> firstTouchTime
+          firstTouchTime: Date.now(),  // 🚀 [高速传输优化] 使用当前时间，硬件端已简化JSON格式
           isUnmatched: true,
           tags: tags
         };
@@ -2806,7 +2842,7 @@ Page({
         matchedUsers: [], // 无法匹配，因为没有云端数据
         unmatchedDevices: devices.map(device => ({
           deviceName: device.name,
-          firstTouchTime: device.first_touch || Date.now(),
+          firstTouchTime: Date.now(),  // 🚀 [高速传输优化] 硬件端已简化JSON格式
           status: 'local_mode'
         })),
         summary: {
@@ -4413,11 +4449,12 @@ Page({
       console.log(`📋 收到碰一碰设备列表，共${deviceCount}个设备`);
       console.log('📋 设备详情:', jsonData.devices);
       
-      // 格式化设备信息用于显示
+      // 🚀 [高速传输优化] 适配简化JSON格式：仅使用name字段，时间戳使用当前时间
       const formattedDevices = jsonData.devices.map((device, index) => {
-        const touchTime = new Date(device.first_touch);
+        // 硬件端已简化为只发送name字段，时间戳使用接收时间
+        const touchTime = new Date(); // 使用当前时间作为碰一碰时间
         const timeStr = touchTime.toLocaleString();
-        console.log(`📋 [${index + 1}] 格式化设备: ${device.name}, 首次碰一碰时间: ${timeStr}`);
+        console.log(`📋 [${index + 1}] 格式化设备: ${device.name}, 碰一碰时间: ${timeStr}`);
         return {
           name: device.name,
           time: timeStr,
@@ -4627,6 +4664,7 @@ Page({
       if (!res.connected) {
         console.log('设备断开连接');
         this.setData({ connected: false, deviceReady: false });
+        this.updateConnectionStatusText(); // 更新状态文本
         this._bleListenerSet = false;
       }
     });
@@ -5595,6 +5633,7 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
 
   /**
    * 🧠 智能设备选择算法 - 基于RSSI滤波和稳定性的高精度识别
+   * 🎯 集成KISS设备绑定逻辑，解决手机蓝牙灵敏度差异问题
    * @param {Array} devices 设备列表
    * @returns {Object|null} 推荐的设备对象或null
    */
@@ -5631,6 +5670,44 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
         historySize: history ? history.rssiHistory.length : 0
       };
     });
+
+    // 🎯 KISS设备绑定模式检查
+    // 当用户未绑定设备且处于设备发现模式时，使用新的KISS绑定逻辑
+    const boundDevice = this.getBoundDevice();
+    const isInBindingMode = !boundDevice && this.data.searchingAllDevices;
+
+    if (isInBindingMode) {
+      console.log('🎯 [KISS绑定] 进入绑定模式，使用相对优势算法');
+      const bindingRecommendation = this.bindingRecommendationLogic(enrichedCandidates);
+      
+      if (bindingRecommendation) {
+        console.log('🎯 [KISS绑定] 绑定模式推荐成功:', {
+          device: bindingRecommendation.name,
+          reason: bindingRecommendation.recommendReason,
+          mode: bindingRecommendation.timeoutMode || 'standard'
+        });
+        
+        return bindingRecommendation;
+      } else {
+        // 绑定模式下仍在等待，不使用传统推荐逻辑
+        return null;
+      }
+    }
+
+    // 🧠 传统智能选择逻辑（已绑定设备或其他场景）
+    console.log('🧠 [传统模式] 使用传统智能选择逻辑');
+    return this.traditionalDeviceSelection(enrichedCandidates);
+  },
+
+  /**
+   * 🧠 传统设备选择逻辑（从原smartDeviceSelection函数分离）
+   * @param {Array} enrichedCandidates 增强的候选设备列表
+   * @returns {Object|null} 推荐的设备对象或null
+   */
+  traditionalDeviceSelection(enrichedCandidates) {
+    const RSSI_STRONG_THRESHOLD = DeviceSelectionConfig.RSSI_STRONG_THRESHOLD;
+    const RSSI_PROXIMITY_THRESHOLD = DeviceSelectionConfig.RSSI_PROXIMITY_THRESHOLD;
+    const RSSI_CONFIDENCE_MIN = DeviceSelectionConfig.RSSI_CONFIDENCE_MIN;
 
     // 情况1：只有一个设备，但需要稳定性检查
     if (enrichedCandidates.length === 1) {
@@ -5816,6 +5893,310 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
     const sampleConfidence = Math.min(stability.sampleSize / DeviceSelectionConfig.RSSI_HISTORY_SIZE, 1) * DeviceSelectionConfig.CONFIDENCE_WEIGHT_SAMPLES;
     
     return Math.min(timeConfidence + stabilityConfidence + sampleConfidence, 1);
+  },
+
+  /**
+   * 🎯 KISS设备绑定：计算设备相对优势分数
+   * 核心思想：不依赖绝对RSSI阈值，基于相对强度差异判定绑定目标
+   * @param {Array} enrichedCandidates 增强的候选设备列表
+   * @returns {Object|null} 相对优势分析结果
+   */
+  calculateDominanceScore(enrichedCandidates) {
+    if (!enrichedCandidates || enrichedCandidates.length === 0) {
+      return null;
+    }
+
+    // 🎛️ 使用KISS绑定配置参数
+    const DOMINANCE_THRESHOLD = DeviceSelectionConfig.RSSI_DOMINANCE_THRESHOLD;
+    const DOMINANCE_TIME = DeviceSelectionConfig.RSSI_DOMINANCE_TIME;
+    const ABSOLUTE_MIN = DeviceSelectionConfig.RSSI_ABSOLUTE_MIN;
+    const SINGLE_DEVICE_MIN = DeviceSelectionConfig.RSSI_SINGLE_DEVICE_MIN;
+    const STABILITY_RELAXED = DeviceSelectionConfig.RSSI_STABILITY_RELAXED;
+
+    // 按滤波后RSSI排序
+    const sortedDevices = enrichedCandidates
+      .filter(d => d.filteredRSSI >= ABSOLUTE_MIN) // 过滤绝对信号过弱的设备
+      .sort((a, b) => b.filteredRSSI - a.filteredRSSI);
+
+    if (sortedDevices.length === 0) {
+      return {
+        recommended: null,
+        reason: `所有设备信号都低于${ABSOLUTE_MIN}dBm`,
+        analysis: { candidateCount: enrichedCandidates.length, validCount: 0 }
+      };
+    }
+
+    const strongest = sortedDevices[0];
+    const secondStrongest = sortedDevices[1];
+
+    // 🎯 情况1：单设备场景（简化逻辑）
+    if (sortedDevices.length === 1) {
+      if (strongest.filteredRSSI >= SINGLE_DEVICE_MIN) {
+        // 放宽稳定性要求，使用RSSI_STABILITY_RELAXED
+        const isStableEnough = strongest.stability.stdDev <= STABILITY_RELAXED;
+        if (isStableEnough) {
+          return {
+            recommended: strongest,
+            reason: `唯一设备(${strongest.filteredRSSI.toFixed(1)}dBm)`,
+            analysis: {
+              candidateCount: 1,
+              validCount: 1,
+              dominanceGap: 0,
+              meetsThreshold: true,
+              stabilityOk: true
+            }
+          };
+        } else {
+          return {
+            recommended: null,
+            reason: `唯一设备稳定性不足(${strongest.stability.stdDev.toFixed(1)}dBm标准差)`,
+            analysis: {
+              candidateCount: 1,
+              validCount: 1,
+              stabilityOk: false,
+              requiredStability: STABILITY_RELAXED
+            }
+          };
+        }
+      } else {
+        return {
+          recommended: null,
+          reason: `唯一设备信号过弱(${strongest.filteredRSSI.toFixed(1)}dBm < ${SINGLE_DEVICE_MIN}dBm)`,
+          analysis: { candidateCount: 1, validCount: 1, tooWeak: true }
+        };
+      }
+    }
+
+    // 🎯 情况2：多设备场景 - 相对优势分析
+    if (!secondStrongest) {
+      return this.calculateDominanceScore([strongest]); // 递归处理单设备情况
+    }
+
+    const dominanceGap = strongest.filteredRSSI - secondStrongest.filteredRSSI;
+    const meetsThreshold = dominanceGap >= DOMINANCE_THRESHOLD;
+
+    // 检查最强设备的持续领先时间
+    const now = Date.now();
+    const strongestHistory = this.deviceHistory.get(strongest.deviceId);
+    const dominanceStartTime = strongestHistory ? strongestHistory.dominanceStartTime : null;
+
+    // 如果这是首次检测到优势，记录开始时间
+    if (meetsThreshold && !dominanceStartTime) {
+      strongestHistory.dominanceStartTime = now;
+    }
+
+    // 如果不再满足优势条件，清除开始时间
+    if (!meetsThreshold && dominanceStartTime) {
+      delete strongestHistory.dominanceStartTime;
+    }
+
+    const sustainedTime = dominanceStartTime ? (now - dominanceStartTime) : 0;
+    const sustainedEnough = sustainedTime >= DOMINANCE_TIME;
+
+    // 放宽稳定性要求
+    const isStableEnough = strongest.stability.stdDev <= STABILITY_RELAXED;
+
+    if (meetsThreshold && sustainedEnough && isStableEnough) {
+      return {
+        recommended: strongest,
+        reason: `持续领先${dominanceGap.toFixed(1)}dBm已${(sustainedTime/1000).toFixed(1)}秒`,
+        analysis: {
+          candidateCount: sortedDevices.length,
+          validCount: sortedDevices.length,
+          dominanceGap: dominanceGap,
+          sustainedTime: sustainedTime,
+          meetsThreshold: true,
+          sustainedEnough: true,
+          stabilityOk: true,
+          strongest: strongest.filteredRSSI.toFixed(1),
+          secondStrongest: secondStrongest.filteredRSSI.toFixed(1)
+        }
+      };
+    }
+
+    return {
+      recommended: null,
+      reason: this.generateWaitingReason(meetsThreshold, sustainedEnough, isStableEnough, dominanceGap, sustainedTime, strongest.stability.stdDev),
+      analysis: {
+        candidateCount: sortedDevices.length,
+        validCount: sortedDevices.length,
+        dominanceGap: dominanceGap,
+        sustainedTime: sustainedTime,
+        meetsThreshold: meetsThreshold,
+        sustainedEnough: sustainedEnough,
+        stabilityOk: isStableEnough,
+        strongest: strongest.filteredRSSI.toFixed(1),
+        secondStrongest: secondStrongest.filteredRSSI.toFixed(1),
+        requiredGap: DOMINANCE_THRESHOLD,
+        requiredTime: DOMINANCE_TIME,
+        requiredStability: STABILITY_RELAXED
+      }
+    };
+  },
+
+  /**
+   * 🎯 KISS设备绑定：生成等待原因说明
+   * @private
+   */
+  generateWaitingReason(meetsThreshold, sustainedEnough, isStableEnough, dominanceGap, sustainedTime, stdDev) {
+    if (!meetsThreshold) {
+      return `等待明显优势(当前${dominanceGap.toFixed(1)}dBm < 需要${DeviceSelectionConfig.RSSI_DOMINANCE_THRESHOLD}dBm)`;
+    }
+    if (!sustainedEnough) {
+      return `等待持续领先(当前${(sustainedTime/1000).toFixed(1)}秒 < 需要${DeviceSelectionConfig.RSSI_DOMINANCE_TIME/1000}秒)`;
+    }
+    if (!isStableEnough) {
+      return `等待信号稳定(当前${stdDev.toFixed(1)}dBm > 需要${DeviceSelectionConfig.RSSI_STABILITY_RELAXED}dBm)`;
+    }
+    return '等待条件满足';
+  },
+
+  /**
+   * 🎯 KISS设备绑定：专用绑定推荐逻辑
+   * 集成智能超时机制，平衡准确性和用户体验
+   * @param {Array} enrichedCandidates 增强的候选设备列表
+   * @returns {Object|null} 绑定推荐结果
+   */
+  bindingRecommendationLogic(enrichedCandidates) {
+    if (!enrichedCandidates || enrichedCandidates.length === 0) {
+      return null;
+    }
+
+    // 🎛️ 智能超时参数
+    const FAST_TIMEOUT = DeviceSelectionConfig.BINDING_FAST_TIMEOUT; // 8秒快速模式
+    const FALLBACK_TIMEOUT = DeviceSelectionConfig.BINDING_FALLBACK_TIMEOUT; // 12秒保底模式
+
+    // 获取绑定扫描开始时间
+    if (!this.bindingScanStartTime) {
+      this.bindingScanStartTime = Date.now();
+    }
+
+    const scanningTime = Date.now() - this.bindingScanStartTime;
+
+    // 🎯 核心：使用相对优势分析
+    const dominanceResult = this.calculateDominanceScore(enrichedCandidates);
+
+    // 情况1: 已找到符合条件的推荐设备
+    if (dominanceResult && dominanceResult.recommended) {
+      console.log('🎯 [KISS绑定] 找到推荐设备:', {
+        device: dominanceResult.recommended.name,
+        reason: dominanceResult.reason,
+        scanTime: `${(scanningTime/1000).toFixed(1)}秒`,
+        analysis: dominanceResult.analysis
+      });
+
+      return {
+        ...dominanceResult.recommended,
+        recommendReason: `🎯 ${dominanceResult.reason}`,
+        bindingMode: true, // 标记为绑定模式推荐
+        scanningTime: scanningTime,
+        dominanceAnalysis: dominanceResult.analysis
+      };
+    }
+
+    // 情况2: 快速超时 - 如果有明显领先但不够持续的设备，立即推荐
+    if (scanningTime >= FAST_TIMEOUT) {
+      const sortedDevices = enrichedCandidates
+        .filter(d => d.filteredRSSI >= DeviceSelectionConfig.RSSI_ABSOLUTE_MIN)
+        .sort((a, b) => b.filteredRSSI - a.filteredRSSI);
+
+      if (sortedDevices.length > 0) {
+        const fastCandidate = sortedDevices[0];
+        const isStableEnough = fastCandidate.stability.stdDev <= DeviceSelectionConfig.RSSI_STABILITY_RELAXED;
+        
+        if (isStableEnough) {
+          console.log('🚀 [KISS绑定] 快速超时推荐:', {
+            device: fastCandidate.name,
+            rssi: fastCandidate.filteredRSSI.toFixed(1),
+            scanTime: `${(scanningTime/1000).toFixed(1)}秒`,
+            mode: '快速模式'
+          });
+
+          return {
+            ...fastCandidate,
+            recommendReason: `🚀 快速推荐(${fastCandidate.filteredRSSI.toFixed(1)}dBm,${(scanningTime/1000).toFixed(1)}s)`,
+            bindingMode: true,
+            scanningTime: scanningTime,
+            timeoutMode: 'fast'
+          };
+        }
+      }
+    }
+
+    // 情况3: 保底超时 - 推荐当前最稳定的设备
+    if (scanningTime >= FALLBACK_TIMEOUT) {
+      const fallbackCandidates = enrichedCandidates
+        .filter(d => d.filteredRSSI >= DeviceSelectionConfig.RSSI_ABSOLUTE_MIN)
+        .filter(d => d.stability.stdDev <= DeviceSelectionConfig.RSSI_STABILITY_RELAXED)
+        .sort((a, b) => {
+          // 优先考虑稳定性，然后是信号强度
+          const stabilityScore = (a.confidence * 0.6) + ((100 - a.stability.stdDev) * 0.4);
+          const stabilityScoreB = (b.confidence * 0.6) + ((100 - b.stability.stdDev) * 0.4);
+          return stabilityScoreB - stabilityScore;
+        });
+
+      if (fallbackCandidates.length > 0) {
+        const fallbackCandidate = fallbackCandidates[0];
+
+        console.log('🛡️ [KISS绑定] 保底超时推荐:', {
+          device: fallbackCandidate.name,
+          rssi: fallbackCandidate.filteredRSSI.toFixed(1),
+          confidence: (fallbackCandidate.confidence * 100).toFixed(0) + '%',
+          stability: fallbackCandidate.stability.stdDev.toFixed(1) + 'dBm',
+          scanTime: `${(scanningTime/1000).toFixed(1)}秒`,
+          mode: '保底模式'
+        });
+
+        return {
+          ...fallbackCandidate,
+          recommendReason: `🛡️ 保底推荐(最稳定设备,${(scanningTime/1000).toFixed(1)}s)`,
+          bindingMode: true,
+          scanningTime: scanningTime,
+          timeoutMode: 'fallback'
+        };
+      }
+    }
+
+    // 情况4: 继续等待，显示当前分析状态
+    const waitReason = dominanceResult ? dominanceResult.reason : '正在分析设备信号...';
+    const progressPercent = Math.min((scanningTime / FALLBACK_TIMEOUT) * 100, 100);
+
+    console.log('⏳ [KISS绑定] 继续扫描:', {
+      reason: waitReason,
+      scanTime: `${(scanningTime/1000).toFixed(1)}秒`,
+      progress: `${progressPercent.toFixed(0)}%`,
+      candidates: enrichedCandidates.length,
+      nextTimeout: scanningTime >= FAST_TIMEOUT ? 'fallback' : 'fast'
+    });
+
+    // 预计算格式化文本，避免WXML中使用JavaScript表达式
+    const nextTimeoutIn = scanningTime >= FAST_TIMEOUT 
+      ? (FALLBACK_TIMEOUT - scanningTime) 
+      : (FAST_TIMEOUT - scanningTime);
+    
+    const analysis = dominanceResult ? dominanceResult.analysis : null;
+    const formattedAnalysis = analysis ? {
+      ...analysis,
+      dominanceGapText: analysis.dominanceGap ? analysis.dominanceGap.toFixed(1) : null
+    } : null;
+
+    // 设置进度信息供UI显示
+    this.setData({
+      bindingScanProgress: {
+        reason: waitReason,
+        scanTime: scanningTime,
+        scanTimeText: (scanningTime / 1000).toFixed(1),
+        progressPercent: progressPercent,
+        progressPercentText: progressPercent.toFixed(0) + '%',
+        candidateCount: enrichedCandidates.length,
+        analysis: formattedAnalysis,
+        nextTimeoutIn: nextTimeoutIn,
+        nextTimeoutText: nextTimeoutIn > 0 ? (nextTimeoutIn / 1000).toFixed(0) : null,
+        timeoutModeText: scanningTime >= FAST_TIMEOUT ? '保底推荐' : '快速推荐'
+      }
+    });
+
+    return null; // 继续扫描
   },
 
   /**
