@@ -675,19 +675,23 @@
   background: linear-gradient(to top, #000, rgba(0, 0, 0, 0)); /* 黑色渐变 */
 }
 
-/* 标签容器，确保正确显示 */
+/* 标签容器，优化多标签显示 */
 .track-tags {
   display: flex;
-  flex-wrap: nowrap; /* 防止换行 */
+  flex-wrap: wrap; /* 🔥 修复：允许标签换行显示 */
   margin-top: 8rpx;
-  overflow: hidden; /* 隐藏溢出部分 */
+  gap: 8rpx 12rpx; /* 设置标签间距：垂直8rpx，水平12rpx */
+  max-height: 120rpx; /* 限制最大高度，避免占用过多空间 */
+  overflow: hidden; /* 隐藏超出高度限制的部分 */
 }
 
-/* 碰一碰相关样式 */
+/* 碰一碰相关样式 - 优化布局 */
 .track-title-container {
   display: flex;
   align-items: center;
   gap: 12rpx;
+  flex-wrap: wrap; /* 🔥 修复：允许标题和标识换行，防止挤压 */
+  min-height: 48rpx; /* 确保有足够的高度 */
 }
 
 .touch-badge {
@@ -802,8 +806,9 @@
   flex: 1;
   height: 100%;
   justify-content: center;
-  overflow: hidden; /* 防止内容溢出 */
-  max-width: calc(100% - 210rpx); /* 限制最大宽度 */
+  overflow: visible; /* 🔥 修复：允许内容正常显示，不强制裁剪 */
+  max-width: calc(100% - 180rpx); /* 🔥 修复：增加可用宽度，从210rpx减少到180rpx */
+  min-width: 0; /* 确保flex子元素可以收缩 */
 }
 
 .track-title {
@@ -834,28 +839,31 @@
   text-overflow: ellipsis;
 }
 
-/* 标签区域，类似歌曲风格标签 */
+/* 标签区域，类似歌曲风格标签 - 优化显示 */
 .tag {
   font-size: 24rpx;
   padding: 6rpx 16rpx;
   border-radius: 30rpx;
-  margin-right: 12rpx;
-  margin-bottom: 6rpx;
+  margin: 0; /* 🔥 修复：移除margin，使用gap统一管理间距 */
   background-color: #000; /* 改为黑色背景 */
   color: #fff; /* 改为白色文字 */
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
-  max-width: 120rpx;
+  max-width: 160rpx; /* 🔥 修复：增加最大宽度，从120rpx增加到160rpx */
+  flex-shrink: 0; /* 防止标签被过度压缩 */
   border: 1rpx solid rgba(255, 255, 255, 0.3); /* 添加白色边框 */
 }
 
 .tag-more {
   font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.4); /* 改为低透明度白色 */
-  margin-left: 4rpx;
+  color: rgba(255, 255, 255, 0.6); /* 🔥 修复：提高透明度，增强可读性 */
+  padding: 6rpx 12rpx; /* 🔥 修复：添加内边距，与标签样式保持一致 */
+  background-color: rgba(255, 255, 255, 0.1); /* 添加半透明背景 */
+  border-radius: 30rpx; /* 与标签保持一致的圆角 */
   align-self: center;
   white-space: nowrap;
+  flex-shrink: 0; /* 防止被压缩 */
 }
 
 /* 修改加载状态颜色 */
