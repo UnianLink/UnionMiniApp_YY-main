@@ -1428,14 +1428,14 @@ Page({
           
           if (e.errCode === 10001) {
             errorMessage = '手机蓝牙未开启';
-            userAction = '请在手机系统设置中开启蓝牙功能';
+            userAction = '请开启手机蓝牙和定位权限(位置信息)';
           } else if (e.errCode === 10004) {
             // 这种情况理论上不应该出现，因为我们已经检查过权限
             errorMessage = '蓝牙权限异常';
             userAction = '请重新授权蓝牙权限';
           } else {
             errorMessage = '蓝牙适配器不可用';
-            userAction = '请检查设备蓝牙功能是否正常';
+            userAction = '请同时打开蓝牙和手机定位权限(位置信息)';
           }
           
           // 设置错误状态，但不阻止页面显示
@@ -1450,15 +1450,15 @@ Page({
             // 蓝牙未开启，提示用户开启系统蓝牙
             wx.showModal({
               title: '手机蓝牙未开启',
-              content: '请在手机系统设置中开启蓝牙功能，然后返回小程序重试',
+              content: '请开启手机蓝牙和定位权限',
               confirmText: '我知道了',
               showCancel: false
             });
           } else if (e.errCode === 10004) {
             // 权限问题，引导到设置页面
             wx.showModal({
-              title: '蓝牙权限异常',
-              content: '蓝牙权限可能存在异常，请重新授权',
+              title: '蓝牙和定位权限可能异常',
+              content: '请重新授权蓝牙和定位权限',
               confirmText: '重新授权',
               cancelText: '稍后再试',
               success: (res) => {
@@ -3406,12 +3406,12 @@ Page({
     } catch (error) {
       console.error('❌ 发送碰一碰列表确认失败:', error);
       
-      // 显示错误提示
-      wx.showToast({
-        title: '确认发送失败',
-        icon: 'error',
-        duration: 2000
-      });
+      // // 显示错误提示
+      // wx.showToast({
+      //   title: '确认发送失败',
+      //   icon: 'error',
+      //   duration: 2000
+      // });
       
       // 添加错误通知
       this.addNotification('❌ 碰一碰列表确认发送失败');

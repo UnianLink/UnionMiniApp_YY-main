@@ -3,7 +3,7 @@
   <view wx:if="{{showScanView}}" class="scan-container">
     <!-- 顶部标题区域 -->
     <view class="scan-title-area">
-      <text class="scan-title">智能项链连接</text>
+      <text class="scan-title">智能设备连接</text>
       <text class="scan-subtitle">请确保您的设备已开启并靠近手机</text>
     </view>
     
@@ -80,7 +80,7 @@
             <view class="scanning-circle"></view>
             <view class="scanning-circle"></view>
           </view>
-          <text class="scanning-text">正在搜索智能项链...</text>
+          <text class="scanning-text">正在搜索智能设备...</text>
         </view>
         
         <!-- 设备发现状态 -->
@@ -200,7 +200,7 @@
           
           <!-- 连接提示 -->
           <view class="connection-tip">
-            <text>发现您的智能项链</text>
+            <text>发现您的智能设备</text>
             <text class="tip-subtitle">点击上方卡片开始连接</text>
           </view>
         </view>
@@ -208,7 +208,7 @@
         <!-- 未发现设备状态 -->
         <view wx:else class="no-devices">
           <view class="no-device-icon">🔍</view>
-          <text class="no-device-text">未发现智能项链</text>
+          <text class="no-device-text">未发现智能设备</text>
           <text class="no-devices-tip">请确保设备已开启并处于可发现状态</text>
         </view>
       </view>
