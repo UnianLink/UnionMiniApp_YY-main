@@ -1127,6 +1127,25 @@ Page({
 
   // 从云端同步数据
   syncDataFromCloud() {
+    console.log('[syncDataFromCloud] 💡 开始增强版数据同步，包含一致性检查');
+    
+    // 💡 优化：记录同步开始时间和本地数据状态用于一致性检查
+    const syncStartTime = Date.now();
+    const localDataSnapshot = {
+      userInfo: { ...this.data.userInfo },
+      advancedTags: { ...this.data.advancedTags },
+      totalLocalTags: (this.data.advancedTags.professionalTags?.length || 0) + 
+                     (this.data.advancedTags.interestTags?.length || 0) + 
+                     (this.data.advancedTags.personalityTags?.length || 0) + 
+                     (this.data.advancedTags.quirkyTags?.length || 0)
+    };
+    
+    console.log('[syncDataFromCloud] 📊 本地数据快照:', {
+      totalLocalTags: localDataSnapshot.totalLocalTags,
+      hasDisplayName: !!localDataSnapshot.advancedTags.displayName,
+      hasAvatar: !!localDataSnapshot.userInfo.avatarUrl
+    });
+
     wx.cloud.callFunction({
       name: 'getUserData',
       data: {
@@ -1225,6 +1244,9 @@ Page({
               this.checkAndRefreshAvatar(currentUserInfo);
             }
           }
+          
+          // 💡 优化：数据同步完成后进行一致性检查
+          this.performDataConsistencyCheck(localDataSnapshot, syncStartTime);
         }
       },
       fail: (error) => {
@@ -1234,6 +1256,85 @@ Page({
           icon: 'none'
         });
       }
+    });
+  },
+
+  // 💡 新增：数据同步一致性检查
+  performDataConsistencyCheck(localSnapshot, syncStartTime) {
+    const syncDuration = Date.now() - syncStartTime;
+    const currentTotalTags = (this.data.advancedTags.professionalTags?.length || 0) + 
+                            (this.data.advancedTags.interestTags?.length || 0) + 
+                            (this.data.advancedTags.personalityTags?.length || 0) + 
+                            (this.data.advancedTags.quirkyTags?.length || 0);
+                            
+    console.log('[performDataConsistencyCheck] 🔍 数据一致性检查开始:', {
+      syncDuration: `${syncDuration}ms`,
+      totalTagsChange: `${localSnapshot.totalLocalTags} → ${currentTotalTags}`,
+      displayNameChange: localSnapshot.advancedTags.displayName !== this.data.advancedTags.displayName,
+      avatarChange: localSnapshot.userInfo.avatarUrl !== this.data.userInfo.avatarUrl
+    });
+    
+    // 检查1: 标签数量合理性
+    if (currentTotalTags > 60) {
+      console.warn('[performDataConsistencyCheck] ⚠️ 异常：标签总数过多 (' + currentTotalTags + ')');
+      wx.showToast({
+        title: '数据异常，请重新设置标签',
+        icon: 'none',
+        duration: 3000
+      });
+    }
+    
+    // 检查2: 用户信息完整性
+    const hasRequiredFields = this.data.userInfo.nickName && 
+                               this.data.advancedTags.displayName && 
+                               this.data.userInfo.avatarUrl;
+    
+    if (!hasRequiredFields) {
+      console.warn('[performDataConsistencyCheck] ⚠️ 警告：用户信息不完整');
+      // 尝试修复缺失的显示名称
+      if (!this.data.advancedTags.displayName && this.data.userInfo.nickName) {
+        this.setData({
+          'advancedTags.displayName': this.data.userInfo.nickName
+        });
+        console.log('[performDataConsistencyCheck] ✅ 已修复显示名称');
+      }
+      
+      // 尝试修复缺失的头像
+      if (!this.data.userInfo.avatarUrl) {
+        this.setData({
+          'userInfo.avatarUrl': '/assets/default-avatar.svg',
+          'userInfo.customAvatar': false
+        });
+        console.log('[performDataConsistencyCheck] ✅ 已设置默认头像');
+      }
+    }
+    
+    // 检查3: 本地存储一致性
+    try {
+      const storedUserInfo = wx.getStorageSync('userInfo');
+      const storedAdvancedTags = wx.getStorageSync('advancedTags');
+      
+      if (!storedUserInfo || !storedAdvancedTags) {
+        console.warn('[performDataConsistencyCheck] ⚠️ 本地存储缺失，重新保存');
+        wx.setStorageSync('userInfo', this.data.userInfo);
+        wx.setStorageSync('advancedTags', this.data.advancedTags);
+      }
+    } catch (error) {
+      console.error('[performDataConsistencyCheck] ❌ 本地存储检查失败:', error);
+    }
+    
+    // 检查4: 界面状态一致性
+    const shouldBeProfileMode = this.isUserDataComplete();
+    if (shouldBeProfileMode && this.data.viewMode !== 'profile') {
+      console.log('[performDataConsistencyCheck] 💡 数据完整但界面未切换，自动修正');
+      this.setData({ viewMode: 'profile' });
+    }
+    
+    console.log('[performDataConsistencyCheck] ✅ 数据一致性检查完成:', {
+      totalTags: currentTotalTags,
+      isDataComplete: shouldBeProfileMode,
+      viewMode: this.data.viewMode,
+      syncSuccess: true
     });
   },
 
@@ -2330,8 +2431,17 @@ Page({
 
   // 登录功能
   login() {
-    wx.getUserProfile({
-      desc: '用于完善个人信息',
+    // 💡 用户体验优化：在获取权限前先显示说明
+    wx.showModal({
+      title: '个人信息授权说明',
+      content: '为了给您更好的体验，我们需要获取您的微信昵称和头像：\n\n• 自动填写您的显示名称\n• 生成个人数字名片\n• 方便朋友识别您的身份\n\n所有信息仅用于UnionLink功能，不会用于其他用途',
+      confirmText: '我同意',
+      cancelText: '取消',
+      success: (modalRes) => {
+        if (modalRes.confirm) {
+          // 用户同意后再获取权限
+          wx.getUserProfile({
+            desc: '用于完善个人信息和生成数字名片',
       success: (res) => {
         console.log('[Index] 用户授权成功', res);
         const userInfo = res.userInfo;
@@ -2354,6 +2464,22 @@ Page({
               if (!this.data.advancedTags.displayName) {
                 this.setData({
                   'advancedTags.displayName': userInfo.nickName
+                });
+                
+                // 💡 用户体验优化：显示昵称自动填写提示
+                wx.showToast({
+                  title: `已自动使用您的微信昵称：${userInfo.nickName}`,
+                  icon: 'success',
+                  duration: 2500,
+                  success: () => {
+                    setTimeout(() => {
+                      wx.showToast({
+                        title: '可在下方点击昵称进行修改',
+                        icon: 'none',
+                        duration: 2000
+                      });
+                    }, 2600);
+                  }
                 });
               }
               
@@ -2381,6 +2507,22 @@ Page({
         console.log('[Index] 用户取消授权', error);
         wx.showToast({
           title: '需要授权才能使用',
+          icon: 'none'
+        });
+      }
+    });
+        } else {
+          // 用户取消授权
+          wx.showToast({
+            title: '需要授权个人信息才能使用完整功能',
+            icon: 'none',
+            duration: 2000
+          });
+        }
+      },
+      fail: () => {
+        wx.showToast({
+          title: '操作被取消',
           icon: 'none'
         });
       }
@@ -2622,33 +2764,81 @@ Page({
 
   // 检查并刷新头像
   async checkAndRefreshAvatar(userInfo) {
-    if (!userInfo.customAvatar || !userInfo.avatarFileID) {
-      // 没有自定义头像，确保使用默认头像
-      if (!userInfo.avatarUrl || userInfo.avatarUrl.startsWith('cloud://')) {
-        const seed = userInfo.nickName || 'default';
-        const updatedUserInfo = {
-          ...userInfo,
-          avatarUrl: '/assets/default-avatar.svg',
-          customAvatar: false
-        };
-        this.setData({ userInfo: updatedUserInfo });
-        wx.setStorageSync('userInfo', updatedUserInfo);
+    try {
+      console.log('[checkAndRefreshAvatar] 开始检查头像:', {
+        hasCustomAvatar: userInfo.customAvatar,
+        hasAvatarFileID: !!userInfo.avatarFileID,
+        hasAvatarUrl: !!userInfo.avatarUrl,
+        avatarUrlPreview: userInfo.avatarUrl?.substring(0, 50) + '...'
+      });
+      
+      if (!userInfo.customAvatar || !userInfo.avatarFileID) {
+        // 没有自定义头像，确保使用默认头像
+        if (!userInfo.avatarUrl || userInfo.avatarUrl.startsWith('cloud://')) {
+          const updatedUserInfo = {
+            ...userInfo,
+            avatarUrl: '/assets/default-avatar.svg',
+            customAvatar: false
+          };
+          this.setData({ userInfo: updatedUserInfo });
+          wx.setStorageSync('userInfo', updatedUserInfo);
+          console.log('[checkAndRefreshAvatar] 已设置默认头像');
+        }
+        return;
       }
-      return;
-    }
 
-    // 有自定义头像，检查URL是否有效
-    const needRefresh = !userInfo.avatarUrl || 
-                       userInfo.avatarUrl.startsWith('cloud://') ||
-                       userInfo.avatarUrl.includes('expired') ||
-                       this.isAvatarUrlExpired(userInfo.avatarUrl);
+      // 有自定义头像，检查URL是否有效
+      const needRefresh = !userInfo.avatarUrl || 
+                         userInfo.avatarUrl.startsWith('cloud://') ||
+                         userInfo.avatarUrl.includes('expired') ||
+                         this.isAvatarUrlExpired(userInfo.avatarUrl);
 
-    if (needRefresh) {
-      console.log('[Index] 头像URL需要刷新，正在获取新URL...');
-      await this.refreshAvatarURL(userInfo.avatarFileID);
-    } else {
-      // URL看起来正常，但验证一下是否真的能访问
-      this.validateAvatarUrl(userInfo.avatarUrl, userInfo.avatarFileID);
+      if (needRefresh) {
+        console.log('[checkAndRefreshAvatar] 头像URL需要刷新，正在获取新URL...');
+        
+        // 💡 优化：增加重试机制
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount < maxRetries) {
+          try {
+            await this.refreshAvatarURL(userInfo.avatarFileID);
+            console.log('[checkAndRefreshAvatar] 头像URL刷新成功');
+            break;
+          } catch (error) {
+            retryCount++;
+            console.warn(`[checkAndRefreshAvatar] 第${retryCount}次刷新失败:`, error);
+            
+            if (retryCount >= maxRetries) {
+              console.error('[checkAndRefreshAvatar] 重试次数已达上限，降级到默认头像');
+              const fallbackUserInfo = {
+                ...userInfo,
+                avatarUrl: '/assets/default-avatar.svg',
+                customAvatar: false
+              };
+              this.setData({ userInfo: fallbackUserInfo });
+              wx.setStorageSync('userInfo', fallbackUserInfo);
+            } else {
+              // 等待1秒后重试
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+        }
+      } else {
+        // URL看起来正常，但验证一下是否真的能访问
+        this.validateAvatarUrl(userInfo.avatarUrl, userInfo.avatarFileID);
+      }
+    } catch (error) {
+      console.error('[checkAndRefreshAvatar] 头像检查过程发生错误:', error);
+      
+      // 💡 优化：发生错误时确保有合适的降级处理
+      const fallbackUserInfo = {
+        ...userInfo,
+        avatarUrl: '/assets/default-avatar.svg',
+        customAvatar: false
+      };
+      this.setData({ userInfo: fallbackUserInfo });
+      wx.setStorageSync('userInfo', fallbackUserInfo);
     }
   },
 
@@ -2672,17 +2862,46 @@ Page({
   },
 
   // 验证头像URL有效性
-  validateAvatarUrl(url, fileID) {
-    // 创建一个Image对象来测试URL是否可访问
-    const img = new Image();
-    img.onload = () => {
-      console.log('[Index] 头像URL验证成功');
-    };
-    img.onerror = () => {
-      console.log('[Index] 头像URL验证失败，需要刷新');
-      this.refreshAvatarURL(fileID);
-    };
-    img.src = url;
+  async validateAvatarUrl(url, fileID) {
+    try {
+      console.log('[validateAvatarUrl] 开始验证头像URL有效性');
+      
+      // 💡 优化：使用wx.getImageInfo来验证图片是否可访问
+      await new Promise((resolve, reject) => {
+        wx.getImageInfo({
+          src: url,
+          success: (res) => {
+            console.log('[validateAvatarUrl] 头像URL验证成功:', {
+              width: res.width,
+              height: res.height,
+              type: res.type
+            });
+            resolve(res);
+          },
+          fail: (error) => {
+            console.warn('[validateAvatarUrl] 头像URL验证失败:', error);
+            reject(error);
+          }
+        });
+      });
+    } catch (error) {
+      // URL无效，需要刷新
+      console.log('[validateAvatarUrl] 头像URL无效，正在刷新...');
+      try {
+        await this.refreshAvatarURL(fileID);
+      } catch (refreshError) {
+        console.error('[validateAvatarUrl] 刷新头像URL也失败了:', refreshError);
+        
+        // 💡 优化：最终降级处理
+        const fallbackUserInfo = {
+          ...this.data.userInfo,
+          avatarUrl: '/assets/default-avatar.svg',
+          customAvatar: false
+        };
+        this.setData({ userInfo: fallbackUserInfo });
+        wx.setStorageSync('userInfo', fallbackUserInfo);
+      }
+    }
   },
 
   // 通用输入事件处理

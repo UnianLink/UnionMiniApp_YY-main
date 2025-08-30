@@ -130,8 +130,8 @@
             <view class="binding-tip-content">
               <view class="tip-icon">📱💎</view>
               <view class="tip-text">
-                <text class="tip-title">请把设备贴在您的手机背面</text>
-                <text class="tip-subtitle">然后到[设备]页面绑定并同步数据~</text>
+                <text class="tip-title">请到[设备]页面绑定、连接设备</text>
+                <text class="tip-subtitle">同步名片数据给设备</text>
               </view>
             </view>
           </view>
@@ -144,7 +144,7 @@
             📤 分享名片
           </button>
           <button class="action-btn briefing-btn" bindtap="goToBriefing">
-            🏛️ 查看社群
+            🏛️ 查看社群(开发中)
           </button>
         </view>
 
@@ -373,7 +373,7 @@
             <view class="contact-form">
               <!-- 显示名称 -->
               <view class="form-item">
-                <view class="form-label required">你希望线下和你互换了信息的朋友怎么称呼你</view>
+                <view class="form-label required">昵称</view>
                 <input class="form-input" 
                        placeholder="默认是微信昵称" 
                        value="{{advancedTags.displayName}}" 
@@ -397,9 +397,9 @@
 
                   <!-- 个性标签（移动到这里） -->
                   <view class="form-item compact">
-                    <view class="form-label">个性tag</view>
+                    <view class="form-label">一句话介绍自己</view>
                     <textarea class="form-textarea compact" 
-                              placeholder="如：不喝咖啡会死星人" 
+                              placeholder="如：灵魂在追求自由，但身体只想躺平" 
                               value="{{advancedTags.personalTagsText}}" 
                               data-field="personalTagsText"
                               bindinput="onContactInput"
@@ -410,11 +410,11 @@
                 <!-- 右侧列：二维码 -->
                 <view class="right-column">
                   <view class="qr-card">
-                    <view class="qr-label">微信二维码</view>
+                    <view class="qr-label">个人微信二维码</view>
                     <view wx:if="{{!advancedTags.qrCodeUrl}}" class="qr-upload-area" bindtap="uploadQRCode">
                       <view class="qr-upload-icon">📷</view>
                       <view class="qr-upload-text">点击上传</view>
-                      <view class="qr-upload-hint">二维码图片</view>
+                      <view class="qr-upload-hint">碰一碰设备可互换二维码</view>
                     </view>
                     <view wx:else class="qr-preview">
                       <image class="qr-image" src="{{advancedTags.qrCodeUrl}}" mode="aspectFit"></image>
@@ -430,7 +430,10 @@
 
               <!-- 闪光阈值设置 - 可调节 -->
               <view class="form-item threshold-setting">
-                <view class="form-label">🔥 闪光阈值设置</view>
+                <view class="form-label">
+                  <view>🔥 相同标签超过以下数量的人在你身边时</view>
+                  <view>💡 你们的设备会闪同样颜色的灯光</view>
+                </view>
                 <view class="threshold-control">
                   <view class="threshold-display">
                     <text class="threshold-number">{{advancedTags.threshold}}</text>
@@ -452,9 +455,9 @@
                     <text class="slider-max">20</text>
                   </view>
                   <view class="threshold-desc">
-                    <text wx:if="{{advancedTags.threshold <= 3}}">宽松匹配 - 容易闪光</text>
-                    <text wx:elif="{{advancedTags.threshold <= 6}}">标准匹配 - 适中难度</text>
-                    <text wx:elif="{{advancedTags.threshold <= 10}}">严格匹配 - 较难闪光</text>
+                    <text wx:if="{{advancedTags.threshold <= 3}}">非常E人 容易遇到匹配的灵魂</text>
+                    <text wx:elif="{{advancedTags.threshold <= 5}}">随机捕捉有趣有聊的灵魂</text>
+                    <text wx:elif="{{advancedTags.threshold <= 7}}">非常I人 想遇到很搭的有趣灵魂</text>
                     <text wx:else>极限匹配 - 很难闪光</text>
                   </view>
                 </view>

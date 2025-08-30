@@ -423,7 +423,7 @@ Page({
       searchingMyDevice: false,
       searchingAllDevices: true,
       blockOtherDevices: false,
-      statusMessage: '🎯 正在寻找最近设备...',
+      statusMessage: '🎯 请把你的设备贴在手机背面',
       bindingScanProgress: null // 清除之前的扫描进度
     });
     

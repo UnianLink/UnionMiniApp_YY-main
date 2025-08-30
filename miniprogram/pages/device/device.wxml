@@ -4,7 +4,7 @@
     <!-- 顶部标题区域 -->
     <view class="scan-title-area">
       <text class="scan-title">智能设备连接</text>
-      <text class="scan-subtitle">请确保您的设备已开启并靠近手机</text>
+      <text class="scan-subtitle"> </text>
     </view>
     
     <!-- 蓝牙错误提示 -->

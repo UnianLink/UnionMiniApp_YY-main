@@ -563,7 +563,7 @@
 .user-detail-qrcode {
   margin-bottom: 20rpx;
   padding: 20rpx;
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgba(255, 255, 255, 0.2);
   border-radius: 16rpx;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -593,7 +593,7 @@
 .qrcode-image:active {
   transform: scale(1.05);
   border-color: rgba(255, 255, 255, 0.4);
-  box-shadow: 0 0 20rpx rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 20rpx rgba(36, 36, 36, 0.2);
 }
 
 .qrcode-hint {

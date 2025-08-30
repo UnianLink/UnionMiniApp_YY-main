@@ -71,31 +71,31 @@ const tagThemes = {
       categories: [
         {
           id: 'professional',
-          name: '专业领域',
+          name: ' ',
           color: 'cold',
           maxSelect: 10,
           required: true,
           tags: [
             '软件开发', '硬件开发', '人工智能', '数据科学', '网络安全','产品设计','UI\UX',
             '商业与金融', '教育学', '心理学', '艺术', '法律', '自由职业', '社群运营',
-            '产品经理', '管理与经营','营销与增长','公职人员','医疗', '新媒体', '人文社科', '创新创业'
+            '产品经理', '管理与经营','营销与增长','公职人员','医疗', '新媒体', '人文社科', '创新创业','其他'
           ]
         },
         {
           id: 'interest',
-          name: '兴趣爱好',
+          name: ' ',
           color: 'warm',
           maxSelect: 10,
           required: true,
           tags: [
             '摄影', '绘画', '音乐', '表演', '游戏', '二次元', '剧本杀',
             '美食', '宠物', '运动', '手工', '舞蹈', '阅读', '写作',
-            '旅行', '电影', '语言', '购物', '露营'
+            '旅行', '电影', '语言', '购物', '露营', '其他'
           ]
         },
         {
           id: 'personality',
-          name: '有趣经历',
+          name: ' ',
           color: 'neutral',
           maxSelect: 6,
           required: true,
@@ -551,7 +551,7 @@ const tagThemes = {
         id: 1,
         title: '你擅长或感兴趣的领域 Tags',
         subtitle: '帮你找到【想匹配的】或【能力互补】的人！',
-        description: ' ',
+        description: '',
         minTags: 1,
         maxTags: -1,
         categories: theme.categories.filter(cat => cat.id === 'professional' || cat.color === 'cold')
@@ -560,16 +560,16 @@ const tagThemes = {
         id: 2,
         title: '兴趣爱好 Tags',
         subtitle: '帮你找到兴趣搭子！',
-        description: ' ',
+        description: '',
         minTags: 1,
         maxTags: -1,
         categories: theme.categories.filter(cat => cat.id === 'interest' || cat.color === 'warm')
       },
       3: {
         id: 3,
-        title: '性格特质 Tags',
-        subtitle: '选择最符合你性格特征的类型',
-        description: ' ',
+        title: '有趣经历 Tags',
+        subtitle: '有趣的灵魂万里挑一',
+        description: '',
         minTags: 1,
         maxTags: -1,
         //minTotalTags: this.meta.minTotalTags, // 添加总标签最小值验证
@@ -577,8 +577,8 @@ const tagThemes = {
       },
       4: {
         id: 4,
-        title: '基础与个人信息',
-        subtitle: '让我们了解一些基本信息',
+        title: '个人名片',
+        subtitle: '碰一碰设备可互换本页信息',
         description: ' ',
         minTags: 0,
         maxTags: -1,
