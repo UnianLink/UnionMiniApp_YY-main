@@ -24,7 +24,9 @@
 
 // miniprogram/pages/connect/connect.js
 // 引入文字配置
-const Config = require('../../utils/config.js')
+const Config = require('../../utils/config.js');
+// 引入智能弹窗管理器（备用）
+const SmartModal = require('../../utils/smart-modal-manager.js');
 
 Page({
 

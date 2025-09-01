@@ -4,6 +4,8 @@ const { BleHandshakeClient, BLE_CONFIG, BLE_HANDSHAKE_STATE } = require('../../u
 const DeviceSelectionConfig = require('../../config/device-selection-config.js');
 // 导入CRC32校验工具
 const { calculateCRC32, generateMessageId, validateUTF8String, sanitizeString } = require('../../utils/crc32.js');
+// 导入智能弹窗管理器
+const SmartModal = require('../../utils/smart-modal-manager.js');
 
 Page({
   /**
@@ -495,7 +497,9 @@ Page({
       
     } catch (error) {
       console.error('连接我的设备失败:', error);
-      wx.showToast({ title: '连接失败', icon: 'error' });
+      // 使用智能弹窗管理器，启用静默模式
+      SmartModal.setSilentMode('connectionErrors', true);
+      console.log('🔇 连接失败，静默返回扫描页面');
     }
   },
 
@@ -533,25 +537,26 @@ Page({
       statusMessage: '我的设备离线'
     });
     
-    wx.showModal({
-      title: '设备未找到',
-      content: `未在附近找到您的设备 ${this.data.boundDevice.deviceName}\n\n可能原因：\n• 设备不在蓝牙范围内\n• 设备电量不足或关机`,
-      confirmText: '继续等待',
-      cancelText: '解除绑定',
-      success: (res) => {
-        if (res.confirm) {
-          // 用户选择继续等待，2秒后重新搜索
-          setTimeout(() => {
-            if (this.data.boundDevice) {
-              this.startBoundDeviceFlow(this.data.boundDevice);
-            }
-          }, 2000);
-        } else {
-          // 用户选择解绑
-          this.performUnbind();
+    // 使用智能弹窗管理器，设备未找到只弹一次
+    SmartModal.connectionModal('设备未找到', 
+      `未在附近找到您的设备 ${this.data.boundDevice.deviceName}\n\n可能原因：\n• 设备不在蓝牙范围内\n• 设备电量不足或关机`, 
+      {
+        confirmText: '继续等待',
+        cancelText: '解除绑定',
+        success: (res) => {
+          if (res.confirm) {
+            // 用户选择继续等待，2秒后重新搜索
+            setTimeout(() => {
+              if (this.data.boundDevice) {
+                this.startBoundDeviceFlow(this.data.boundDevice);
+              }
+            }, 2000);
+          } else {
+            // 用户选择解绑
+            this.performUnbind();
+          }
         }
-      }
-    });
+      });
   },
 
   // ===== 设备绑定管理操作 =====
@@ -562,7 +567,7 @@ Page({
   unbindDevice() {
     const boundDevice = this.getBoundDevice();
     if (!boundDevice) {
-      wx.showToast({ title: '没有绑定设备', icon: 'none' });
+      SmartModal.toast('没有绑定设备');
       return;
     }
 
@@ -669,7 +674,7 @@ Page({
   async reconnectMyDevice() {
     const boundDevice = this.getBoundDevice();
     if (!boundDevice) {
-      wx.showToast({ title: '没有绑定设备', icon: 'none' });
+      SmartModal.toast('没有绑定设备');
       return;
     }
 
@@ -816,27 +821,23 @@ Page({
       statusMessage: errorMessage
     });
     
-    // 显示错误提示
+    // 显示错误提示（使用智能弹窗管理器）
     if (canRetry) {
-      wx.showModal({
-        title: '连接失败',
-        content: errorMessage + '\n\n是否重试？',
-        confirmText: '重试',
-        cancelText: '取消',
-        success: (res) => {
-          if (res.confirm) {
-            setTimeout(() => {
-              this.startIntelligentFlow();
-            }, 1000);
+      SmartModal.connectionError('连接失败', 
+        errorMessage + '\n\n是否重试？',
+        {
+          confirmText: '重试',
+          cancelText: '取消',
+          success: (res) => {
+            if (res.confirm) {
+              setTimeout(() => {
+                this.startIntelligentFlow();
+              }, 1000);
+            }
           }
-        }
-      });
+        });
     } else {
-      wx.showToast({
-        title: errorMessage,
-        icon: 'none',
-        duration: 3000
-      });
+      SmartModal.connectionToast(errorMessage, { duration: 3000 });
     }
   },
 
@@ -1044,20 +1045,20 @@ Page({
           });
           this.updateConnectionStatusText();
           
-          wx.showModal({
-            title: '连接失败',
-            content: stateInfo.message || '无法连接到设备，请重试',
-            showCancel: true,
-            cancelText: '返回扫描',
-            confirmText: '重试连接',
-            success: (res) => {
-              if (res.confirm) {
-                this.connectWithHandshake();
-              } else {
-                this.backToScan();
+          SmartModal.connectionError('连接失败',
+            stateInfo.message || '无法连接到设备，请重试',
+            {
+              showCancel: true,
+              cancelText: '返回扫描',
+              confirmText: '重试连接',
+              success: (res) => {
+                if (res.confirm) {
+                  this.connectWithHandshake();
+                } else {
+                  this.backToScan();
+                }
               }
-            }
-          });
+            });
           break;
       }
     };
@@ -5625,7 +5626,7 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
     this.sendCommandWithAck(readyCommand, BLE_CONFIG.CRITICAL_TIMEOUT_MS)
       .then(() => {
         console.log('已发送设备就绪信号');
-        wx.showToast({ title: '连接完成，等待设备消息', icon: 'success' });
+        SmartModal.connectionToast('连接完成，等待设备消息', { icon: 'success' });
       }).catch(error => {
         console.error('就绪信号发送失败:', error);
       });
