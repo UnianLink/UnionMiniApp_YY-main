@@ -67,8 +67,7 @@ Page({
     pendingCommand: null, // 待确认命令
     commandQueue: [], // 命令队列，确保串行处理
     
-    // 🔧 [KISS修复] 心跳与业务命令隔离机制
-    heartbeatPaused: false, // 业务命令执行时暂停心跳
+    // 🔧 [KISS清理] 已删除心跳机制
     
     // ===== 颜色方案编辑 =====
     colorNear: '#FF0000', // 近距离颜色
@@ -3938,13 +3937,11 @@ Page({
           }
           this.currentAckHandler = null;
           
-          // 🔧 [KISS修复] 业务命令完成时恢复心跳
+          // 🔧 [KISS清理] 业务命令完成时重置ACK状态
           this.setData({ 
             waitingForAck: false, 
-            pendingCommand: null,
-            heartbeatPaused: false 
+            pendingCommand: null
           });
-          console.log('💓 [心跳控制] 业务命令完成，恢复心跳');
           
           // 处理队列中的下一个命令
           this.processCommandQueue();
@@ -4002,11 +3999,7 @@ Page({
             }
             return;
             
-          case 'heartbeat_ack':
-            // 🔧 [KISS修复] 心跳响应处理 - 确保连接健康
-            console.log('💓 收到心跳响应，连接健康');
-            // 心跳响应无需进一步处理，仅用于连接存活检测
-            return;
+          // 🔧 [KISS清理] 已删除心跳响应处理
             
           case 'touch_list_ack_response':
             // 🔧 [KISS简化] 硬件确认收到touch_list_ack，仅记录日志
@@ -5131,15 +5124,13 @@ Page({
       return this.queueCommand(command, timeout);
     }
 
-    // 🔧 [KISS修复] 业务命令开始时暂停心跳 - 避免JSON混合
+    // 🔧 [KISS清理] 已删除心跳暂停机制，简化ACK处理
     this.setData({ 
-      heartbeatPaused: true,
       waitingForAck: true, 
       pendingCommand: command 
     });
 
     console.log('🔒 [ACK锁] 开始发送命令并等待ACK:', JSON.stringify(command));
-    console.log('💤 [心跳控制] 暂停心跳，避免与业务命令冲突');
 
     return new Promise((resolve, reject) => {
       const commandStr = JSON.stringify(command);
@@ -5148,13 +5139,11 @@ Page({
       const ackTimeout = setTimeout(() => {
         if (this.data.waitingForAck && this.data.pendingCommand === command) {
           console.warn('⚠️ [ACK锁] 命令ACK超时，重置状态');
-          // 🔧 [KISS修复] 超时时也要恢复心跳
+          // 🔧 [KISS清理] 超时时重置ACK状态
           this.setData({ 
             waitingForAck: false, 
-            pendingCommand: null,
-            heartbeatPaused: false 
+            pendingCommand: null
           });
-          console.log('💓 [心跳控制] 命令超时，恢复心跳');
           this.processCommandQueue(); // 处理队列中的下一个命令
           reject(new Error('命令确认超时'));
         }
@@ -5176,13 +5165,11 @@ Page({
         .catch(error => {
           console.error('❌ [ACK锁] 命令发送失败:', error);
           clearTimeout(ackTimeout);
-          // 🔧 [KISS修复] 发送失败时也要恢复心跳
+          // 🔧 [KISS清理] 发送失败时重置ACK状态
           this.setData({ 
             waitingForAck: false, 
-            pendingCommand: null,
-            heartbeatPaused: false 
+            pendingCommand: null
           });
-          console.log('💓 [心跳控制] 命令发送失败，恢复心跳');
           this.processCommandQueue();
           reject(error);
         });

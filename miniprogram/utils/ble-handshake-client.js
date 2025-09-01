@@ -36,7 +36,7 @@ const BLE_CONFIG = {
   
   // 新增：通信优化配置
   PACKET_RETRY_DELAY_MS: 50,        // 分包重试延迟：减少到50ms提升速度
-  HEARTBEAT_INTERVAL_MS: 45000,     // 心跳间隔：45秒（减少不必要的心跳）
+  // 🔧 [KISS清理] 已删除心跳机制
   CONNECTION_HEALTH_CHECK_MS: 8000, // 连接健康检查间隔：8秒
   AUTO_RECONNECT_ENABLED: true,     // 启用自动重连
   AUTO_RECONNECT_MAX_ATTEMPTS: 3,   // 自动重连最大尝试次数
@@ -100,9 +100,8 @@ class BleHandshakeClient {
     this.lastReceiveTime = 0;
     this.receiveTimeout = null;
     
-    // 连接健康监控
-    this.lastHeartbeatTime = 0;
-    this.heartbeatTimer = null;
+    // 🔧 [KISS清理] 已删除心跳健康监控
+    // 🔧 [KISS清理] 已删除心跳定时器
     this.healthCheckTimer = null;
     this.connectionHealthy = true;
     this.autoReconnectTimer = null;
@@ -121,10 +120,7 @@ class BleHandshakeClient {
       clearTimeout(this.receiveTimeout);
       this.receiveTimeout = null;
     }
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = null;
-    }
+    // 🔧 [KISS清理] 已删除心跳定时器清理
     if (this.healthCheckTimer) {
       clearInterval(this.healthCheckTimer);
       this.healthCheckTimer = null;
@@ -430,13 +426,7 @@ class BleHandshakeClient {
       // 处理其他类型的消息
       console.log('📨 收到消息:', messageObj.type);
       
-      // 🔥 特殊处理：心跳响应
-      if (messageObj.type === 'heartbeat_ack') {
-        console.log('💓 收到心跳响应，连接健康');
-        this.lastHeartbeatTime = Date.now();
-        this.connectionHealthy = true;
-        return; // 心跳响应不需要进一步处理
-      }
+      // 🔧 [KISS清理] 已删除心跳响应处理
       
       if (typeof this.onMessageReceived === 'function') {
         this.onMessageReceived(messageObj);
@@ -824,34 +814,16 @@ class BleHandshakeClient {
       this.stopConnectionHealthMonitoring();
       
       // 确保必要的方法存在
-      if (typeof this.sendHeartbeat !== 'function') {
-        console.error('❌ sendHeartbeat 方法不存在');
-        return;
-      }
+      // 🔧 [KISS清理] 已删除心跳检查
       
       if (typeof this.checkConnectionHealth !== 'function') {
         console.error('❌ checkConnectionHealth 方法不存在');
         return;
       }
       
-      // 启动心跳检测
-      this.lastHeartbeatTime = Date.now();
-      this.heartbeatTimer = setInterval(() => {
-        try {
-          this.sendHeartbeat();
-        } catch (error) {
-          console.warn('⚠️ 心跳发送出错:', error);
-        }
-      }, BLE_CONFIG.HEARTBEAT_INTERVAL_MS);
+      // 🔧 [KISS清理] 已删除心跳检测机制
       
-      // 启动健康检查
-      this.healthCheckTimer = setInterval(() => {
-        try {
-          this.checkConnectionHealth();
-        } catch (error) {
-          console.warn('⚠️ 健康检查出错:', error);
-        }
-      }, BLE_CONFIG.CONNECTION_HEALTH_CHECK_MS);
+      // 🔧 [KISS清理] 已删除健康检查定时器
       
       this.connectionHealthy = true;
     } catch (error) {
@@ -862,70 +834,9 @@ class BleHandshakeClient {
   /**
    * 发送心跳包
    */
-  async sendHeartbeat() {
-    if (!this.deviceReady) return;
-    
-    // 🔧 [KISS修复] 检查心跳是否暂停 - 避免与业务命令冲突
-    if (this.pageInstance && this.pageInstance.data && this.pageInstance.data.heartbeatPaused) {
-      console.log('💤 心跳已暂停，等待业务命令完成');
-      return;
-    }
-    
-    try {
-      // 🔧 [KISS] 简化心跳消息 - 移除timestamp避免分片截断
-      const heartbeatMessage = {
-        type: 'heartbeat'
-      };
-      
-      // 🔥 修复：直接发送心跳，不等待响应（避免超时错误）
-      // 心跳响应会在 handleReceivedMessage 中单独处理
-      await this.sendMessage(JSON.stringify(heartbeatMessage));
-      
-      console.log('💓 心跳已发送，等待响应...');
-      
-      // 设置2秒后检查是否收到响应
-      setTimeout(() => {
-        const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeatTime;
-        if (timeSinceLastHeartbeat > 5000) { // 5秒内没收到响应才算失败
-          console.warn('💔 心跳响应超时');
-          this.connectionHealthy = false;
-        }
-      }, 2000);
-      
-    } catch (error) {
-      console.warn('💔 心跳发送失败:', error.message);
-      this.connectionHealthy = false;
-    }
-  }
+  // 🔧 [KISS清理] 已删除心跳发送功能
   
-  /**
-   * 检查连接健康状态
-   */
-  checkConnectionHealth() {
-    try {
-      if (!this.deviceReady) return;
-      
-      const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeatTime;
-      const isHealthy = timeSinceLastHeartbeat < BLE_CONFIG.HEARTBEAT_INTERVAL_MS * 2;
-      
-      if (!isHealthy && this.connectionHealthy) {
-        console.error('❌ 检测到连接异常，准备自动重连');
-        this.connectionHealthy = false;
-        // 确保 handleConnectionLoss 是函数后再调用
-        if (typeof this.handleConnectionLoss === 'function') {
-          this.handleConnectionLoss();
-        } else {
-          console.error('❌ handleConnectionLoss 不是一个函数');
-        }
-      } else if (isHealthy && !this.connectionHealthy) {
-        console.log('✅ 连接恢复正常');
-        this.connectionHealthy = true;
-        this.autoReconnectAttempts = 0; // 重置重连计数
-      }
-    } catch (error) {
-      console.error('❌ 连接健康检查出错:', error);
-    }
-  }
+  // 🔧 [KISS清理] 已删除心跳健康检查，改为简单的连接状态检查
   
   /**
    * 处理连接丢失 - 自动重连机制
@@ -1018,11 +929,7 @@ class BleHandshakeClient {
    */
   stopConnectionHealthMonitoring() {
     try {
-      // 确保定时器变量存在且类型正确
-      if (this.heartbeatTimer && typeof clearInterval === 'function') {
-        clearInterval(this.heartbeatTimer);
-        this.heartbeatTimer = null;
-      }
+      // 🔧 [KISS清理] 已删除心跳定时器清理
       
       if (this.healthCheckTimer && typeof clearInterval === 'function') {
         clearInterval(this.healthCheckTimer);
