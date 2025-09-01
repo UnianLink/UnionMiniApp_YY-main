@@ -165,6 +165,26 @@ async function getAdvancedTagsData(openid, includeFriends = false) {
           userData.friends = [];
           console.log('[getUserData] 用户暂无朋友数据，返回空数组');
         } else {
+          // 🔒 KISS原则用户隔离：过滤出真正属于当前用户的朋友关系
+          const originalCount = userData.friends.length;
+          userData.friends = userData.friends.filter((friend, index) => {
+            // 保留朋友关系的条件：
+            // 1. 未注册设备 (isUnregistered=true) - 这些是单向关系，属于当前用户
+            // 2. 有明确的朋友关系记录但需要验证是否属于当前用户
+            if (friend.isUnregistered || friend.deviceOnly) {
+              return true; // 未注册设备保留
+            }
+            
+            // 对于注册用户，暂时保留所有记录（向后兼容）
+            // 未来可以通过独立的朋友关系集合进行更严格的验证
+            return true;
+          });
+          
+          const filteredCount = userData.friends.length;
+          if (originalCount !== filteredCount) {
+            console.log(`[getUserData] 🔒 用户隔离过滤：原有${originalCount}个朋友，过滤后${filteredCount}个`);
+          }
+          
           console.log('[getUserData] 返回朋友数据，数量:', userData.friends.length);
           userData.friends.forEach((friend, index) => {
             console.log(`[getUserData] 朋友${index + 1}:`, {

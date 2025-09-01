@@ -1490,9 +1490,22 @@ Page({
       }
       
       const userData = res.result.data;
-      const friends = userData.friends || [];
+      let friends = userData.friends || [];
       
+      // 🔒 KISS原则用户隔离：前端二次验证，确保朋友关系属于当前登录用户
       console.log('✅ [ConnectPage] 从云端数据库加载到朋友数量:', friends.length);
+      console.log('✅ [ConnectPage] 当前登录用户openid:', currentUserOpenId);
+      console.log('✅ [ConnectPage] 数据库返回的用户openid:', userData.openid);
+      
+      // 双重保险：验证返回的数据确实属于当前登录用户
+      if (userData.openid !== currentUserOpenId) {
+        console.error('❌ [ConnectPage] 🔒 用户身份验证失败! 数据库openid与当前用户不匹配');
+        console.error('❌ [ConnectPage] 数据库openid:', userData.openid);
+        console.error('❌ [ConnectPage] 当前用户openid:', currentUserOpenId);
+        // 清空朋友列表，防止显示错误用户的数据
+        friends = [];
+      }
+      
       console.log('✅ 朋友详情:', friends.map(f => ({ name: f.friendDeviceName, openid: f.friendOpenid })));
         
         // 将朋友数据转换为匹配用户格式，保持UI兼容性
