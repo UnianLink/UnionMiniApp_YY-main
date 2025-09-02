@@ -927,19 +927,13 @@ Page({
     // 重新初始化设备绑定状态
     this.initDeviceBinding();
     
-    // 🎯 KISS修复：强制在扫描页面时启动扫描，简化条件检查
-    if (this.data.showScanView) {
-      console.log('📱 [页面显示] 强制启动扫描流程，确保扫描持续进行');
-      
+    // KISS静默修复：简化条件检查，直接启动扫描
+    if (this.data.showScanView && !this.data.connected) {
+      console.log('📱 [KISS静默修复] 页面显示时直接启动扫描');
       setTimeout(() => {
-        // 如果已连接，不启动扫描；否则必须启动扫描
-        if (!this.data.connected) {
-          this.startIntelligentFlow();
-          
-          // 🔍 启动扫描状态监控，确保扫描不会意外停止
-          this.startScanningMonitor();
-        }
-      }, 300);
+        this.startSmartScanFlow();
+        this.startScanStateMonitoring();
+      }, 500);
     }
   },
   
@@ -1590,10 +1584,10 @@ Page({
     // 停止可能存在的监控
     this.stopScanningMonitor();
     
-    // 每3秒检查一次扫描状态
+    // KISS静默修复：缩短监控间隔，更快检测和恢复扫描异常
     this._scanningMonitorTimer = setInterval(() => {
       this.ensureScanningInScanView();
-    }, 3000);
+    }, 1500);
   },
 
   // 停止扫描状态监控
@@ -1614,14 +1608,14 @@ Page({
 
     // 检查扫描状态是否异常
     if (!this.data.scanning) {
-      console.log('🔧 [监控] 检测到扫描异常停止，自动恢复扫描');
+      console.log('🔧 [静默恢复] 检测到扫描异常，后台自动修复');
       this.startContinuousScan();
       return;
     }
 
     // 检查连续扫描定时器是否丢失
     if (!this._continuousScanTimer) {
-      console.log('🔧 [监控] 检测到扫描定时器丢失，重新启动');
+      console.log('🔧 [静默恢复] 检测到扫描定时器丢失，后台自动修复');
       this.startContinuousScan();
       return;
     }
@@ -1816,8 +1810,16 @@ Page({
         // 不设置超时，保持持续扫描
       },
       fail: () => {
+        // KISS静默修复：不弹窗打扰用户，直接后台重试
+        console.log('🔄 [静默修复] 扫描失败，2秒后自动重试');
         this.setData({ scanning: false });
-        wx.showToast({ title: '扫描失败', icon: 'none' });
+        
+        // 静默重试机制：2秒后自动重启扫描
+        setTimeout(() => {
+          if (this.data.showScanView && !this.data.connected) {
+            this.startContinuousScan();
+          }
+        }, 2000);
       }
     });
   },
