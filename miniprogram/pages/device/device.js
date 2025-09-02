@@ -2197,9 +2197,26 @@ Page({
       });
       
       // 🔧 [KISS] 简化Un字符串设置命令 - 移除timestamp避免分片截断
+      // 🔑 新增：添加openid用于硬件端用户身份跟踪（协议v2.0）
+      const app = getApp();
+      const userOpenId = wx.getStorageSync('openid') || app.globalData.openid;
+      console.log('🔍 [调试] sendCompleteUserTags获取到的openid:', userOpenId);
+      
+      // 检查openid是否获取成功
+      if (!userOpenId) {
+        console.warn('⚠️ [用户身份] 未能获取到用户openid，将使用兼容模式');
+        wx.showToast({
+          title: '提示：未获取到用户身份，设备将使用兼容模式',
+          icon: 'none',
+          duration: 3000
+        });
+      }
+      
       const command = {
         type: 'set_un_string',
-        un_string: unString
+        un_string: unString,
+        openid: userOpenId,     // 新增：用户身份标识（可能为空，触发兼容模式）
+        version: '2.0'          // 新增：协议版本号
       };
       
       const commandStr = JSON.stringify(command);
@@ -2339,9 +2356,21 @@ Page({
       // 直接发送一个简单的测试Un字符串
       const testUnString = 'UnTEST1234567890'; // 16字符测试字符串
       // 🔧 [KISS] 简化测试Un字符串设置命令 - 移除timestamp避免分片截断
+      // 🔑 新增：添加openid用于硬件端用户身份跟踪（协议v2.0）
+      const app = getApp();
+      const userOpenId = wx.getStorageSync('openid') || app.globalData.openid;
+      console.log('🔍 [调试] testSimplifiedSend获取到的openid:', userOpenId);
+      
+      // 检查openid是否获取成功
+      if (!userOpenId) {
+        console.warn('⚠️ [测试] 未能获取到用户openid，将使用兼容模式');
+      }
+      
       const command = {
         type: 'set_un_string',
-        un_string: testUnString
+        un_string: testUnString,
+        openid: userOpenId,     // 新增：用户身份标识（可能为空，触发兼容模式）
+        version: '2.0'          // 新增：协议版本号
       };
       
       const commandStr = JSON.stringify(command);
@@ -2902,9 +2931,21 @@ Page({
       
       // 构建设置Un字符串的命令
       // 🔧 [KISS] 简化完整Un字符串设置命令 - 移除timestamp避免分片截断
+      // 🔑 新增：添加openid用于硬件端用户身份跟踪（协议v2.0）
+      const app = getApp();
+      const userOpenId = wx.getStorageSync('openid') || app.globalData.openid;
+      console.log('🔍 [调试] sendUnString获取到的openid:', userOpenId);
+      
+      // 检查openid是否获取成功
+      if (!userOpenId) {
+        console.warn('⚠️ [发送] 未能获取到用户openid，将使用兼容模式');
+      }
+      
       const command = {
         type: 'set_un_string',
-        un_string: completeUnString
+        un_string: completeUnString,
+        openid: userOpenId,     // 新增：用户身份标识（可能为空，触发兼容模式）
+        version: '2.0'          // 新增：协议版本号
       };
       
       const commandStr = JSON.stringify(command);
