@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "UnionLink小程序",
   "dependencies": {
+    "@babel/runtime": "7.0.0-beta.55",
     "three": "^0.137.0",
     "threejs-miniprogram": "^0.0.8"
   }

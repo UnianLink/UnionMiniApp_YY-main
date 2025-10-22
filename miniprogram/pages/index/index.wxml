@@ -39,7 +39,7 @@
           
           <!-- 专业领域标签 -->
           <view wx:if="{{advancedTags.professionalTags.length > 0}}" class="tag-group">
-            <view class="tag-group-title">💼 专业领域</view>
+            <view class="tag-group-title">选择你的MBTI性格类型</view>
             <view class="tag-group-content">
               <view wx:for="{{advancedTags.professionalTags}}" wx:key="*this" class="display-tag prof-tag">
                 {{item}}
@@ -49,7 +49,7 @@
 
           <!-- 兴趣爱好标签 -->
           <view wx:if="{{advancedTags.interestTags.length > 0}}" class="tag-group">
-            <view class="tag-group-title">🎨 兴趣爱好</view>
+            <view class="tag-group-title">兴趣爱好</view>
             <view class="tag-group-content">
               <view wx:for="{{advancedTags.interestTags}}" wx:key="*this" class="display-tag hobby-tag">
                 {{item}}
@@ -59,7 +59,7 @@
 
           <!-- 性格特征标签 -->
           <view wx:if="{{advancedTags.personalityTags.length > 0}}" class="tag-group">
-            <view class="tag-group-title">🧠 MBTI性格</view>
+            <view class="tag-group-title">有趣经历Tags</view>
             <view class="tag-group-content">
               <view wx:for="{{advancedTags.personalityTags}}" wx:key="*this" class="display-tag personality-tag">
                 {{item}}
@@ -69,7 +69,7 @@
 
           <!-- 特质标签 -->
           <view wx:if="{{advancedTags.quirkyTags.length > 0}}" class="tag-group">
-            <view class="tag-group-title">✨ 性格关键词 / 星座 / 彩蛋</view>
+            <view class="tag-group-title">性格关键词 / 星座 / 彩蛋</view>
             <view class="tag-group-content">
               <view wx:for="{{advancedTags.quirkyTags}}" wx:key="*this" class="display-tag quirky-tag">
                 {{item}}
@@ -83,25 +83,25 @@
           
           <!-- 联系方式 -->
           <view wx:if="{{advancedTags.contactInfo}}" class="info-item">
-            <view class="info-label">📞 联系方式</view>
+            <view class="info-label">联系方式</view>
             <view class="info-content">{{advancedTags.contactInfo}}</view>
           </view>
 
           <!-- 个性标签 -->
           <view wx:if="{{advancedTags.personalTagsText}}" class="info-item">
-            <view class="info-label">🏷️ 个性标签</view>
+            <view class="info-label">个性标签</view>
             <view class="info-content">{{advancedTags.personalTagsText}}</view>
           </view>
 
           <!-- 二维码 -->
           <view wx:if="{{advancedTags.qrCodeUrl}}" class="info-item qr-section">
-            <view class="info-label">💬 微信二维码</view>
+            <view class="info-label">微信二维码</view>
             <image class="qr-code-display" src="{{advancedTags.qrCodeUrl}}" mode="aspectFit"></image>
           </view>
 
           <!-- 个人照片 -->
           <view wx:if="{{advancedTags.photos.length > 0}}" class="info-item photos-section">
-            <view class="info-label">📷 脸盲友好行为🤝</view>
+            <view class="info-label">脸盲友好行为</view>
             <view class="photos-display">
               <image wx:for="{{advancedTags.photos}}" wx:key="*this" 
                      class="photo-display" 
@@ -112,13 +112,13 @@
 
           <!-- 闪光阈值 -->
           <view class="info-item">
-            <view class="info-label">🔥 闪光阈值</view>
+            <view class="info-label">闪光阈值</view>
             <view class="info-content">{{advancedTags.threshold}} 个标签相同即闪光</view>
           </view>
 
           <!-- MBTI常亮灯颜色 -->
           <view wx:if="{{advancedTags.mbtiType}}" class="info-item">
-            <view class="info-label">🎨 常亮灯颜色</view>
+            <view class="info-label">常亮灯颜色</view>
             <view class="info-content idle-light-display">
               <text class="mbti-type-text">{{advancedTags.mbtiType}}</text>
               <view class="color-preview-circle" style="background-color: {{mbtiSelectedColor || '#66ccff'}}"></view>
@@ -128,7 +128,7 @@
           <!-- 设备绑定提示 -->
           <view class="info-item device-binding-tip">
             <view class="binding-tip-content">
-              <view class="tip-icon">📱💎</view>
+              <view class="tip-icon">设备</view>
               <view class="tip-text">
                 <text class="tip-title">请到[设备]页面绑定、连接设备</text>
                 <text class="tip-subtitle">同步名片数据给设备</text>
@@ -141,10 +141,10 @@
         <!-- 操作按钮区域 -->
         <view class="profile-actions">
           <button class="action-btn share-btn" bindtap="shareProfile">
-            📤 分享名片
+            分享名片
           </button>
           <button class="action-btn briefing-btn" bindtap="goToBriefing">
-            🏛️ 查看社群(开发中)
+            查看社群(开发中)
           </button>
         </view>
 
@@ -162,7 +162,7 @@
           <view class="user-name-container">
             <view wx:if="{{!editingNickname}}" class="user-name-display" bindtap="startEditNickname">
               <text class="user-name">{{advancedTags.displayName || userInfo.nickName || '匿名用户'}}</text>
-              <text class="edit-hint">✏️ 点击修改昵称</text>
+              <text class="edit-hint">点击修改昵称</text>
             </view>
             <view wx:else class="user-name-edit">
               <input class="nickname-input" 
@@ -173,7 +173,7 @@
                      bindconfirm="saveNickname"
                      maxlength="20"
                      focus="{{editingNickname}}"/>
-              <text class="save-hint">👆 输入完成后点击空白处保存</text>
+              <text class="save-hint">输入完成后点击空白处保存</text>
             </view>
           </view>
         </view>
@@ -184,10 +184,10 @@
         </view>
         <view class="progress-text">{{texts.stepFormat.replace('{current}', currentStep).replace('{total}', totalSteps)}}</view>
         
-        <!-- 标签统计信息 -->
-        <view class="tags-summary">
+        <!-- 标签统计信息 (MBTI选择页不显示) -->
+        <view wx:if="{{currentStep !== 0}}" class="tags-summary">
           <view class="total-tags">已选择标签：{{totalSelectedTags}} 个</view>
-          <view wx:if="{{totalSelectedTags >= 4}}" class="tags-status success">✓ 已达到最低要求</view>
+          <view wx:if="{{totalSelectedTags >= 4}}" class="tags-status success">已达到最低要求</view>
           <view wx:else class="tags-status warning">还需选择 {{4 - totalSelectedTags}} 个标签</view>
         </view>
 
@@ -211,7 +211,7 @@
                 <view class="mbti-selector">
                   <view wx:if="{{!advancedTags.mbtiType}}" class="mbti-placeholder" bindtap="showMBTISelector">
                     <text class="mbti-placeholder-text">点击选择你的MBTI类型</text>
-                    <text class="mbti-placeholder-icon">👈</text>
+                    <text class="mbti-placeholder-icon"></text>
                   </view>
                   <view wx:else class="mbti-selected" bindtap="showMBTISelector">
                     <view class="mbti-selected-type">{{advancedTags.mbtiType}}</view>
@@ -223,7 +223,7 @@
               
               <!-- 跳过提示 -->
               <view class="mbti-skip-hint">
-                <text class="skip-text">💡 稍后可在设置中更改</text>
+                <text class="skip-text">稍后可在设置中更改</text>
               </view>
             </view>
           </view>
@@ -409,10 +409,10 @@
 
                 <!-- 右侧列：二维码 -->
                 <view class="right-column">
-                  <view class="qr-card">
+                    <view class="qr-card">
                     <view class="qr-label">个人微信二维码</view>
                     <view wx:if="{{!advancedTags.qrCodeUrl}}" class="qr-upload-area" bindtap="uploadQRCode">
-                      <view class="qr-upload-icon">📷</view>
+                      <view class="qr-upload-icon">上传</view>
                       <view class="qr-upload-text">点击上传</view>
                       <view class="qr-upload-hint">碰一碰设备可互换二维码</view>
                     </view>
@@ -431,8 +431,8 @@
               <!-- 闪光阈值设置 - 可调节 -->
               <view class="form-item threshold-setting">
                 <view class="form-label">
-                  <view>🔥 相同标签超过以下数量的人在你身边时</view>
-                  <view>💡 你们的设备会闪同样颜色的灯光</view>
+                  <view>相同标签超过以下数量的人在你身边时</view>
+                  <view>你们的设备会闪同样颜色的灯光</view>
                 </view>
                 <view class="threshold-control">
                   <view class="threshold-display">
@@ -503,7 +503,7 @@
           <view class="nav-spacer"></view>
 
           <button wx:if="{{currentStep < totalSteps}}" 
-                  class="next-btn" 
+                  class="next-btn {{currentStep === 0 ? 'mbti-next-btn' : ''}}" 
                   bindtap="nextStep">
             {{texts.nextButton}}
           </button>
@@ -520,7 +520,7 @@
   
   <!-- 浮动编辑按钮 (仅在个人名片视图显示) -->
   <view wx:if="{{hasUserInfo && viewMode === 'profile'}}" class="floating-edit-btn" bindtap="switchToQuestionnaireView">
-    <view class="edit-icon">✏️</view>
+    <view class="edit-icon">编辑</view>
     <view class="edit-hint">编辑</view>
   </view>
 </view>

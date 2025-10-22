@@ -56,7 +56,7 @@ exports.main = async (event, context) => {
       return await handleAdvancedTags(event, openid);
     } else {
       console.log('[submitQuestionnaire] 检测到原有问卷数据，调用handleOriginalQuestionnaire');
-      // 处理原有问卷数据 - 保存到 users_bar 集合
+      // 处理原有问卷数据 - 保存到 users_adv 集合
       return await handleOriginalQuestionnaire(event, openid);
     }
   } catch (error) {
@@ -363,7 +363,7 @@ async function handleOriginalQuestionnaire(event, openid) {
     updateTime: new Date()
   };
 
-  const collection = db.collection('users_bar');
+  const collection = db.collection('users_adv');
 
   try {
     // 查询是否已存在

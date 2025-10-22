@@ -1,4 +1,4 @@
-// 引入全局配置
+﻿// 引入全局配置
 const Config = require('../../utils/config.js');
 // 引入标签主题配置
 const tagThemes = require('../../config/tagThemes.js');
@@ -133,7 +133,7 @@ Page({
     setTimeout(() => {
       const currentUserInfo = this.data.userInfo;
       if (currentUserInfo && currentUserInfo.customAvatar && currentUserInfo.avatarFileID) {
-        console.log('[onShow] 🖼️ 检查用户头像状态');
+        console.log('[onShow] 检查用户头像状态');
         this.checkAndRefreshAvatar(currentUserInfo);
       }
     }, 200);
@@ -292,7 +292,7 @@ Page({
     
     // 🖼️ 头像修复：页面加载完成后进行头像状态初始检查
     setTimeout(() => {
-      console.log('[onLoad] 🖼️ 执行头像状态初始检查');
+      console.log('[onLoad] 执行头像状态初始检查');
       const userInfo = this.data.userInfo || wx.getStorageSync('userInfo');
       if (userInfo && userInfo.customAvatar && userInfo.avatarFileID) {
         this.checkAndRefreshAvatar(userInfo);
@@ -420,42 +420,42 @@ Page({
     const encoding = Config.advancedTagsConfig.encoding;
     
     try {
-      console.log('[initAdvancedTagsFromConfig] 🔍 检查配置源:', encoding.configSource);
+      console.log('[initAdvancedTagsFromConfig] 检查配置源:', encoding.configSource);
       
       // 检查配置源
       if (encoding.configSource === 'external') {
-        console.log('[initAdvancedTagsFromConfig] 🚀 开始加载外部tagThemes.js配置');
+        console.log('[initAdvancedTagsFromConfig] 开始加载外部tagThemes.js配置');
         const tagThemes = require('../../config/tagThemes.js');
-        console.log('[initAdvancedTagsFromConfig] ✅ tagThemes.js加载成功');
+        console.log('[initAdvancedTagsFromConfig] tagThemes.js加载成功');
         
         const currentTheme = tagThemes.getCurrentTheme();
-        console.log('[initAdvancedTagsFromConfig] 📋 当前主题:', currentTheme.name);
-        console.log('[initAdvancedTagsFromConfig] 📊 分类数量:', currentTheme.categories.length);
+        console.log('[initAdvancedTagsFromConfig] 当前主题:', currentTheme.name);
+        console.log('[initAdvancedTagsFromConfig] 分类数量:', currentTheme.categories.length);
         
         // 验证外部配置的有效性
         const totalExternalTags = tagThemes.getTagCount();
-        console.log('[initAdvancedTagsFromConfig] 🏷️ 外部配置标签总数:', totalExternalTags);
+        console.log('[initAdvancedTagsFromConfig] 外部配置标签总数:', totalExternalTags);
         
         if (totalExternalTags === 0) {
           throw new Error('外部配置中没有找到有效标签');
         }
         
         if (totalExternalTags > 60) {
-          console.warn(`[initAdvancedTagsFromConfig] ⚠️ 外部配置标签数量${totalExternalTags}超过60限制`);
+          console.warn(`[initAdvancedTagsFromConfig] 外部配置标签数量${totalExternalTags}超过60限制`);
         }
         
         // 从外部配置构建标签选项
         const tagOptions = this.buildTagOptionsFromTheme(currentTheme);
-        console.log('[initAdvancedTagsFromConfig] 🏗️ 标签选项构建完成');
+        console.log('[initAdvancedTagsFromConfig] 标签选项构建完成');
         
         // 构建步骤配置（模拟原有的步骤结构）
         const stepConfigs = this.buildStepConfigsFromTheme(currentTheme);
-        console.log('[initAdvancedTagsFromConfig] 📝 步骤配置构建完成');
+        console.log('[initAdvancedTagsFromConfig] 步骤配置构建完成');
         
         const finalTagCount = tagOptions.professional.length + tagOptions.interest.length + 
                               tagOptions.personality.length + tagOptions.quirky.length;
         
-        console.log('[initAdvancedTagsFromConfig] 🎯 最终标签统计:', {
+        console.log('[initAdvancedTagsFromConfig] 最终标签统计:', {
           professional: tagOptions.professional.length,
           interest: tagOptions.interest.length,
           personality: tagOptions.personality.length,
@@ -632,7 +632,7 @@ Page({
     
     // 按照分类ID顺序创建步骤
     const categoryOrder = ['professional', 'interest', 'personality', 'quirky'];
-    const stepTitles = ['专业领域', '兴趣爱好', 'MBTI性格', '个性彩蛋'];
+    const stepTitles = ['MBTI', '兴趣爱好', 'MBTI性格', '个性彩蛋'];
     
     categoryOrder.forEach((categoryId, index) => {
       const category = themeConfig.categories.find(cat => cat.id === categoryId);
@@ -2392,12 +2392,12 @@ Page({
         if (res.result && res.result.success) {
           // 显示编码结果并切换到个人名片视图
           wx.showModal({
-            title: '提交成功！🎉',
-            content: `📊 编码统计:\n` +
+            title: '提交成功！',
+            content: ` 编码统计:\n` +
                     `• 前3页标签数: ${tagEncoding.allTagsList.length}\n` +
                     `• 已选标签: ${tagEncoding.selectedTags.length}\n` +
-                    `🔐 你的设备蓝牙:\n${submitData.advancedTags.encodedTags}\n\n` +
-                    `💡 即将切换到个人名片视图！\n`,
+                    ` 你的设备蓝牙:\n${submitData.advancedTags.encodedTags}\n\n` +
+                    ` 即将切换到个人名片视图！\n`,
             showCancel: false,
             confirmText: '查看名片',
             success: () => {
@@ -2975,12 +2975,12 @@ Page({
       }
       
       if (!devicePage) {
-        console.log('ℹ️ [自动同步] 设备页面未打开，跳过自动同步');
+        console.log('️ [自动同步] 设备页面未打开，跳过自动同步');
         return;
       }
       
       if (!devicePage.data.connected) {
-        console.log('ℹ️ [自动同步] 设备未连接，跳过自动同步。连接状态:', devicePage.data.connected);
+        console.log('️ [自动同步] 设备未连接，跳过自动同步。连接状态:', devicePage.data.connected);
         return;
       }
       

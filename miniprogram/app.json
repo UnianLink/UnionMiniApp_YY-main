@@ -40,8 +40,6 @@
   
   "usingComponents": {
   },
-  
-  "lazyCodeLoading": "requiredComponents",
   "sitemapLocation": "sitemap.json",
   
   "requiredPrivateInfos": [],

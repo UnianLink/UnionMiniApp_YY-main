@@ -883,6 +883,63 @@ page {
   color: #fff;
 }
 
+/* MBTI页面下一步按钮动态渐变效果 */
+.mbti-next-btn {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(270deg, #00d4ff, #7b68ee, #ff6b9d, #ffa500);
+  background-size: 400% 400%;
+  animation: gradient-flow 3s ease infinite, pulse-glow 2s ease-in-out infinite;
+  box-shadow: 0 8rpx 24rpx rgba(74, 158, 255, 0.6);
+}
+
+@keyframes gradient-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 8rpx 24rpx rgba(74, 158, 255, 0.6);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 12rpx 32rpx rgba(74, 158, 255, 0.8), 0 0 20rpx rgba(255, 107, 157, 0.4);
+    transform: scale(1.05);
+  }
+}
+
+.mbti-next-btn::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  animation: shimmer 2s linear infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%) translateY(-100%) rotate(45deg);
+  }
+  100% {
+    transform: translateX(100%) translateY(100%) rotate(45deg);
+  }
+}
+
+.mbti-next-btn:active {
+  animation-play-state: paused;
+}
+
 .prev-btn:active, .next-btn:active, .submit-btn:active {
   transform: scale(0.96);
 }

@@ -1,4 +1,4 @@
-// 导入BLE握手协议客户端
+  // 导入BLE握手协议客户端
 const { BleHandshakeClient, BLE_CONFIG, BLE_HANDSHAKE_STATE } = require('../../utils/ble-handshake-client.js');
 // 导入智能设备选择配置
 const DeviceSelectionConfig = require('../../config/device-selection-config.js');
@@ -33,6 +33,7 @@ Page({
     // ===== 扫描相关 =====
     devices: [], // 扫描到的蓝牙设备列表
     scanning: false, // 是否正在扫描
+    isScanning: false, // 扫描状态（用于UI显示）
     showScanView: true, // 是否显示扫描界面
     
     // ===== 设备连接相关 =====
@@ -44,6 +45,9 @@ Page({
     messages: [], // 消息收发记录
     notifications: [], // 设备通知记录
     input: '', // 输入框内容
+    
+    // ===== 已连接设备历史 =====
+    connectedDevicesHistory: [], // 历史连接设备列表
     
     // ===== 预计算状态文本（解决WXML编译错误）=====
     connectionStatusText: '❌ 未连接', // 连接状态文本
@@ -130,13 +134,8 @@ Page({
     bluetoothModalVisible: false, // 蓝牙弹窗是否显示
     blockOtherDevices: false, // 是否阻止连接其他设备
     
-    // ===== 数据同步弹窗状态 =====
-    showSyncModal: false, // 是否显示同步弹窗
-    syncModalMessage: '正在与设备同步数据，请稍等...', // 同步弹窗消息
-    syncProgress: 0, // 同步进度（0-100）
-    syncCountdown: 20, // 同步倒计时（秒）
-    syncTimer: null, // 同步定时器
-    suppressOtherPopups: false, // 是否抑制其他弹窗显示
+    // ===== 数据同步弹窗状态（已移除） =====
+    // 同步弹窗相关字段已移除，改为静默处理
     
     // ===== BLE数据完整性校验相关状态 =====
     lastSentMessage: null, // 最后发送的消息（用于重传）
@@ -151,52 +150,83 @@ Page({
     }
   },
 
-  // ===== 弹窗抑制管理方法 =====
+  // ===== 弹窗抑制管理方法（已移除） =====
+  // 弹窗抑制相关方法已移除，改为静默处理
+
+  // ===== 已连接设备历史记录管理 =====
   
   /**
-   * 安全显示Toast - 在同步期间抑制显示
+   * 添加设备到历史记录
    */
-  safeShowToast(options) {
-    if (this.data.suppressOtherPopups) {
-      console.log('[弹窗抑制] 阻止Toast显示:', options.title);
-      // 可以选择将消息添加到通知列表中
-      if (options.title) {
-        this.addNotification(`⏸️ ${options.title}`);
+  addToConnectedDevicesHistory(deviceInfo) {
+    const history = this.data.connectedDevicesHistory || [];
+    const existingIndex = history.findIndex(item => item.deviceId === deviceInfo.deviceId);
+    
+    const deviceRecord = {
+      deviceId: deviceInfo.deviceId,
+      deviceName: deviceInfo.deviceName || deviceInfo.name || `设备_${deviceInfo.deviceId.slice(-6)}`,
+      lastConnectTime: new Date().toLocaleString(),
+      connectCount: 1,
+      isConnected: true
+    };
+    
+    if (existingIndex >= 0) {
+      // 更新现有记录
+      deviceRecord.connectCount = history[existingIndex].connectCount + 1;
+      history[existingIndex] = deviceRecord;
+    } else {
+      // 添加新记录
+      history.unshift(deviceRecord);
+      // 最多保留10个历史记录
+      if (history.length > 10) {
+        history.splice(10);
       }
-      return;
     }
-    wx.showToast(options);
-  },
-
-  /**
-   * 安全显示Modal - 在同步期间抑制显示
-   */
-  safeShowModal(options) {
-    if (this.data.suppressOtherPopups) {
-      console.log('[弹窗抑制] 阻止Modal显示:', options.title);
-      // 可以选择将重要消息添加到通知列表中
-      if (options.title && options.content) {
-        this.addNotification(`⏸️ ${options.title}: ${options.content.substring(0, 50)}...`);
-      }
-      return Promise.resolve({ confirm: false, cancel: true });
-    }
-    return new Promise((resolve) => {
-      wx.showModal({
-        ...options,
-        success: resolve
-      });
+    
+    this.setData({
+      connectedDevicesHistory: history
     });
+    
+    // 保存到本地存储
+    wx.setStorageSync('connectedDevicesHistory', history);
+    
+    console.log('📝 设备已添加到历史记录:', deviceRecord);
   },
-
+  
   /**
-   * 安全显示Loading - 在同步期间抑制显示
+   * 更新设备连接状态
    */
-  safeShowLoading(options) {
-    if (this.data.suppressOtherPopups) {
-      console.log('[弹窗抑制] 阻止Loading显示:', options.title);
-      return;
+  updateDeviceConnectionStatus(deviceId, isConnected) {
+    const history = this.data.connectedDevicesHistory || [];
+    const deviceIndex = history.findIndex(item => item.deviceId === deviceId);
+    
+    if (deviceIndex >= 0) {
+      history[deviceIndex].isConnected = isConnected;
+      this.setData({
+        connectedDevicesHistory: history
+      });
+      
+      // 保存到本地存储
+      wx.setStorageSync('connectedDevicesHistory', history);
     }
-    wx.showLoading(options);
+  },
+  
+  /**
+   * 加载历史设备记录
+   */
+  loadConnectedDevicesHistory() {
+    try {
+      const history = wx.getStorageSync('connectedDevicesHistory') || [];
+      this.setData({
+        connectedDevicesHistory: history
+      });
+      console.log('📚 已加载历史设备记录:', history.length, '个设备');
+    } catch (error) {
+      console.error('❌ 加载历史设备记录失败:', error);
+      this.setData({
+        connectedDevicesHistory: []
+      });
+    }
   },
 
   // ===== 设备绑定管理工具函数 =====
@@ -859,6 +889,12 @@ Page({
     // 停止所有搜索活动
     this.stopAllScanning();
     
+    // 添加到历史记录
+    this.addToHistory({
+      deviceId: deviceInfo.deviceId || this.data.deviceId,
+      deviceName: deviceName
+    });
+    
     // 🎨 连接成功后，延迟检查并发送待处理的MBTI颜色设置
     setTimeout(() => {
       this.checkAndSendPendingIdleLightColor();
@@ -888,6 +924,9 @@ Page({
     
     // 初始化设备绑定状态
     this.initDeviceBinding();
+    
+    // 加载已连接设备历史
+    this.loadConnectedHistory();
     
     // 初始化BLE握手协议客户端
     this.initHandshakeClient();
@@ -1087,6 +1126,9 @@ Page({
       
       // 🔗 自动绑定设备（如果尚未绑定）
       this.handleAutoBinding(deviceInfo);
+      
+      // 📝 添加设备到历史记录
+      this.addToConnectedDevicesHistory(deviceInfo);
       
       // 开始业务流程：发送Un字符串等
       this.startBusinessLogic();
@@ -1548,13 +1590,21 @@ Page({
   // 停止持续扫描
   stopContinuousScan() {
     console.log('⛔ [扫描] 停止持续扫描');
-    this.setData({ scanning: false });
+    this.setData({ 
+      scanning: false,
+      isScanning: false 
+    });
     
     // 停止蓝牙扫描
     wx.stopBluetoothDevicesDiscovery({ complete: () => {} });
     
     // 清除定时器
     this.clearScanTimers();
+  },
+  
+  // 停止扫描（UI按钮调用）
+  stopScan() {
+    this.stopContinuousScan();
   },
   
   // 清除扫描相关定时器
@@ -1723,7 +1773,12 @@ Page({
   },
   
   startScan() {
-    this.setData({ scanning: true });
+    this.setData({ 
+      scanning: true,
+      isScanning: true,
+      devices: [],
+      unDevices: [] // 清空设备列表，准备接收新扫描结果
+    });
 
     // 停止可能已存在的扫描
     wx.stopBluetoothDevicesDiscovery({ complete: () => {} });
@@ -1787,6 +1842,7 @@ Page({
             // 更新设备列表和推荐设备
             this.setData({ 
               devices: devices,
+              unDevices: devices, // 同时更新unDevices供UI显示
               recommendedDevice: shouldRevokeRecommendation ? null : smartRecommendation,
               showConnectionGuide: devices.length > 0
             });
@@ -1801,9 +1857,11 @@ Page({
             console.log(`🔍 [扫描] 当前发现 ${devices.length} 个Un设备:`, 
               devices.map(d => ({ 
                 name: d.name, 
+                deviceId: d.deviceId,
                 RSSI: d.RSSI,
                 updateTime: d.updateTime
               })));
+            console.log('📱 [UI] unDevices已更新，设备数量:', this.data.unDevices.length);
           };
           wx.onBluetoothDeviceFound(this._deviceFoundListener);
         }
@@ -1957,6 +2015,9 @@ Page({
       txServiceId: '',
       txCharId: '',
       unDevices: [],
+      
+      // 已连接设备历史记录
+      connectedDevicesHistory: [],
       // 🔥 重置搜索相关状态，但保留绑定设备信息
       searchingMyDevice: false,         // 停止搜索我的设备
       searchingAllDevices: false,       // 停止搜索所有设备
@@ -2094,8 +2155,7 @@ Page({
       console.log('🔍🔍🔍 [重要调试] ===== 开始检查并发送16字节Un字符串给硬件 =====');
       console.log('🔍 [调试] 函数被调用时间:', new Date().toLocaleTimeString());
       
-      // 显示数据同步弹窗（首次连接场景）
-      this.showSyncModal('正在向设备发送您的标签信息，请稍等...');
+      // 静默处理，不显示弹窗
       
       // ✅ 首先验证BLE连接状态
       const { connected, rxServiceId, rxCharId } = this.data;
@@ -2104,8 +2164,8 @@ Page({
       
       if (!connected) {
         console.error('❌ [BLE验证] 设备未连接，无法发送Un字符串');
-        this.hideSyncModal(); // 隐藏同步弹窗
-        this.safeShowToast({
+        // 静默处理错误
+        wx.showToast({
           title: '设备未连接',
           icon: 'error',
           duration: 2000
@@ -2115,8 +2175,8 @@ Page({
       
       if (!rxServiceId || !rxCharId) {
         console.error('❌ [BLE验证] BLE特征值未就绪，无法发送Un字符串');
-        this.hideSyncModal(); // 隐藏同步弹窗
-        this.safeShowToast({
+        // 静默处理错误
+        wx.showToast({
           title: 'BLE特征未就绪',
           icon: 'error',
           duration: 2000
@@ -2300,17 +2360,13 @@ Page({
         duration: 1000
       });
       
-      // 延迟隐藏同步弹窗，让用户看到更新完成
-      setTimeout(() => {
-        this.hideSyncModal();
-      }, 1500);
+      // 静默处理完成
       
     } catch (error) {
       console.error('❌ [调试] 发送16字节Un字符串失败:', error);
       console.error('❌ [调试] 错误详情:', JSON.stringify(error));
       
-      // 隐藏同步弹窗
-      this.hideSyncModal();
+      // 静默处理错误
       
       // 显示错误提示
       this.safeShowToast({
@@ -3277,9 +3333,7 @@ Page({
     try {
       console.log('🔄 开始刷新设备数据...');
       
-      // 设置刷新状态并显示同步弹窗
-      this.setData({ isRefreshingData: true });
-      this.showSyncModal('正在与设备同步数据，请稍等...');
+      // 静默处理刷新
       
       // 显示开始刷新的提示
       this.addNotification('🔄 开始刷新数据...');
@@ -3387,9 +3441,8 @@ Page({
         duration: 2000
       });
     } finally {
-      // 恢复刷新状态并隐藏同步弹窗
+      // 恢复刷新状态
       this.setData({ isRefreshingData: false });
-      this.hideSyncModal();
       console.log('🔄 数据刷新过程结束');
     }
   },
@@ -4703,6 +4756,11 @@ Page({
         this.setData({ connected: false, deviceReady: false });
         this.updateConnectionStatusText(); // 更新状态文本
         this._bleListenerSet = false;
+        
+        // 更新设备历史状态
+        if (res.deviceId) {
+          this.updateDeviceStatus(res.deviceId, false);
+        }
       }
     });
     
@@ -6708,85 +6766,163 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
     console.log('📊 [传输统计] 统计已重置');
   },
 
-  // ===== 数据同步弹窗方法 =====
-  showSyncModal(message = '正在与设备同步数据，请稍等...') {
-    console.log('[Sync Modal] 显示同步弹窗:', message);
+  // ===== 数据同步弹窗方法（已移除） =====
+  // 同步弹窗相关方法已移除，改为静默处理
+
+  // ===== 已连接设备历史管理 =====
+  
+  /**
+   * 加载已连接设备历史
+   */
+  loadConnectedHistory() {
+    try {
+      const history = wx.getStorageSync('connectedDevicesHistory') || [];
+      this.setData({ connectedDevicesHistory: history });
+      console.log('📝 加载已连接设备历史:', history.length, '个设备');
+    } catch (error) {
+      console.error('❌ 加载设备历史失败:', error);
+    }
+  },
+
+  /**
+   * 保存已连接设备历史
+   */
+  saveConnectedHistory() {
+    try {
+      wx.setStorageSync('connectedDevicesHistory', this.data.connectedDevicesHistory);
+      console.log('✅ 保存设备历史成功');
+    } catch (error) {
+      console.error('❌ 保存设备历史失败:', error);
+    }
+  },
+
+  /**
+   * 添加设备到历史记录
+   */
+  addToHistory(deviceInfo) {
+    const history = [...this.data.connectedDevicesHistory];
+    const index = history.findIndex(item => item.deviceId === deviceInfo.deviceId);
     
-    // 重置同步状态并启用弹窗抑制
-    this.setData({
-      showSyncModal: true,
-      syncModalMessage: message,
-      syncProgress: 0,
-      syncCountdown: 20,
-      suppressOtherPopups: true // 启用弹窗抑制
-    });
+    const record = {
+      deviceId: deviceInfo.deviceId,
+      deviceName: deviceInfo.deviceName || deviceInfo.name || `设备_${deviceInfo.deviceId.slice(-6)}`,
+      lastConnectTime: new Date().toLocaleString('zh-CN', { 
+        month: '2-digit', 
+        day: '2-digit', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      }),
+      connectCount: 1,
+      isConnected: true
+    };
     
-    // 清除之前的定时器
-    if (this.data.syncTimer) {
-      clearInterval(this.data.syncTimer);
+    if (index >= 0) {
+      // 更新现有记录
+      record.connectCount = history[index].connectCount + 1;
+      history.splice(index, 1);
     }
     
-    // 开始倒计时和进度条
-    const timer = setInterval(() => {
-      const currentCountdown = this.data.syncCountdown;
-      const currentProgress = this.data.syncProgress;
-      
-      if (currentCountdown > 0) {
-        // 更新倒计时和进度条
-        const newCountdown = currentCountdown - 1;
-        const newProgress = Math.min(((20 - newCountdown) / 20) * 100, 95); // 最多到95%，避免100%后还没同步完成
-        
-        this.setData({
-          syncCountdown: newCountdown,
-          syncProgress: newProgress
-        });
-      } else {
-        // 倒计时结束，显示继续等待提示
-        this.setData({
-          syncModalMessage: '同步时间较长，请继续耐心等待...',
-          syncCountdown: 0,
-          syncProgress: 95
-        });
+    // 添加到列表顶部
+    history.unshift(record);
+    
+    // 最多保留10个
+    if (history.length > 10) {
+      history.length = 10;
+    }
+    
+    this.setData({ connectedDevicesHistory: history });
+    this.saveConnectedHistory();
+    console.log('📝 设备已添加到历史:', record.deviceName);
+  },
+
+  /**
+   * 更新设备连接状态
+   */
+  updateDeviceStatus(deviceId, isConnected) {
+    const history = this.data.connectedDevicesHistory.map(item => {
+      if (item.deviceId === deviceId) {
+        return { ...item, isConnected };
       }
-    }, 1000);
-    
-    // 保存定时器引用
-    this.setData({ syncTimer: timer });
-  },
-
-  hideSyncModal() {
-    console.log('[Sync Modal] 隐藏同步弹窗');
-    
-    // 清除定时器
-    if (this.data.syncTimer) {
-      clearInterval(this.data.syncTimer);
-    }
-    
-    // 隐藏弹窗并重置状态，禁用弹窗抑制
-    this.setData({
-      showSyncModal: false,
-      syncTimer: null,
-      syncProgress: 0,
-      syncCountdown: 20,
-      suppressOtherPopups: false // 禁用弹窗抑制
+      return item;
     });
+    this.setData({ connectedDevicesHistory: history });
+    this.saveConnectedHistory();
   },
 
-  updateSyncProgress(progress, message) {
-    if (this.data.showSyncModal) {
-      console.log('[Sync Modal] 更新同步进度:', progress, message);
-      this.setData({
-        syncProgress: Math.min(progress, 100),
-        syncModalMessage: message || this.data.syncModalMessage
+  /**
+   * 快速连接设备（从附近设备列表）
+   */
+  async quickConnectDevice(e) {
+    const { deviceId, deviceName } = e.currentTarget.dataset;
+    
+    if (!deviceId) {
+      console.error('❌ 设备ID不存在');
+      return;
+    }
+
+    console.log('🚀 快速连接设备:', deviceName, deviceId);
+    
+    // 停止扫描
+    this.stopScan();
+    
+    // 保存设备信息
+    this.setData({
+      deviceId,
+      deviceName: deviceName || `设备_${deviceId.slice(-6)}`
+    });
+    
+    // 执行连接
+    try {
+      await this.connectWithHandshake();
+      
+      // 连接成功后添加到历史
+      this.addToHistory({
+        deviceId,
+        deviceName: this.data.deviceName
       });
-      
-      // 如果进度达到100%，稍等一下再隐藏弹窗
-      if (progress >= 100) {
-        setTimeout(() => {
-          this.hideSyncModal();
-        }, 1000);
-      }
+    } catch (error) {
+      console.error('❌ 快速连接失败:', error);
+      wx.showToast({
+        title: '连接失败',
+        icon: 'error'
+      });
     }
+  },
+
+  /**
+   * 快速解绑设备（无弹窗确认）
+   */
+  quickUnbindDevice(e) {
+    const { deviceId } = e.currentTarget.dataset;
+    
+    if (!deviceId) {
+      console.error('❌ 设备ID不存在');
+      return;
+    }
+
+    console.log('🗑️ 快速解绑设备:', deviceId);
+    
+    // 从历史记录中移除
+    const history = this.data.connectedDevicesHistory.filter(
+      item => item.deviceId !== deviceId
+    );
+    
+    this.setData({ connectedDevicesHistory: history });
+    this.saveConnectedHistory();
+    
+    // 如果是当前绑定的设备，也解绑
+    const boundDeviceId = wx.getStorageSync('boundDeviceId');
+    if (boundDeviceId === deviceId) {
+      wx.removeStorageSync('boundDeviceId');
+      wx.removeStorageSync('boundDeviceName');
+      console.log('✅ 已解绑当前设备');
+    }
+    
+    wx.showToast({
+      title: '已解绑',
+      icon: 'success',
+      duration: 1500
+    });
   },
 
   // 跳转到朋友页面
@@ -6818,10 +6954,6 @@ BLE监听器: ${this._bleListenerSet ? '已设置' : '未设置'}
       console.log('✅ [页面卸载] 蓝牙状态监听器已清理');
     }
     
-    // 清理同步弹窗定时器
-    if (this.data.syncTimer) {
-      clearInterval(this.data.syncTimer);
-      console.log('✅ [页面卸载] 同步弹窗定时器已清理');
-    }
+    // 同步弹窗定时器已移除
   }
 });
