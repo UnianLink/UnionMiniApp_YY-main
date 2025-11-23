@@ -23,7 +23,7 @@ const AvatarConfig = {
       '132.232.99.205',   // 旧的服务器地址
       'bottts-neutral',   // 旧的机器人风格
       'dicebear.com',     // DiceBear动态头像
-      'api.dicebear'      // DiceBear API
+      'api.dicebear',     // DiceBear API
       'robohash'
     ];
     

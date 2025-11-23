@@ -2098,8 +2098,9 @@ Page({
     console.log('[ConnectPage] 静默加载分类数据...');
     
     // 直接从 class_bar 读取分类结果
+    // 🔧 优化：class_bar 集合只包含一条文档，添加 limit(1) 避免全表扫描告警
     const db = wx.cloud.database();
-    db.collection('class_bar').get({
+    db.collection('class_bar').limit(1).get({
       success: res => {
         console.log('从class_bar获取数据成功', res.data);
         console.log('class_bar原始数据结构检查:', res.data);
